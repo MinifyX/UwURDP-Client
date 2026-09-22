@@ -1,4 +1,4 @@
-// Phase E: two app instances and a real UwUSSH server.
+// Phase E: two app instances and a real UwUSync server.
 //
 // The first device connects the server with a setup code, is shown the
 // recovery kit once, imports a host, and offers a pairing code. The second

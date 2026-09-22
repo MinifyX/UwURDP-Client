@@ -8,13 +8,13 @@
 // imported, a host connects through the certificate and login questions, the
 // desktop draws and answers the mouse and keyboard, the overview shows it, and
 // everything goes into an export. Then it connects two app instances to a
-// real UwUSSH server for phase E (sync), and stops everything again.
+// real UwUSync server for phase E (sync), and stops everything again.
 //
 //   node apps/desktop/e2e/run.mjs --only=a   just phase A
 //   node apps/desktop/e2e/run.mjs --only=e   just phase E
 //
 // Phase E needs the server built next to this repository:
-// ../UwUSSH-Server/target/debug/uwussh-server.exe (or UWURDP_SERVER_EXE).
+// ../UwUSync-Server/target/debug/uwusync-server.exe (or UWURDP_SERVER_EXE).
 //
 // Windows only: it drives WebView2 over the Chrome DevTools Protocol.
 
@@ -30,9 +30,14 @@ const runDir = join(here, '.run');
 const rdpdExe = join(repo, 'target', 'debug', 'examples', 'dev_rdpd.exe');
 const workDir = join(runDir, 'work');
 const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length);
+// The server's checkout under its new name first, then under its old one.
 const serverExe =
   process.env.UWURDP_SERVER_EXE ??
-  join(repo, '..', 'UwUSSH-Server', 'target', 'debug', 'uwussh-server.exe');
+  [
+    join(repo, '..', 'UwUSync-Server', 'target', 'debug', 'uwusync-server.exe'),
+    join(repo, '..', 'UwUSSH-Server', 'target', 'debug', 'uwussh-server.exe'),
+  ].find((exe) => existsSync(exe)) ??
+  join(repo, '..', 'UwUSync-Server', 'target', 'debug', 'uwusync-server.exe');
 const appExe = join(repo, 'target', 'debug', 'uwurdp-desktop.exe');
 
 rmSync(runDir, { recursive: true, force: true });
@@ -187,29 +192,29 @@ function rdcmanFile(path) {
 }
 
 /**
- * Phase E: a UwUSSH server on this machine with its own certificate, and two
+ * Phase E: a UwUSync server on this machine with its own certificate, and two
  * app instances — one through `pnpm tauri dev`, one straight from the debug
  * binary that build left behind, on its own DevTools port and its own
  * database, against the same dev server page.
  */
 async function phaseE() {
   if (!existsSync(serverExe)) {
-    console.log(`\nphase E skipped: no ${serverExe} (build UwUSSH-Server first)`);
+    console.log(`\nphase E skipped: no ${serverExe} (build UwUSync-Server first)`);
     return false;
   }
   const data = join(runDir, 'server');
   mkdirSync(data, { recursive: true });
   const serverEnv = {
     ...process.env,
-    UWUSSH_DATA: data,
-    UWUSSH_LISTEN: '127.0.0.1:18443',
-    UWUSSH_PUBLIC: 'https://127.0.0.1:18443',
-    UWUSSH_UPDATE_CHECK: 'off',
+    UWUSYNC_DATA: data,
+    UWUSYNC_LISTEN: '127.0.0.1:18443',
+    UWUSYNC_PUBLIC: 'https://127.0.0.1:18443',
+    UWUSYNC_UPDATE_CHECK: 'off',
   };
   const invite = execSync(`"${serverExe}" invite`, { env: serverEnv, encoding: 'utf8' });
   const setupCode = invite.match(/uwu1_[A-Za-z0-9_-]+/)?.[0];
   if (!setupCode) throw new Error(`the server printed no setup code:\n${invite}`);
-  const server = start('uwussh-server', serverExe, [], { env: serverEnv });
+  const server = start('uwusync-server', serverExe, [], { env: serverEnv });
   await until(async () => {
     try {
       // Its own certificate: nothing here trusts it, which is the point.
@@ -217,7 +222,7 @@ async function phaseE() {
     } catch {
       return false;
     }
-  }, 'the UwUSSH server');
+  }, 'the UwUSync server');
 
   const rdg = join(runDir, 'homelab-e.rdg');
   rdcmanFile(rdg);

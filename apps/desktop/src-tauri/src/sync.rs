@@ -1,4 +1,4 @@
-//! Settings → Sync: connecting a UwUSSH server, adding and removing devices,
+//! Settings → Sync: connecting a UwUSync server, adding and removing devices,
 //! and the thread that keeps this device in step.
 //!
 //! Every step the person takes is one command here, and every command is a
@@ -445,7 +445,7 @@ pub(crate) struct Connected {
     tls_fingerprint: Option<String>,
 }
 
-/// First device: a setup code from `uwussh-server invite`, the master
+/// First device: a setup code from `uwusync-server invite`, the master
 /// password, a name. Makes the account and hands back the recovery kit.
 #[tauri::command]
 pub(crate) async fn sync_connect(

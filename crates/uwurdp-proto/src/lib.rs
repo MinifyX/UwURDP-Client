@@ -4,7 +4,7 @@
 //! *is*, and of what travels between a device and its server.
 //!
 //! UwURDP syncs through the same server as UwUSSH — an
-//! [UwUSSH-Server](https://github.com/MinifyX/UwUSSH-Server), with an account of
+//! [UwUSync-Server](https://github.com/MinifyX/UwUSync-Server), with an account of
 //! its own. So [`api`] and [`sync`] are UwUSSH's wire format, byte for byte,
 //! and must stay that way: the server depends on `uwussh-proto` from the
 //! UwUSSH-Client repository, not on this crate. The payloads in [`entities`]

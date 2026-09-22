@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn a_setup_code_reads_back_as_what_the_server_printed() {
-        // Exactly what `uwussh-server invite` writes.
+        // Exactly what `uwusync-server invite` writes.
         let body = serde_json::json!({
             "u": "https://nas.lan:8443",
             "f": "SHA256:abc",

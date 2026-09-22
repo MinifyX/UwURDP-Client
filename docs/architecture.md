@@ -21,7 +21,7 @@ story.
 | Sound     | `cpal`                                  | Plays the server's PCM on WASAPI, CoreAudio and ALSA.                                        |
 | Store     | `rusqlite` with WAL                     | One file, offline-first, trivial to back up.                                                 |
 | Crypto    | `argon2`, `chacha20poly1305`, `zeroize` | Established RustCrypto crates. Nothing home-made.                                            |
-| Sync      | the UwUSSH server, unchanged            | One server for both apps; UwURDP speaks its protocol as it is.                               |
+| Sync      | the UwUSync server, unchanged           | One server for both apps; UwURDP speaks its protocol as it is.                               |
 
 ## The pieces
 
@@ -313,12 +313,12 @@ KWallet); without a Secret Service, in a file only the user can read.
 ## Sync and the shared server
 
 UwURDP has no server of its own. It speaks the wire protocol of
-[UwUSSH-Server](https://github.com/MinifyX/UwUSSH-Server) unchanged — the
+[UwUSync-Server](https://github.com/MinifyX/UwUSync-Server) unchanged — the
 server only sees ids, sequence numbers and sealed blobs, so it never needed to
 learn what an RDP host is.
 
-- **Use a separate account on the same server.** `docker compose exec uwussh
-uwussh-server invite` prints a new `uwu1_…` setup code; **Settings → Sync →
+- **Use a separate account on the same server.** `docker compose exec uwusync
+uwusync-server invite` prints a new `uwu1_…` setup code; **Settings → Sync →
   Connect a server** takes it. Sharing one account between UwUSSH and UwURDP
   would mix two apps' records in one vault.
 - **Zero knowledge.** Records are sealed with the vault key before they leave.
@@ -421,7 +421,7 @@ DevTools protocol:
 - **Phase A**, against `dev_rdpd`: RDCMan import, the certificate dialog,
   login, the vault, drawing, mouse, keyboard, resize, the overview,
   disconnect and reconnect, an unreachable host, the host form, export.
-- **Phase E**: sync between two app instances through a real UwUSSH-Server.
+- **Phase E**: sync between two app instances through a real UwUSync-Server.
 
 `dev_rdpd` is the toy server for all of it:
 

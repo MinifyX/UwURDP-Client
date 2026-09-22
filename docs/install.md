@@ -122,10 +122,10 @@ only your user can read, which protects less against someone with your disk.
   Settings → Sessions.
 - **Ctrl+Shift+O** opens the overview: every open desktop at a glance.
 - **Several computers?** Settings → Sync connects a
-  [UwUSSH server](https://github.com/MinifyX/UwUSSH-Server) of your own and
+  [UwUSync server](https://github.com/MinifyX/UwUSync-Server) of your own and
   keeps hosts, logins, passwords and trusted certificates the same everywhere,
   end-to-end encrypted. Already running one for UwUSSH? Give UwURDP its own
-  account: `docker compose exec uwussh uwussh-server invite` prints a new
+  account: `docker compose exec uwusync uwusync-server invite` prints a new
   setup code.
 
 ## Updates
@@ -314,10 +314,10 @@ gegen jemanden mit deiner Festplatte.
 - **Strg+Umschalt+O** öffnet die Übersicht: alle offenen Desktops auf
   einen Blick.
 - **Mehrere Rechner?** Einstellungen → Sync verbindet einen eigenen
-  [UwUSSH-Server](https://github.com/MinifyX/UwUSSH-Server) und hält Hosts,
+  [UwUSync-Server](https://github.com/MinifyX/UwUSync-Server) und hält Hosts,
   Anmeldungen, Passwörter und vertraute Zertifikate überall gleich,
   Ende-zu-Ende-verschlüsselt. Läuft schon einer für UwUSSH? Gib UwURDP ein
-  eigenes Konto: `docker compose exec uwussh uwussh-server invite` gibt einen
+  eigenes Konto: `docker compose exec uwusync uwusync-server invite` gibt einen
   neuen Einrichtungscode aus.
 
 ## Updates

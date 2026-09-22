@@ -138,7 +138,7 @@ export function SyncSettings() {
         <NyuScene name="welcome" className="sync-scene" />
         <p className="dialog-lead">
           {t(
-            'Mit einem eigenen UwUSSH-Server bleiben Hosts, Gruppen, Keys und Passwörter auf allen deinen Geräten gleich. Der Server sieht davon nur verschlüsselte Blöcke.',
+            'Mit einem eigenen UwUSync-Server bleiben Hosts, Gruppen, Keys und Passwörter auf allen deinen Geräten gleich. Der Server sieht davon nur verschlüsselte Blöcke.',
           )}
         </p>
         <div className="sync-choices">
@@ -167,7 +167,7 @@ export function SyncSettings() {
         </div>
         <p className="setting-description">
           {t(
-            'Einen Server aufsetzen: siehe github.com/MinifyX/UwUSSH-Server – ein Befehl, Docker, fertig.',
+            'Einen Server aufsetzen: siehe github.com/MinifyX/UwUSync-Server – ein Befehl, Docker, fertig.',
           )}
         </p>
       </div>
@@ -245,7 +245,7 @@ function ConnectForm({
         />
         <em className="field-hint">
           {t(
-            'Steht im Log des Servers, oder: docker compose exec uwussh uwussh-server invite. Er enthält Adresse, Zertifikat-Fingerprint und eine Einladung.',
+            'Steht im Log des Servers, oder: docker compose exec uwusync uwusync-server invite. Er enthält Adresse, Zertifikat-Fingerprint und eine Einladung.',
           )}
         </em>
       </label>

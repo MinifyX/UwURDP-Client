@@ -1,5 +1,5 @@
 /**
- * Settings → Sync, the page's side: connecting a UwUSSH server, pairing
+ * Settings → Sync, the page's side: connecting a UwUSync server, pairing
  * devices, the device list.
  *
  * Every secret the page types — the master password, the codes — goes
@@ -107,7 +107,7 @@ export const syncDisconnect = (password: string) => invoke<void>('sync_disconnec
 export const syncRecoveryCode = (password: string) =>
   invoke<Connected>('sync_recovery_code', { password });
 
-/** A pasted setup code, from `uwussh-server invite`. */
+/** A pasted setup code, from `uwusync-server invite`. */
 export const isSetupCode = (text: string) => text.trim().startsWith('uwu1_');
 /** A pasted pairing code, from "add a device" on another device. */
 export const isPasteablePairing = (text: string) => text.trim().startsWith('uwu2_');

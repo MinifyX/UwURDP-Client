@@ -50,7 +50,7 @@ Done, in 0.1.0-beta.1:
   login dialog.
 - **Export and import** of UwURDP's own `.uwurdp` file, sealed with a password
   when it carries passwords.
-- **Sync** through a UwUSSH server of your own, with a recovery kit, pairing
+- **Sync** through a UwUSync server of your own, with a recovery kit, pairing
   by three words and revoking by master password.
 - **The installer with Nyu** and signed updates on Windows (x64 and ARM),
   macOS and Linux.

@@ -8,7 +8,7 @@
 | **Basis**       | Fork von UwUSSH: Tauri 2 + React + SQLite, RDP über IronRDP                 |
 | **Bundle-ID**   | `app.uwurdp.desktop`                                                        |
 | **Repo**        | [MinifyX/UwURDP-Client](https://github.com/MinifyX/UwURDP-Client) · GPL-3.0 |
-| **Sync-Server** | [UwUSSH-Server](https://github.com/MinifyX/UwUSSH-Server), unverändert      |
+| **Sync-Server** | [UwUSync-Server](https://github.com/MinifyX/UwUSync-Server), unverändert    |
 | **Maskottchen** | Nyu, diesmal als Monitor auf einem Standfuß                                 |
 | **Plattformen** | Windows zuerst, macOS und Linux aus der CI, später vielleicht mobil         |
 
@@ -101,7 +101,7 @@ getestet sind sie noch nicht.
 └──────────────┬────────────────────────────────────────┘
                │ HTTPS (nur Chiffrat)
 ┌──────────────┴────────────────────────────────────────┐
-│  UwUSSH-Server (selbst gehostet, unverändert)         │
+│  UwUSync-Server (selbst gehostet, unverändert)        │
 └───────────────────────────────────────────────────────┘
 ```
 
@@ -146,12 +146,12 @@ letzte Verbindung, App-Einstellungen.
 ## 6. Sync
 
 Kein eigener Server. UwURDP spricht das Protokoll des
-[UwUSSH-Servers](https://github.com/MinifyX/UwUSSH-Server) unverändert — der
+[UwUSync-Servers](https://github.com/MinifyX/UwUSync-Server) unverändert — der
 Server sieht nur IDs, Sequenznummern und versiegelte Blobs und muss deshalb
 nie wissen, was ein RDP-Host ist.
 
-- **Eigenes Konto auf demselben Server**: `docker compose exec uwussh
-uwussh-server invite` gibt einen neuen `uwu1_`-Einrichtungscode aus →
+- **Eigenes Konto auf demselben Server**: `docker compose exec uwusync
+uwusync-server invite` gibt einen neuen `uwu1_`-Einrichtungscode aus →
   Einstellungen → Sync → Server verbinden.
 - **Zero-Knowledge**: Records werden vor dem Versand mit XChaCha20-Poly1305
   versiegelt. Der Tresor-Key ist mit Master-Passwort _und_ Account-Key

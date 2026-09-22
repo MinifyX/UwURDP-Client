@@ -44,7 +44,7 @@ my own, the way I want it, with a sync server that runs on my own box.
 UwURDP is a fork of my SSH client [UwUSSH](https://github.com/MinifyX/UwUSSH-Client):
 same vault, same sync, same installer, same cat — with an RDP engine where the
 terminal used to be. It syncs through the same
-[UwUSSH server](https://github.com/MinifyX/UwUSSH-Server).
+[UwUSync server](https://github.com/MinifyX/UwUSync-Server).
 
 ## What it is
 
@@ -97,7 +97,7 @@ density with a calmer face and a sync server that is yours.
 >   the files RDCMan had open) and from `.rdp` files, and an export of
 >   everything into one `.uwurdp` file, sealed with a password when it carries
 >   passwords.
-> - **Sync** through a [UwUSSH server](https://github.com/MinifyX/UwUSSH-Server)
+> - **Sync** through a [UwUSync server](https://github.com/MinifyX/UwUSync-Server)
 >   of your own: hosts, logins, passwords and trusted certificates end-to-end
 >   encrypted, a recovery kit shown once, a new device paired by three words.
 >
@@ -132,13 +132,13 @@ goes wrong. [Auf Deutsch](docs/install.md#uwurdp-installieren).
 ## The sync server
 
 UwURDP doesn't have a server of its own. It speaks the wire protocol of
-[UwUSSH-Server](https://github.com/MinifyX/UwUSSH-Server) unchanged: one Rust
+[UwUSync-Server](https://github.com/MinifyX/UwUSync-Server) unchanged: one Rust
 binary, one Docker image, one SQLite file, its own TLS certificate whose
 fingerprint each device pins. Already running one for UwUSSH? Give UwURDP an
 account of its own on it:
 
 ```bash
-docker compose exec uwussh uwussh-server invite
+docker compose exec uwusync uwusync-server invite
 ```
 
 That prints a new `uwu1_…` setup code. Paste it into **Settings → Sync →
@@ -201,7 +201,7 @@ Checks:
 ```bash
 pnpm typecheck && pnpm lint
 cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
-node apps/desktop/e2e/run.mjs     # end to end, Windows (phase E needs ../UwUSSH-Server built)
+node apps/desktop/e2e/run.mjs     # end to end, Windows (phase E needs ../UwUSync-Server built)
 ```
 
 The installer, with the app packed inside:

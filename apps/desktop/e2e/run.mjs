@@ -30,13 +30,9 @@ const runDir = join(here, '.run');
 const rdpdExe = join(repo, 'target', 'debug', 'examples', 'dev_rdpd.exe');
 const workDir = join(runDir, 'work');
 const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length);
-// The server's checkout under its new name first, then under its old one.
+// The server's checkout, next to this one.
 const serverExe =
   process.env.UWURDP_SERVER_EXE ??
-  [
-    join(repo, '..', 'UwUSync-Server', 'target', 'debug', 'uwusync-server.exe'),
-    join(repo, '..', 'UwUSSH-Server', 'target', 'debug', 'uwussh-server.exe'),
-  ].find((exe) => existsSync(exe)) ??
   join(repo, '..', 'UwUSync-Server', 'target', 'debug', 'uwusync-server.exe');
 const appExe = join(repo, 'target', 'debug', 'uwurdp-desktop.exe');
 

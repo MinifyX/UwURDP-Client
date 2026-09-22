@@ -1,18 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="UwURDP app icon: Nyu as a monitor on a stand, with cat ears, on a sky-blue tile">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="UwURDP app icon: Nyu as a monitor on a stand, with cat ears">
   <title>UwURDP</title>
   <!--
-    Built like UwUMail's and UwUSSH's: Nyu slightly tilted on a pastel tile
-    with two sparkles and a heart. Sky blue tells it apart from UwUMail's pink
-    and UwUSSH's lavender; the monitor on its stand and the mouse pointer on
-    the screen say remote desktop, the UwU face with its round w says Nyu.
+    The website and GitHub icon, built like UwUMail's: Nyu slightly tilted on
+    UwUMail's pastel pink tile (#FFF3F8 to #FFD3E5, the same for every UwU
+    app), with sparkles and a heart arranged differently for each app.
+    The monitor on its stand and the mouse pointer say remote desktop.
+    Here: the heart top left, a small star left, a big star bottom right.
   -->
   <defs>
     <linearGradient id="uwu-bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#EFF6FF"/>
-      <stop offset="1" stop-color="#CCE0FF"/>
+      <stop offset="0" stop-color="#FFF3F8"/>
+      <stop offset="1" stop-color="#FFD3E5"/>
     </linearGradient>
     <filter id="uwu-shadow" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#3050A0" flood-opacity="0.25"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#C2306F" flood-opacity="0.25"/>
     </filter>
   </defs>
   <rect width="512" height="512" rx="116" fill="url(#uwu-bg)"/>
@@ -48,8 +49,8 @@
   </g></g>
   </g>
   <g stroke="#4B1D3F" stroke-linejoin="round">
-    <path d="M436 62 Q441 94 472 99 Q441 104 436 136 Q431 104 400 99 Q431 94 436 62Z" fill="#FFD66E" stroke-width="8"/>
-    <path d="M434 462 C410 446 403 433 406 423 C409 412 423 409 430 418 L434 424 L438 418 C445 409 459 412 462 423 C465 433 458 446 434 462Z" fill="#FF6FA6" stroke-width="8"/>
-    <path d="M70 400 Q74 420 94 424 Q74 428 70 448 Q66 428 46 424 Q66 420 70 400Z" fill="#FFD66E" stroke-width="7"/>
+    <path transform="translate(80 82) scale(1) translate(-434 -437)" d="M434 462 C410 446 403 433 406 423 C409 412 423 409 430 418 L434 424 L438 418 C445 409 459 412 462 423 C465 433 458 446 434 462Z" fill="#FF6FA6" stroke-width="8"/>
+    <path d="M64 280 Q66.8 297.2 84 300 Q66.8 302.8 64 320 Q61.2 302.8 44 300 Q61.2 297.2 64 280Z" fill="#FFD66E" stroke-width="6"/>
+    <path d="M438 402 Q443 433 474 438 Q443 443 438 474 Q433 443 402 438 Q433 433 438 402Z" fill="#FFD66E" stroke-width="8"/>
   </g>
 </svg>

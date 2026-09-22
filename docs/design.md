@@ -107,10 +107,12 @@ face: UwU eyes, `w` mouth, blush.
   fixed artwork and stay the same in dark mode; the white edge keeps the
   outlines readable on dark backgrounds.
 - **App icon** (website, GitHub, macOS Dock). Built like UwUMail's and
-  UwUSSH's: Nyu as a pink monitor on a stand with cat ears, slightly tilted on
-  a pastel tile with two sparkles and a heart. The tile is **sky blue**
-  (UwUMail's is pink, UwUSSH's lavender); the night-blue screen shows the UwU
-  face and a yellow mouse pointer.
+  UwUSSH's: Nyu as a pink monitor on a stand with cat ears, slightly tilted,
+  the night-blue screen showing the UwU face and a yellow mouse pointer. The
+  heart top left, a small star left, a big star bottom right.
+- **The tile.** Every UwU app's icon for the website and GitHub sits on
+  UwUMail's pastel pink tile (`#FFF3F8` to `#FFD3E5`), never another colour.
+  Each one gets sparkles and a heart, arranged differently around it.
 - **Taskbar icon.** On the Windows taskbar, in the setup and in Linux menus
   Nyu stands alone: upright, no tile, white die-cut edge. The monitor on its
   stand shows a window from another computer with the pointer reaching into

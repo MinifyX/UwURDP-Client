@@ -12,7 +12,7 @@
   <g stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M88 142 Q102 160 116 142"/>
     <path d="M140 142 Q154 160 168 142"/>
-    <path d="M112 170 L120 182 L128 170 L136 182 L144 170"/>
+    <path d="M112 170 q8 13 16 0 q8 13 16 0"/>
   </g>
   <circle cx="204" cy="96" r="5" fill="currentColor" stroke="none"/>
 </svg>

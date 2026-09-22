@@ -1,78 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="UwURDP app icon: a monitor with cat ears on a little stand, showing a remote window and a mouse pointer">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="UwURDP app icon: Nyu as a monitor on a stand, with cat ears, on a sky-blue tile">
   <title>UwURDP</title>
   <!--
-    Made to be told apart at 16–24 px in a taskbar: a deep night-blue tile
-    (UwUSSH's is dark plum, UwUMail's light pink), and a monitor on a stand as
-    big as the tile allows, in the same sticker style as Nyu — white die-cut
-    edge, plum outlines, pink body. The screen shows what the app is for: a
-    window from another computer, with a pointer reaching into it. At the
-    smallest sizes it reads as a pink screen-with-ears on a foot, the light
-    window in its middle.
+    Built like UwUMail's and UwUSSH's: Nyu slightly tilted on a pastel tile
+    with two sparkles and a heart. Sky blue tells it apart from UwUMail's pink
+    and UwUSSH's lavender; the monitor on its stand and the mouse pointer on
+    the screen say remote desktop, the UwU face with its round w says Nyu.
   -->
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1E2350"/>
-      <stop offset="1" stop-color="#0C1030"/>
+    <linearGradient id="uwu-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EFF6FF"/>
+      <stop offset="1" stop-color="#CCE0FF"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.56" r="0.5">
-      <stop offset="0" stop-color="#FF4D8D" stop-opacity="0.5"/>
-      <stop offset="0.7" stop-color="#FF4D8D" stop-opacity="0.08"/>
-      <stop offset="1" stop-color="#FF4D8D" stop-opacity="0"/>
-    </radialGradient>
+    <filter id="uwu-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#3050A0" flood-opacity="0.25"/>
+    </filter>
   </defs>
-
-  <rect width="512" height="512" rx="112" fill="url(#tile)"/>
-  <circle cx="256" cy="288" r="236" fill="url(#glow)"/>
-
-  <g stroke-linejoin="round" stroke-linecap="round">
-    <!-- die-cut edge -->
-    <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="30">
-      <path d="M96 196 L128 62 L236 162 Z"/>
-      <path d="M416 196 L384 62 L276 162 Z"/>
-      <rect x="226" y="380" width="60" height="56"/>
-      <path d="M148 464 Q152 426 190 426 H322 Q360 426 364 464 Z"/>
-      <rect x="52" y="150" width="408" height="250" rx="56"/>
+  <rect width="512" height="512" rx="116" fill="url(#uwu-bg)"/>
+  <g transform="translate(256 282) rotate(-8) scale(0.9) translate(-256 -243)">
+    <g filter="url(#uwu-shadow)"><g stroke-linecap="round" stroke-linejoin="round">
+    <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="44">
+      <path d="M118 196 L132 100 Q135 82 151 91 L230 150 Z"/>
+      <path d="M394 196 L380 100 Q377 82 361 91 L282 150 Z"/>
+      <rect x="230" y="330" width="52" height="46"/>
+      <path d="M172 400 Q175 372 204 372 H308 Q337 372 340 400 Z"/>
+      <rect x="100" y="140" width="312" height="206" rx="46"/>
     </g>
-
-    <!-- ears -->
     <g fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14">
-      <path d="M96 196 L128 62 L236 162 Z"/>
-      <path d="M416 196 L384 62 L276 162 Z"/>
+      <path d="M118 196 L132 100 Q135 82 151 91 L230 150 Z"/>
+      <path d="M394 196 L380 100 Q377 82 361 91 L282 150 Z"/>
+      <rect x="230" y="330" width="52" height="46"/>
+      <path d="M172 400 Q175 372 204 372 H308 Q337 372 340 400 Z"/>
     </g>
-    <path d="M124 168 L140 108 L192 158 Z" fill="#FFB8D3"/>
-    <path d="M388 168 L372 108 L320 158 Z" fill="#FFB8D3"/>
-
-    <!-- stand: neck behind the monitor, then the foot -->
-    <rect x="226" y="380" width="60" height="56" fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14"/>
-    <path d="M148 464 Q152 426 190 426 H322 Q360 426 364 464 Z" fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14"/>
-    <path d="M196 442 H316" stroke="#FFB8D3" stroke-width="10"/>
-
-    <!-- monitor, with its power light -->
-    <rect x="52" y="150" width="408" height="250" rx="56" fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14"/>
-    <circle cx="410" cy="378" r="9" fill="#B9F0D0" stroke="#4B1D3F" stroke-width="5"/>
-
-    <!-- screen: the remote desktop -->
-    <rect x="84" y="180" width="344" height="184" rx="30" fill="#2A2458" stroke="#4B1D3F" stroke-width="12"/>
-
-    <!-- a window over there: title bar with three dots -->
-    <rect x="132" y="206" width="236" height="132" rx="18" fill="#FFB8D3" stroke="#4B1D3F" stroke-width="10"/>
-    <path d="M137 244 H363" stroke="#4B1D3F" stroke-width="10"/>
-    <g fill="#FF4D8D">
-      <circle cx="160" cy="226" r="8"/>
-      <circle cx="186" cy="226" r="8"/>
-      <circle cx="212" cy="226" r="8"/>
+    <g fill="#FFB8D3">
+      <path d="M148 140 L152 118 Q153 110 160 114 L192 138 Z"/>
+      <path d="M364 140 L360 118 Q359 110 352 114 L320 138 Z"/>
     </g>
-
-    <!-- and the pointer reaching into it from here -->
-    <path d="M300 268 L300 352 L320 334 L334 364 L352 356 L338 326 L364 324 Z" fill="#FFD66E" stroke="#4B1D3F" stroke-width="10"/>
-
-    <!-- blush, so the screen is also a face -->
-    <g fill="#FF4D8D" opacity="0.55">
-      <ellipse cx="110" cy="340" rx="12" ry="8"/>
-      <ellipse cx="402" cy="340" rx="12" ry="8"/>
+    <g fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14"><rect x="100" y="140" width="312" height="206" rx="46"/></g>
+    <circle cx="386" cy="330" r="6" fill="#B9F0D0" stroke="#4B1D3F" stroke-width="4"/>
+    <rect x="124" y="162" width="264" height="158" rx="28" fill="#2A2458" stroke="#4B1D3F" stroke-width="11"/>
+    <g fill="none" stroke="#FFB8D3" stroke-width="16">
+      <path d="M190 204 v6 a15 15 0 0 0 30 0 v-6"/>
+      <path d="M292 204 v6 a15 15 0 0 0 30 0 v-6"/>
+      <path d="M232 246 q12 14 24 0 q12 14 24 0"/>
     </g>
+    <g fill="#FF4D8D" opacity="0.75"><ellipse cx="166" cy="254" rx="15" ry="8.7"/><ellipse cx="346" cy="254" rx="15" ry="8.7"/></g>
+    <path transform="translate(318 262) scale(0.55)" d="M0 0 L0 84 L20 66 L34 96 L52 88 L38 58 L64 56 Z" fill="#FFD66E" stroke="#4B1D3F" stroke-width="14.545454545454545" stroke-linejoin="round"/>
+  </g></g>
   </g>
-
-  <!-- sparkle -->
-  <path d="M430 34 Q436 70 472 76 Q436 82 430 118 Q424 82 388 76 Q424 70 430 34Z" fill="#FFD66E" stroke="#4B1D3F" stroke-width="8" stroke-linejoin="round"/>
+  <g stroke="#4B1D3F" stroke-linejoin="round">
+    <path d="M436 62 Q441 94 472 99 Q441 104 436 136 Q431 104 400 99 Q431 94 436 62Z" fill="#FFD66E" stroke-width="8"/>
+    <path d="M434 462 C410 446 403 433 406 423 C409 412 423 409 430 418 L434 424 L438 418 C445 409 459 412 462 423 C465 433 458 446 434 462Z" fill="#FF6FA6" stroke-width="8"/>
+    <path d="M70 400 Q74 420 94 424 Q74 428 70 448 Q66 428 46 424 Q66 420 70 400Z" fill="#FFD66E" stroke-width="7"/>
+  </g>
 </svg>

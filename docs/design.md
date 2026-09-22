@@ -106,11 +106,20 @@ face: UwU eyes, `w` mouth, blush.
   light screen `#FFB8D3`, pastel props, a white die-cut edge. The colors are
   fixed artwork and stay the same in dark mode; the white edge keeps the
   outlines readable on dark backgrounds.
-- **App icon.** A **night-blue tile** with a pink monitor with cat ears on it,
-  as big as the tile allows. Night blue, so it isn't mistaken for UwUSSH's
-  plum tile or UwUMail's pastel one in a taskbar at 16–24 px. Regenerate
-  platform icons with `pnpm tauri icon ../../brand/uwurdp-app-icon.svg` in
-  `apps/desktop`.
+- **App icon** (website, GitHub, macOS Dock). Built like UwUMail's and
+  UwUSSH's: Nyu as a pink monitor on a stand with cat ears, slightly tilted on
+  a pastel tile with two sparkles and a heart. The tile is **sky blue**
+  (UwUMail's is pink, UwUSSH's lavender); the night-blue screen shows the UwU
+  face and a yellow mouse pointer.
+- **Taskbar icon.** On the Windows taskbar, in the setup and in Linux menus
+  Nyu stands alone: upright, no tile, white die-cut edge. The monitor on its
+  stand shows a window from another computer with the pointer reaching into
+  it, so it reads as remote desktop, not as a terminal; the ears and blush
+  say Nyu (`brand/uwurdp-taskbar-icon.svg`). At 16 and 24 px a simplified cut
+  takes over (`uwurdp-taskbar-icon-small.svg`). `node scripts/icons.mjs`
+  regenerates all desktop icons from these three.
+- **The face.** Wherever Nyu has one, it's UwU: two U eyes and a **round `w`**
+  (two soft arcs, never a zigzag).
 - **Sources** in `brand/` (icon, symbol, mono symbol) and
   `apps/desktop/src/components/nyu/` (React).
 

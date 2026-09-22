@@ -108,7 +108,7 @@ const EYES: Record<NyuMood, ReactNode> = {
   ),
 };
 
-const W_MOUTH = <path d="M112 170 L120 182 L128 170 L136 182 L144 170" {...line} />;
+const W_MOUTH = <path d="M112 170 q8 13 16 0 q8 13 16 0" {...line} />;
 
 const MOUTHS: Record<NyuMood, ReactNode> = {
   uwu: W_MOUTH,

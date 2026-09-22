@@ -5,8 +5,8 @@
 <h1 align="center">UwURDP</h1>
 
 <p align="center">
-  The SSH client I build for myself, because every other one annoyed me. (◕‿◕✿)<br/>
-  SSH · SFTP · Vault · Sync · Windows, macOS and Linux, beta
+  The remote desktop client I build for myself, because every other one annoyed me. (◕‿◕✿)<br/>
+  RDP · RDCMan import · Vault · Sync · Windows, macOS and Linux, first beta
 </p>
 
 <p align="center">
@@ -21,11 +21,14 @@
 
 ## Why this exists
 
-Every SSH client I tried annoyed me in one way or another. The old ones are
-powerful but look like 2004 and forget everything the moment you switch
-machines. The pretty ones sync your whole host list, keys included, through
-somebody else's cloud, usually behind a subscription. So I started building my
-own, the way I want it, with a sync server that runs on my own box.
+Every remote desktop client I tried annoyed me in one way or another.
+Remote Desktop Connection Manager does exactly what I want — a tree of
+servers, a login per group, thumbnails of everything that's open — but it looks
+like 2008, lives in one `.rdg` file on one machine, and Microsoft only barely
+keeps it alive. mstsc is fine for one server and useless for sixty. The
+modern ones want an account, a subscription, or both, and sync your server
+list, passwords included, through somebody else's cloud. So I started building
+my own, the way I want it, with a sync server that runs on my own box.
 
 - **Just for fun.** No company, no team, no schedule, no promises. I work on it
   when I have time and feel like it, so don't expect steady development, and
@@ -38,70 +41,71 @@ own, the way I want it, with a sync server that runs on my own box.
 - **No support.** Issues and pull requests are okay, but I might answer late or
   not at all, and I mostly build what I need myself.
 
-This is the sibling of [UwUMail](https://github.com/MinifyX/UwUMail-Client), and
-it shares its design system, its tooling and its cat.
+UwURDP is a fork of my SSH client [UwUSSH](https://github.com/MinifyX/UwUSSH-Client):
+same vault, same sync, same installer, same cat — with an RDP engine where the
+terminal used to be. It syncs through the same
+[UwUSSH server](https://github.com/MinifyX/UwUSSH-Server).
 
 ## What it is
 
-UwURDP is an open-source SSH client for people who have more hosts than they
-can remember and more than one machine to reach them from. This is where it is
-headed; the status below says what already works today.
+UwURDP is an open-source RDP client for people who look after more Windows
+machines than they can remember, from more than one computer. Think RDCMan's
+density with a calmer face and a sync server that is yours.
 
-- **Your hosts, your keys, your server.** The sync server is
-  [self-hosted](#the-sync-server) and gets only ciphertext. Host names, keys and
-  passwords are encrypted on your machine before they ever leave it, so the
-  server can relay them without being able to read them.
-- **Keys and logins live in the vault.** Generate or import a key, add the
-  passphrase once, assign it to as many hosts as you like. Unlock the vault and
-  everything is there, on every device, without copying key files around.
-- **It imports your old setup.** PuTTY and KiTTY sessions straight from the
-  registry, `~/.ssh/config`, Termius, WinSCP, mRemoteNG and MobaXterm exports.
-  Nobody retypes 80 hosts.
-- **Calm, dense UI.** A quiet host tree, tabs and splits, a command palette on
-  `Ctrl+K`, and an inspector you can fold away when you just want a terminal.
-- **Everything a session needs.** Agent auth, ProxyJump chains, local, remote
-  and dynamic port forwarding, an SFTP browser, snippets and broadcast input.
+- **Groups and logins like RDCMan.** Each host has its own login, or takes its
+  group's — "inherit from parent", one level deep. Change a password once, and
+  forty servers use the new one.
+- **Everything open at a glance.** Each desktop gets a tab. The overview shows
+  all open sessions as live thumbnails, or one whole group with a connect
+  button on the servers that aren't open yet. **Connect all** does what it
+  says.
+- **It imports your old setup.** RDCMan `.rdg` files — groups, logins,
+  inherited settings, and the passwords too, if you're on the Windows account
+  that saved them — and mstsc `.rdp` files. Nobody retypes 80 servers.
+- **Your hosts, your passwords, your server.** Passwords live in an encrypted
+  vault. Sync is end-to-end encrypted: the server relays ciphertext it cannot
+  read.
+- **Certificates checked like SSH host keys.** First contact shows the
+  fingerprint and asks; a changed certificate blocks the connection with a
+  plain warning. Nothing is sent to a server before its certificate checks
+  out.
 - **Private by default.** No telemetry, no account with me, no subscription.
-  The vault auto-locks, and key material never leaves the Rust core.
-- **Playful.** Nyu, the terminal cat, keeps you company. Prefer it plain?
-  Settings → Tone → Neutral. Security warnings are never playful, in either
-  tone.
+  Passwords never reach the web page the interface runs in.
+- **Playful.** Nyu, the cat, now lives in a monitor. Security warnings are
+  never playful.
 
-> **Status: beta.** [Betas are out for Windows, macOS and Linux](https://github.com/MinifyX/UwURDP-Client/releases),
-> each with the same installer with Nyu in it, and signed automatic updates.
-> Splits, port forwarding, agent login and ProxyJump are still to come. It is a
-> beta: expect rough edges.
+> **Status: first beta.** [0.1.0-beta.1](https://github.com/MinifyX/UwURDP-Client/releases)
+> is out for Windows, macOS and Linux, with the installer with Nyu in it and
+> signed automatic updates. I use it every day on Windows; the macOS and Linux
+> builds come out of CI and haven't been tried by hand yet. It is a beta:
+> expect rough edges.
 >
-> **What works.** SSH with a password or a key — OpenSSH, PEM and PuTTY `.ppk` —
-> with host keys checked on first contact and every time after, in tabs, on a
-> terminal path measured at 41–46 MiB/s ([the spike](docs/m0-spike.md)).
+> **What works.**
 >
-> - Hosts live in two workspaces, **Private and Business**, in groups you sort by
->   drag and drop, each with a little icon for the system the server runs
->   (Ubuntu, Debian, Fedora, Windows, Cisco and friends, detected on connect).
-> - Passwords and keys can live in an **encrypted vault**. Unlock it once, or let
->   your user account open it on its own. When `sudo` asks for the password
->   in the terminal, one click types it.
-> - A **file browser**: your computer on the left, the server on the right, over
->   SFTP or an SMB share, with drag and drop both ways and a root mode through
->   `sudo` that starts at `/`.
-> - **UwUKeygen**, a PuTTYgen with Nyu: RSA, Ed25519, ECDSA, OpenSSH, PuTTY and PEM
->   output, randomness from chasing a laser pointer. Built into the host form, and
->   as its own small app the installer can add.
-> - Keyword highlighting in the terminal, Ctrl+mouse wheel for the text size,
->   and an export of everything into one file, sealed with a password when it
->   carries secrets, that UwURDP reads back in.
-> - Imports from Termius (its local database, since Termius has no export —
->   [how](docs/architecture.md#termius-which-has-no-export)), PuTTY and KiTTY
->   from the registry or from a portable KiTTY's folder and `.reg` exports, and
->   `~/.ssh/config` with its `Include`s.
+> - RDP with TLS and NLA (CredSSP with NTLM), on [IronRDP](https://github.com/Devolutions/IronRDP).
+>   The desktop follows the tab's size, or stays at a fixed size, or goes full
+>   screen with an mstsc-like connection bar; a desktop that doesn't fit
+>   scales down or scrolls.
+> - The keyboard works by key position, so the server's keyboard layout
+>   applies, just like in mstsc. Ctrl+Alt+End sends Ctrl+Alt+Del.
+> - Clipboard text both ways, and sound from the server played here.
+> - Tabs, several to the same host too; a dropped connection keeps its tab with
+>   the last picture and reconnects once on its own.
+> - Two workspaces, **Private and Business**, groups sorted by drag and drop,
+>   and a group login set with a right-click.
+> - Import from RDCMan (`.rdg` 2.2 to 2.93, including credential profiles and
+>   the files RDCMan had open) and from `.rdp` files, and an export of
+>   everything into one `.uwurdp` file, sealed with a password when it carries
+>   passwords.
 > - **Sync** through a [UwUSSH server](https://github.com/MinifyX/UwUSSH-Server)
->   of your own: hosts, keys and passwords end-to-end encrypted, a recovery kit
->   shown once, a new device paired by three words, and revoking one with the
->   master password.
+>   of your own: hosts, logins, passwords and trusted certificates end-to-end
+>   encrypted, a recovery kit shown once, a new device paired by three words.
 >
-> Splits, agent login and ProxyJump come next; the [roadmap](docs/roadmap.md) has
-> the order.
+> **What doesn't, yet.** RD Gateway (the settings are kept and imported, but
+> connecting through one says "not supported yet"), the console/admin session,
+> Kerberos, drive, printer and smart card redirection, several monitors,
+> copying files through the clipboard. The [roadmap](docs/roadmap.md) has the
+> order.
 
 ## Install
 
@@ -112,16 +116,14 @@ Linux (x86_64 and arm64).
    download the file for your system from the newest one:
    `UwURDP-windows-x64-setup.exe` (`UwURDP-windows-arm64-setup.exe` on ARM),
    `UwURDP-macos-universal.dmg`, or on Linux `UwURDP-linux-x64.deb` /
-   `.rpm` (`…-arm64…` on ARM), `yay -S uwurdp-bin` on Arch, or the
-   `…-portable.tar.gz` to just unpack and run.
+   `.rpm` (`…-arm64…` on ARM), or the `…-portable.tar.gz` to just unpack and
+   run. An Arch package (`uwurdp-bin`) is planned.
 2. Run it. Neither Windows nor macOS knows the setup, because it isn't signed
    with a paid certificate: on Windows **More info → Run anyway**, on macOS
    **System Settings → Privacy & Security → Open Anyway**.
-3. Click **Install**. No admin prompt: it installs for your user only, brings
-   UwUKeygen along unless you untick it under Options, and keeps itself up to
-   date. The Linux packages update themselves too, asking for the
-   administrator password; the Arch package updates with pacman, the portable
-   folder not at all.
+3. Click **Install**. No admin prompt: it installs for your user only and keeps
+   itself up to date. The Linux packages update themselves too, asking for
+   the administrator password; the portable folder doesn't.
 
 The [install guide](docs/install.md) has the details: checking the download,
 updates, uninstalling, where your data lives, and what to do when something
@@ -129,13 +131,20 @@ goes wrong. [Auf Deutsch](docs/install.md#uwurdp-installieren).
 
 ## The sync server
 
-The server is a separate repo, [UwUSSH-Server](https://github.com/MinifyX/UwUSSH-Server):
-one Rust binary, one Docker image, one SQLite file, its own TLS certificate
-whose fingerprint each device pins like an SSH host key. It installs with one
-command and prints a setup code; paste that into **Settings → Sync → Connect a
-server**, and UwURDP shows the recovery kit once. Another device joins with
-the code **Add a device** shows — three words over SPAKE2, the master password
-typed on each device and never sent.
+UwURDP doesn't have a server of its own. It speaks the wire protocol of
+[UwUSSH-Server](https://github.com/MinifyX/UwUSSH-Server) unchanged: one Rust
+binary, one Docker image, one SQLite file, its own TLS certificate whose
+fingerprint each device pins. Already running one for UwUSSH? Give UwURDP an
+account of its own on it:
+
+```bash
+docker compose exec uwussh uwussh-server invite
+```
+
+That prints a new `uwu1_…` setup code. Paste it into **Settings → Sync →
+Connect a server**, and UwURDP shows the recovery kit once. Another device
+joins with the code **Add a device** shows — three words over SPAKE2, the
+master password typed on each device and never sent.
 
 The server only ever holds ciphertext, and without the account key from the
 recovery kit even its copy of the wrapped vault key is worth nothing. And if
@@ -144,23 +153,22 @@ not a downgrade.
 
 ## Project layout
 
-| Path                   | What lives there                                                        |
-| ---------------------- | ----------------------------------------------------------------------- |
-| `apps/desktop`         | The Tauri 2 app (React UI + Rust shell)                                 |
-| `apps/keygen`          | UwUKeygen, the standalone key generator                                 |
-| `apps/setup`           | The installer, updater and uninstaller, for all three systems           |
-| `apps/desktop/e2e`     | End-to-end run against a real SSH server                                |
-| `crates/uwurdp-core`   | Session engine: SSH, SFTP, local shells, flow control, system detection |
-| `crates/uwurdp-store`  | SQLite: hosts, groups, keys, trusted host keys, export files            |
-| `crates/uwurdp-vault`  | Key derivation, record encryption                                       |
-| `crates/uwurdp-keygen` | Key generation: RSA, Ed25519, ECDSA; OpenSSH, PuTTY and PEM output      |
-| `crates/uwurdp-sync`   | Sync client: clocks, outbox, merging                                    |
-| `crates/uwurdp-import` | PuTTY, KiTTY, `ssh_config`, Termius                                     |
-| `crates/uwurdp-proto`  | Shared types between client and server                                  |
-| `brand/`               | Nyu: the UwURDP and UwUKeygen icons, symbol, mono symbol                |
-| `docs/`                | Vision, architecture, design, roadmap                                   |
-| `release-notes/`       | What's new, per version                                                 |
-| `scripts/`             | Building the setup, releasing                                           |
+| Path                   | What lives there                                                          |
+| ---------------------- | ------------------------------------------------------------------------- |
+| `apps/desktop`         | The Tauri 2 app (React UI + Rust shell)                                   |
+| `apps/desktop/e2e`     | End-to-end run of the real app against a toy RDP server and a sync server |
+| `apps/setup`           | The installer, updater and uninstaller, for all three systems             |
+| `crates/uwurdp-core`   | Session engine: IronRDP, certificates, frames, input, clipboard, sound    |
+| `crates/uwurdp-import` | RDCMan `.rdg` and `RDCMan.settings`, mstsc `.rdp`, DPAPI                  |
+| `crates/uwurdp-store`  | SQLite: hosts, groups, logins, trusted certificates, export files         |
+| `crates/uwurdp-vault`  | Key derivation, record encryption                                         |
+| `crates/uwurdp-sync`   | Sync client: clocks, outbox, merging, pairing                             |
+| `crates/uwurdp-proto`  | Shared types between client and server                                    |
+| `brand/`               | Nyu: the UwURDP icon, symbol, mono symbol                                 |
+| `docs/`                | Vision, architecture, design, roadmap, install guide                      |
+| `release-notes/`       | What's new, per version                                                   |
+| `scripts/`             | Building the setup, releasing                                             |
+| `packaging/aur`        | The Arch package, for when it exists                                      |
 
 ## Development
 
@@ -171,25 +179,28 @@ Requirements:
 - Platform prerequisites for Tauri: see
   [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/)
   (Windows: Visual Studio C++ Build Tools and WebView2; Linux:
-  `libwebkit2gtk-4.1-dev` and friends, plus `libdbus-1-dev`)
+  `libwebkit2gtk-4.1-dev` and friends, plus `libdbus-1-dev` and
+  `libasound2-dev` for sound)
 
 ```bash
 pnpm install
 pnpm tauri dev
 ```
 
-No server at hand? A toy SSH server for trying things out — `127.0.0.1:2222`,
-user `uwu`, password `nyu`:
+No Windows server at hand? A toy RDP server for trying things out —
+`127.0.0.1:3390`, user `uwu`, password `nyu`, NLA, a fresh self-signed
+certificate on every start. It paints a pink gradient, a square follows the
+mouse, clicks leave dots and keys shift the colours:
 
 ```bash
-cargo run -p uwurdp-core --example dev_sshd
+cargo run -p uwurdp-core --example dev_rdpd
 ```
 
 Checks:
 
 ```bash
 pnpm typecheck && pnpm lint
-cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 node apps/desktop/e2e/run.mjs     # end to end, Windows (phase E needs ../UwUSSH-Server built)
 ```
 
@@ -207,13 +218,11 @@ the steps.
 ## Documentation
 
 - [Install guide](docs/install.md) — installing, updating, uninstalling, in English and German
-- [Konzept](KONZEPT.md) — the full concept, in German
+- [Konzept](KONZEPT.md) — the concept, in German
 - [Vision](docs/vision.md) — what I want UwURDP to be and what it will never do
 - [Architecture](docs/architecture.md) — how the pieces fit together
-- [M0 spike](docs/m0-spike.md) — the throughput measurement everything else waits on
 - [Design](docs/design.md) — colors, type, Nyu, tone of voice
 - [Roadmap](docs/roadmap.md) — my wish list, without dates
-- [Security review](docs/security-review-2026-09.md) — what was checked before each beta, and fixed
 
 ## License
 

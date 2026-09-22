@@ -26,14 +26,6 @@ id_rsa*
 id_ed25519*
 id_ecdsa*
 
-# Real host data: registry dumps, configs and exports used while testing
-# importers. Anonymised fixtures go in crates/uwurdp-import/tests/fixtures/.
-*.reg
-known_hosts
-ssh_config
-sessions-export.*
-termius-export.*
-
 # Local vault and session database
 *.db
 *.db-shm

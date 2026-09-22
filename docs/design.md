@@ -1,8 +1,10 @@
 # Design
 
 Clean, bright, soft — with a wink. Same design system as
+[UwUSSH](https://github.com/MinifyX/UwUSSH-Client) and
 [UwUMail](https://github.com/MinifyX/UwUMail-Client), same cat, one confident
-bubblegum pink. The terminal is the one place that stays a terminal.
+bubblegum pink. The remote desktop is the one place that belongs to someone
+else: UwURDP frames it and otherwise keeps out of its way.
 
 ## Color
 
@@ -26,177 +28,147 @@ Tokens come from UwUMail unchanged, including the `--uwu-*` naming, and live in
 therefore use `#e11d74` (4.5:1, WCAG AA). The brighter brand pink stays for
 everything that is not small text on a pink fill.
 
-Connection state uses semantic color, separate from the brand: reachable is
-mint, unreachable is muted grey, and a failed host key is amber — never pink,
+Connection state uses semantic color, separate from the brand: online is mint,
+disconnected is muted grey, and a certificate problem is amber — never pink,
 because pink means "selected" everywhere else.
 
-## Terminal themes
+## The desktop is always dark
 
-New compared to UwUMail, and the one part that doesn't follow the UwU look. The
-terminal gets its own token set mapping the 16 ANSI colors, because a terminal
-that fights the program's own colors is a broken terminal.
+Whatever the app's theme, the area a remote desktop sits in is dark: the
+letterbox around a scaled desktop, the space a smaller desktop leaves, the
+dimmed last picture of a disconnected session, full screen. A light frame
+around a Windows desktop glares, and the desktop's own colours are the
+server's business — UwURDP never tints, filters or rounds them.
 
-- **Nyu** (default) — the 16 ANSI colors translated into the UwU palette, dark
-  ground, pink cursor.
-- **Classics** — Solarized, Gruvbox, Campbell, shipped as-is and not
-  "improved".
-- Font: **JetBrains Mono**, bundled. Size, line height, cursor shape, bell and
-  scrollback are per terminal profile, assignable per host.
+The thumbnails in the overview follow the same rule: dark tiles, the desktop
+as it is, the host name and status on the card underneath.
 
 ## Type
 
 - **Manrope** (variable, bundled, no network) for the interface.
+- **JetBrains Mono** for fingerprints, addresses and anything to compare
+  character by character.
 - Sizes: 12 caption · 13 meta · 14 body/list · 16 panel body · 18 section ·
   22 title. Weights 400, 500, 600 for titles and host names, 700 only for the
   wordmark.
 
 ## Shape and space
 
-- Radius: 10px controls, 16px cards and panes, 999px pills and badges.
+- Radius: 10px controls, 16px cards and panes, 999px pills and badges. The
+  desktop itself is never rounded.
 - Spacing on a 4px grid.
-- Shadows only for floating layers: menus, the command palette, toasts.
+- Shadows only for floating layers: menus, dialogs, the connection bar, toasts.
 
 ## Layout
 
 ```
-┌────────────┬──────────────────────────────────┬──────────┐
-│ Sidebar    │ Tab bar                          │ Inspector│
-│            ├──────────────────────────────────┤          │
-│ Search     │                                  │ Host     │
-│ ▸ Homelab  │      Terminal / SFTP             │ Forwards │
-│   ● prox-1 │                                  │ Snippets │
-│ ▸ Hetzner  │                                  │          │
-└────────────┴──────────────────────────────────┴──────────┘
+┌────────────┬──────────────────────────────────────────────┐
+│ Sidebar    │ Tab bar  [Overview] [dc-01] [sql-02] [+]     │
+│            ├──────────────────────────────────────────────┤
+│ Search     │                                              │
+│ ▸ Kunde A  │          remote desktop (canvas)             │
+│   ● dc-01  │                                              │
+│   ○ fs-01  │                                              │
+│ ▸ Homelab  │                                              │
+└────────────┴──────────────────────────────────────────────┘
 ```
 
-- Custom title bar, no OS chrome edge. It carries its own minimize,
-  maximize/restore and close buttons at Windows' own size (46 px wide, the full
-  bar high); close turns brand pink on hover, as in the installer. The inspector
-  folds away, because full-screen terminal has to be one keystroke out.
-- Tabs sit above the terminal, one per session. The active tab has a pink top
-  edge and the terminal's background, a status dot says connecting (pulsing
-  pink), online (mint) or ended (grey), and a second tab to the same host gets a
-  small number.
+- Custom title bar, no OS chrome edge, with its own minimize, maximize/restore
+  and close buttons at Windows' own size; close turns brand pink on hover, as in
+  the installer.
 - The sidebar has two workspaces, **Private** and **Business** (renamable), as
-  pills at the top with a count each — like UwUMail's accounts. Groups fold,
-  and hosts and groups move by dragging: onto another row to reorder, onto a
-  group to file, onto the other workspace's pill to move across. Dragging uses
-  pointer events, not HTML5 drag and drop, which Tauri's file drop swallows on
-  Windows.
-- Each host row has an icon for the system the server runs, with the status dot
-  on its corner, and quick actions (files, edit) on hover.
-- Files open in their own tab: this computer on the left, the server on the
-  right, a transfer bar at the bottom. Drag and drop works between the panes,
-  into folders, and from Explorer.
-- **Reconnect is a banner, never a modal.** A modal over a running terminal is
-  a UX bug, not a safety feature.
-- Keyboard-first: everything reachable without the mouse, visible focus rings,
-  command palette on `Ctrl+K`.
+  pills with a count each. Groups fold; hosts and groups move by dragging.
+  Right-click a group for **Group login…**, **Connect all**, **Disconnect
+  all** and its overview.
+- **Tabs** sit above the desktop, one per session. The active tab has a pink
+  top edge, a status dot says connecting (pulsing pink), online (mint) or
+  disconnected (grey), and a second tab to the same host gets a small number.
+- The **overview** is a tab of its own: a grid of live thumbnails. A click
+  switches to the session; a host that isn't connected shows a connect button
+  in its place. With nothing open, Nyu naps.
+- **Full screen** hides everything but the desktop and an mstsc-like
+  connection bar at the top edge: host name, Ctrl+Alt+Del, leave full screen,
+  disconnect. Outside full screen the same actions, plus fit/scroll, sit in a
+  quiet toolbar above the desktop.
+- **Disconnect is a state, not a modal.** The tab keeps the last picture,
+  dimmed, with the reason and a reconnect button over it. A modal over a
+  desktop is a UX bug, not a safety feature.
+- Keyboard-first outside the desktop: everything reachable without the mouse,
+  visible focus rings. Inside the desktop, the keyboard belongs to the server.
 
 ## Nyu, the mascot
 
-Nyu is the same cat as in UwUMail — the envelope is just a **terminal window**
-now. Window chrome with three dots on top, ears poking out above it, and the
-screen is the face: UwU eyes, `w` mouth, blush.
+Nyu is the same cat as in UwUMail and UwUSSH — this time her hull is a
+**monitor on a stand**. Ears poking out above the bezel, the screen is the
+face: UwU eyes, `w` mouth, blush.
 
 - **Sticker style**, unchanged. Plum outlines `#4B1D3F`, pink body `#FF6FA6`,
   light screen `#FFB8D3`, pastel props, a white die-cut edge. The colors are
   fixed artwork and stay the same in dark mode; the white edge keeps the
   outlines readable on dark backgrounds.
-- **App icon.** Made to be told apart in a taskbar at 16–24 px, where the first
-  one (Nyu on pastel pink) looked like UwUMail's: a **dark plum tile**, and on it
-  a pink terminal window with cat ears, as big as the tile allows, with a white
-  `>_` prompt, a yellow cursor and one sparkle. Regenerate platform icons with
-  `pnpm tauri icon ../../brand/uwurdp-app-icon.svg` in `apps/desktop`.
-- **UwUKeygen's icon** is its sibling: a violet tile with a golden key whose
-  bow is a cat's head (`brand/uwukeygen-app-icon.svg`).
-- **System icons** (`OsIcon`): one small rounded tile per system — Ubuntu,
-  Debian, Fedora, Red Hat, Arch, Alpine, Windows, macOS, Cisco, MikroTik,
-  Proxmox, Raspberry Pi, Synology and more, plus a plain Linux and a plain server — each
-  in its brand colour with two little cat ears. They say "this is a Debian box"
-  without shouting a logo.
+- **App icon.** A **night-blue tile** with a pink monitor with cat ears on it,
+  as big as the tile allows. Night blue, so it isn't mistaken for UwUSSH's
+  plum tile or UwUMail's pastel one in a taskbar at 16–24 px. Regenerate
+  platform icons with `pnpm tauri icon ../../brand/uwurdp-app-icon.svg` in
+  `apps/desktop`.
 - **Sources** in `brand/` (icon, symbol, mono symbol) and
   `apps/desktop/src/components/nyu/` (React).
 
-**The installer** (`apps/setup`) is UwUMail's setup with the terminal cat: the
-same pink gradient window, Nyu waving hello, hopping while she tosses little
-terminal windows into a box with the key, cheering when it's done, and waving
-goodbye with a tear on uninstall. Its scenes share `components/nyu/` with the
-app.
+**The installer** (`apps/setup`) is UwUSSH's setup with the monitor cat: the
+same pink gradient window, Nyu waving hello, busy while installing, cheering
+when it's done, and waving goodbye on uninstall. Its scenes share
+`components/nyu/` with the app.
 
-**Scenes** (`NyuScene`, 320 × 220), for the empty states an SSH client actually
-has:
+**Scenes** (`NyuScene`, 320 × 220), for the moments an RDP client actually has:
 
-| Scene           | When                                               |
-| --------------- | -------------------------------------------------- |
-| Welcome         | First start, no hosts yet                          |
-| Import done     | After a PuTTY/KiTTY/Termius import, with the count |
-| Vault asleep    | Vault locked — Nyu naps on the key                 |
-| Nothing found   | Search with no matches                             |
-| Connection lost | Reconnect banner, Nyu waiting with a cable         |
-| All offline     | No host reachable                                  |
-| No tunnels      | Port forwarding panel with nothing running         |
-| Empty folder    | Empty SFTP directory                               |
-| Vault           | Creating or unlocking the vault — Nyu on the safe  |
-| Connecting      | A tab waiting for its connection, Nyu with a cable |
-| Files           | Transfers running, exporting                       |
-| Keys            | UwUKeygen, before a key exists                     |
-| Goodbye         | Closing with connections still open                |
+| Scene      | When                                                |
+| ---------- | --------------------------------------------------- |
+| Pick       | No tab open — pick a host                           |
+| Connecting | A tab waiting for its connection                    |
+| Load error | A connection that failed before the desktop came up |
+| Sleepy     | The overview with nothing open                      |
+| Done       | Import or export finished                           |
+| Vault      | Creating or unlocking the vault — Nyu on the safe   |
+| Welcome    | Settings → Sync before a server is connected        |
+| Keys       | The recovery kit                                    |
+| Goodbye    | Closing with sessions still open                    |
 
-**The laser pad.** UwUKeygen collects randomness where PuTTYgen shows an empty
-box: a marked area where the cursor becomes a pink laser dot and Nyu chases it —
-her eyes follow the dot, she crouches, pounces and catches it, creeps across the
-mat hop by hop after a dot that lies still, and dozes off when the mouse rests. A progress ring fills while she plays. With animations off
-she stays still and the ring still fills.
-
-**Motion.** Nyu blinks in scenes, twitches her ears on hover, and the cursor on
-her screen blinks at terminal rhythm. Settings → Appearance → Animations
-(System / On / Off) resolves to `<html data-motion="full|reduced">`; with
-`reduced`, all animation collapses to 1 ms and Nyu holds still.
-
-**Name.** Nyu only appears by name in the playful tone. The neutral tone keeps
-the pictures and says "UwURDP".
+**Motion.** Nyu blinks in scenes and twitches her ears on hover. Settings →
+Appearance → Animations (System / On / Off) resolves to
+`<html data-motion="full|reduced">`; with `reduced`, all animation collapses to
+1 ms and Nyu holds still.
 
 ## Tone of voice
 
-Playful by default: kaomoji, warm little jokes, soft animation. Settings → Tone
-→ **Neutral** replaces the words, never the layout or the colors. Every string
-lives in `locales/<lang>/neutral.json`, with the playful variant under the same
-key in `playful.json`; missing playful keys fall back to neutral.
+Warm and a little playful: kaomoji now and then, small jokes in empty states,
+soft animation. The interface speaks German and English (following the
+system, switchable under Settings → Appearance → Language); German strings are
+the source and use "du".
 
-| Situation       | Neutral                      | Playful                                                        |
-| --------------- | ---------------------------- | -------------------------------------------------------------- |
-| No hosts        | No hosts yet                 | Pretty empty in here (・_・;) Let's go get your PuTTY sessions |
-| Connected       | Connected to prox-1          | We're in! ✨                                                   |
-| Import done     | Imported 47 hosts            | Collected 47 hosts (๑˃ᴗ˂)ﻭ                                     |
-| Connection lost | Disconnected. Retrying in 5s | Whoops, gone (╥﹏╥) Trying again in 5s                         |
-| Vault locked    | Vault locked                 | Nyu's watching your keys ᶻ 𝗓 𐰁                                 |
-
-Rules for playful copy:
+Rules:
 
 1. **Information first.** The joke never replaces what happened or what to do.
 2. **Short.** One kaomoji at most, never in buttons that act on data.
 3. **Kind.** Never mock the user; the app laughs at itself.
-4. **Security is never playful.** A changed host key, a failed vault unlock, a
-   request to forward your agent: no kaomoji, no Nyu, in _both_ tones. A sad
-   face next to a possible man-in-the-middle warning destroys exactly what the
-   warning is for.
+4. **Security is never playful.** A changed certificate, a failed vault
+   unlock, a rejected login: no kaomoji, no Nyu. A cute face next to a possible
+   man-in-the-middle warning destroys exactly what the warning is for.
 
-Rule 4 is the one that's new compared to UwUMail, and it is not negotiable:
+Rule 4 is not negotiable:
 
 ```
-⚠  The host key for prox-1 changed.
+⚠  The certificate of dc-01.corp.example changed.
 
-  known   SHA256:nThbg6kX…UmcQ2p4   since 2026-03-14
-  now     SHA256:7Pq1Zx0v…Kd9Lm3s
+  known        SHA256:nThbg6kX…UmcQ2p4   since 2026-09-14
+  now          SHA256:7Pq1Zx0v…Kd9Lm3s
+  thumbprint   3F 9A 11 C2 … 7E 04
 
-This can be a rebuilt server — or a man in the middle.
+This can be a renewed certificate — or a man in the middle.
 
-              [ Accept new key ]  [ Reject ]   ← focus
+              [ Trust new certificate ]  [ Cancel ]   ← focus
 ```
 
-The first version made you type the address to override. It protected nothing
-a plain button doesn't — the warning is what protects — and it annoyed on every
-rebuilt VM, so it is two buttons now, with focus on the safe one.
-
-German strings follow the same rules and use "du".
+RDP certificates renew on their own every few months, so this dialog will be
+seen for harmless reasons. That is exactly why it stays plain: two buttons,
+focus on the safe one, the thumbprint Windows shows so it can be compared with
+the server itself.

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RDCMan schemaVersion="1">
+  <version>2.2</version>
+  <file>
+    <properties>
+      <name>Old Lab</name>
+      <expanded>True</expanded>
+      <comment />
+      <logonCredentials inherit="None">
+        <userName>rootuser</userName>
+        <domain>LEGACY</domain>
+        <password storeAsClearText="True">plaintextpw</password>
+      </logonCredentials>
+      <connectionSettings inherit="FromParent" />
+      <gatewaySettings inherit="FromParent" />
+      <remoteDesktop inherit="FromParent" />
+      <localResources inherit="FromParent" />
+      <securitySettings inherit="FromParent" />
+      <displaySettings inherit="FromParent" />
+    </properties>
+    <server>
+      <name>10.0.0.5</name>
+      <displayName>legacy-direct</displayName>
+      <comment>Server directly under the file, 2.2 flat layout</comment>
+      <logonCredentials inherit="FromParent" />
+      <connectionSettings inherit="FromParent" />
+      <gatewaySettings inherit="FromParent" />
+      <remoteDesktop inherit="FromParent" />
+      <localResources inherit="FromParent" />
+      <securitySettings inherit="FromParent" />
+      <displaySettings inherit="FromParent" />
+    </server>
+    <group>
+      <properties>
+        <name>Servers</name>
+        <expanded>True</expanded>
+        <comment />
+        <logonCredentials inherit="FromParent" />
+        <connectionSettings inherit="FromParent" />
+        <gatewaySettings inherit="FromParent" />
+        <remoteDesktop inherit="FromParent" />
+        <localResources inherit="FromParent" />
+        <securitySettings inherit="FromParent" />
+        <displaySettings inherit="FromParent" />
+      </properties>
+      <server>
+        <name>host7.example.com</name>
+        <displayName>host7</displayName>
+        <comment />
+        <logonCredentials inherit="None">
+          <userName>hostadmin</userName>
+          <domain>LEGACY</domain>
+          <password storeAsClearText="False">ElpqWilaLlp7WhVaLFo/Wiha</password>
+        </logonCredentials>
+        <connectionSettings inherit="None">
+          <connectToConsole>True</connectToConsole>
+          <port>3389</port>
+        </connectionSettings>
+        <remoteDesktop inherit="None">
+          <size>1024 x 768</size>
+          <sameSizeAsClientArea>False</sameSizeAsClientArea>
+          <fullScreen>True</fullScreen>
+          <colorDepth>16</colorDepth>
+        </remoteDesktop>
+        <localResources inherit="None">
+          <audioRedirection>1</audioRedirection>
+          <redirectClipboard>True</redirectClipboard>
+        </localResources>
+        <gatewaySettings inherit="FromParent" />
+        <securitySettings inherit="FromParent" />
+        <displaySettings inherit="FromParent" />
+      </server>
+    </group>
+  </file>
+</RDCMan>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RDCMan programVersion="2.7" schemaVersion="3">
+  <file>
+    <encryptionSettings inherit="None">
+      <certParams>
+        <certHash>A1B2C3D4E5F600112233445566778899AABBCCDD</certHash>
+        <certName>CN=RDCMan Encryption</certName>
+      </certParams>
+    </encryptionSettings>
+    <properties>
+      <name>Certified</name>
+      <comment />
+      <logonCredentials inherit="None">
+        <profileName scope="Local">Custom</profileName>
+        <userName>certuser</userName>
+        <domain>CORP</domain>
+        <password>CVppWjlaKFppWi5ad1ocWjNaNlo/Wnta</password>
+      </logonCredentials>
+    </properties>
+    <server>
+      <properties>
+        <name>secure.example.com</name>
+        <displayName>secure</displayName>
+        <comment />
+      </properties>
+      <logonCredentials inherit="FromParent" />
+    </server>
+  </file>
+</RDCMan>

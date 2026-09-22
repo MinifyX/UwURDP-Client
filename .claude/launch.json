@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "uwurdp-setup-ui",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@uwurdp/setup", "dev"],
+      "port": 1430
+    },
+    {
+      "name": "uwurdp-desktop-ui",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@uwurdp/desktop", "dev"],
+      "port": 1420
+    }
+  ]
+}

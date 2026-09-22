@@ -1,0 +1,20 @@
+[package]
+name = "uwurdp-vault"
+description = "Key derivation and record encryption for UwURDP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+uwurdp-proto.workspace = true
+
+argon2.workspace = true
+chacha20poly1305.workspace = true
+rand.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+hkdf = "0.13"
+sha2 = "0.11"

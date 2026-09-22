@@ -1,0 +1,30 @@
+# Maintainer: MinifyX <https://github.com/MinifyX>
+#
+# Written by scripts/aur.mjs from packaging/aur/uwurdp-bin/PKGBUILD.in in
+# https://github.com/MinifyX/UwURDP-Client for each release; edit the template
+# there, not this file. It repacks the release's .deb, like other Tauri -bin
+# packages. The app doesn't update itself here: pacman does.
+
+pkgname=uwurdp-bin
+_pkgname=uwurdp
+pkgver=@PKGVER@
+_version=@VERSION@
+pkgrel=1
+pkgdesc='Remote desktop client with self-hosted encrypted sync'
+arch=('x86_64' 'aarch64')
+url='https://github.com/MinifyX/UwURDP-Client'
+license=('GPL-3.0-only')
+depends=('webkit2gtk-4.1' 'gtk3' 'alsa-lib')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip' '!debug')
+source_x86_64=("$pkgname-$pkgver-x86_64.deb::$url/releases/download/v$_version/UwURDP-linux-x64.deb")
+source_aarch64=("$pkgname-$pkgver-aarch64.deb::$url/releases/download/v$_version/UwURDP-linux-arm64.deb")
+sha256sums_x86_64=('@SHA256_X86_64@')
+sha256sums_aarch64=('@SHA256_AARCH64@')
+
+package() {
+  # makepkg has unpacked the .deb; the files are in its data archive.
+  bsdtar -xf data.tar.* -C "$pkgdir"
+  chmod -R u=rwX,go=rX "$pkgdir/usr"
+}

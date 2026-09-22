@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+target/
+*.tsbuildinfo
+apps/*/src-tauri/gen/schemas/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Keys, certificates and passwords never belong in this public repository
+*.key
+*.pem
+*.ppk
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.password
+*.secret
+id_rsa*
+id_ed25519*
+id_ecdsa*
+
+# Real host data: registry dumps, configs and exports used while testing
+# importers. Anonymised fixtures go in crates/uwurdp-import/tests/fixtures/.
+*.reg
+known_hosts
+ssh_config
+sessions-export.*
+termius-export.*
+
+# Local vault and session database
+*.db
+*.db-shm
+*.db-wal
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Private security-test notes (repro steps, PoCs) — never commit
+security-test-notes.local.md
+
+# End-to-end run artefacts: logs, throwaway database, screenshots
+apps/desktop/e2e/.run/
+apps/desktop/e2e/shots/
+
+# Agent worktrees
+.claude/worktrees/
+
+# RDCMan files and saved RDP connections carry real servers and, sometimes,
+# passwords. Anonymised fixtures go in crates/uwurdp-import/tests/fixtures/.
+*.rdg
+*.rdp
+!crates/uwurdp-import/tests/fixtures/*.rdg
+!crates/uwurdp-import/tests/fixtures/*.rdp

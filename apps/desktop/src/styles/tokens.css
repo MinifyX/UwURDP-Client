@@ -1,0 +1,69 @@
+/*
+ * UwU design tokens — taken from UwUMail unchanged, so the two apps stay one
+ * family. Components never use raw hex values; if a colour is missing, add a
+ * token rather than inlining one.
+ *
+ * Two pinks on purpose: white text on --uwu-pink reaches only 3.1:1, so filled
+ * buttons use --uwu-pink-solid (4.5:1, WCAG AA) and the brighter brand pink
+ * stays for everything that is not small text on a pink fill.
+ */
+
+:root {
+  --uwu-canvas: #f8f4f6;
+  --uwu-surface: #ffffff;
+  --uwu-elevated: #fcf8fa;
+  --uwu-ink: #1c1420;
+  --uwu-muted: #716672;
+  --uwu-hairline: #f2e8ee;
+  --uwu-border: #e9dde4;
+
+  --uwu-pink: #ff4d8d;
+  --uwu-pink-solid: #e11d74;
+  --uwu-on-pink: #ffffff;
+  --uwu-pink-ink: #a3154f;
+  --uwu-pink-tint: #ffe4ef;
+  --uwu-pink-tint-strong: #ffd0e2;
+
+  /* Connection state. Separate from the brand hue: pink means "selected"
+     everywhere else, so it must not also mean "online". */
+  --uwu-online: #17796a;
+  --uwu-offline: #b3a8b3;
+  --uwu-alarm: #8e5510;
+
+  --uwu-radius-control: 10px;
+  --uwu-radius-card: 16px;
+  --uwu-radius-pill: 999px;
+
+  --uwu-font: 'Manrope Variable', 'Manrope', 'Segoe UI', system-ui, sans-serif;
+  --uwu-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+:root[data-theme='dark'] {
+  --uwu-canvas: #141016;
+  --uwu-surface: #1c171f;
+  --uwu-elevated: #241e28;
+  --uwu-ink: #f8f2f6;
+  --uwu-muted: #b3a8b3;
+  --uwu-hairline: #2c2430;
+  --uwu-border: #3a3040;
+
+  --uwu-pink: #ff7fac;
+  --uwu-pink-solid: #ff7fac;
+  --uwu-on-pink: #1c1420;
+  --uwu-pink-ink: #ffa3c4;
+  --uwu-pink-tint: #3a1a2a;
+  --uwu-pink-tint-strong: #4d2338;
+
+  --uwu-online: #5cc7ac;
+  --uwu-offline: #6d6474;
+  --uwu-alarm: #d8a25c;
+}
+
+/* Animations off collapses every transition to nothing and holds Nyu still. */
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}

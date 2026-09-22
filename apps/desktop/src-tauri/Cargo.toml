@@ -1,0 +1,64 @@
+[package]
+name = "uwurdp-desktop"
+description = "UwURDP desktop app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "uwurdp_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+uwurdp-core.workspace = true
+uwurdp-import.workspace = true
+uwurdp-proto.workspace = true
+uwurdp-store.workspace = true
+uwurdp-sync.workspace = true
+uwurdp-vault.workspace = true
+
+base64.workspace = true
+minisign-verify = "0.2"
+parking_lot.workspace = true
+semver = "1"
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+tokio = { workspace = true, features = ["net"] }
+tracing.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_NetworkManagement_WNet",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Security_Cryptography",
+  "Win32_System_DataExchange",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_Threading",
+] }
+
+# Where there is no DPAPI: UwURDP's own seal key in the Keychain or the Secret
+# Service, sealing with the same AEAD the vault uses. See `device.rs`.
+[target.'cfg(not(windows))'.dependencies]
+chacha20poly1305.workspace = true
+keyring = { version = "3", features = ["apple-native", "sync-secret-service", "crypto-rust"] }
+rand.workspace = true
+
+# A package update is handed to the package manager from a private scratch folder.
+[target.'cfg(target_os = "linux")'.dependencies]
+tempfile = "3"

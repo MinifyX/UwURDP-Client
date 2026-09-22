@@ -1,0 +1,15 @@
+[package]
+name = "uwurdp-proto"
+description = "Shared types between the UwURDP client and its sync server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+# Payloads keep the fields they did not recognise as raw JSON, so a device
+# running an older build never drops what a newer one wrote.
+serde_json.workspace = true
+uuid.workspace = true

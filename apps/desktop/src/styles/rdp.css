@@ -1,0 +1,276 @@
+/*
+ * The remote desktop, the overview, full screen, and the parts of the host
+ * form only UwURDP has.
+ */
+
+/* ── The desktop ───────────────────────────────────────── */
+
+.session-pane[data-kind='rdp'] {
+  display: flex;
+}
+
+.session-pane[data-kind='rdp'][hidden],
+.session-pane[data-kind='overview'][hidden] {
+  display: none;
+}
+
+.rdp-view {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--uwu-radius-card);
+  /* The desktop is dark whatever the app theme, like a monitor that's off. */
+  background: #0c1030;
+}
+
+/* A desktop larger than its tab, without smart sizing: scroll it. */
+.rdp-view[data-scroll='yes'] {
+  overflow: auto;
+  place-items: start;
+}
+
+.rdp-canvas {
+  display: block;
+  outline: none;
+  image-rendering: auto;
+  touch-action: none;
+}
+
+/* A session that ended keeps its last picture, dimmed under the overlay. */
+.session-pane[data-status='ended'] .rdp-canvas,
+.session-pane[data-status='failed'] .rdp-canvas {
+  filter: grayscale(0.6) brightness(0.6);
+}
+
+.pane-overlay[data-tone='ended'] {
+  background: color-mix(in srgb, #141016 55%, transparent);
+}
+
+/* ── Full screen ───────────────────────────────────────── */
+
+.shell[data-fullscreen] .session-wrap {
+  padding: 0;
+}
+
+.shell[data-fullscreen] .rdp-view {
+  border-radius: 0;
+}
+
+/*
+ * The connection bar, like mstsc's: a slim strip at the top edge that slides
+ * in when the pointer comes near and gets out of the way otherwise.
+ */
+.fullscreen-bar {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 0 0 var(--uwu-radius-control) var(--uwu-radius-control);
+  background: var(--uwu-surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 35%);
+  transform: translate(-50%, calc(-100% + 6px));
+  transition: transform 160ms ease;
+}
+
+.fullscreen-bar:hover,
+.fullscreen-bar:focus-within {
+  transform: translate(-50%, 0);
+}
+
+.fullscreen-bar b {
+  margin-right: 6px;
+  font-size: 13px;
+}
+
+/* ── The overview ──────────────────────────────────────── */
+
+.session-pane[data-kind='overview'] {
+  overflow: auto;
+}
+
+.overview {
+  padding: 4px 2px 16px;
+}
+
+.overview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--uwu-muted);
+  font-size: 13px;
+}
+
+.thumbs {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thumb {
+  display: grid;
+  gap: 6px;
+  animation: overlay-in 220ms ease both;
+}
+
+.thumb-screen {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid var(--uwu-border);
+  border-radius: var(--uwu-radius-control);
+  background: #0c1030;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.thumb-screen:hover,
+.thumb-screen:focus-visible {
+  border-color: var(--uwu-pink);
+  transform: translateY(-1px);
+}
+
+.thumb[data-status='live'] .thumb-screen {
+  border-color: color-mix(in srgb, var(--uwu-online) 60%, var(--uwu-border));
+}
+
+.thumb-canvas {
+  display: block;
+  height: auto;
+}
+
+.thumb-idle {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 24px;
+  color: #cfc4dc;
+  font-size: 13px;
+}
+
+.thumb-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: var(--uwu-radius-pill);
+  background: rgb(0 0 0 / 60%);
+  color: #fff;
+  font-size: 12px;
+}
+
+.thumb-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.thumb-caption .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--uwu-offline);
+  flex: none;
+}
+
+.thumb-caption .dot[data-state='online'] {
+  background: var(--uwu-online);
+}
+
+.thumb-caption .dot[data-state='connecting'] {
+  background: var(--uwu-pink);
+}
+
+.thumb-text {
+  display: grid;
+  min-width: 0;
+}
+
+.thumb-text b,
+.thumb-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thumb-text small {
+  color: var(--uwu-muted);
+}
+
+/* ── Host list ─────────────────────────────────────────── */
+
+.group-login {
+  display: inline-grid;
+  place-items: center;
+  color: var(--uwu-muted);
+}
+
+/* ── Host form ─────────────────────────────────────────── */
+
+.form-section {
+  border: 1px solid var(--uwu-hairline);
+  border-radius: var(--uwu-radius-control);
+}
+
+.form-section summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.form-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.form-section[open] summary .group-chevron {
+  transform: rotate(90deg);
+}
+
+.form-section-body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 12px 12px;
+}
+
+.gateway-block {
+  display: grid;
+  gap: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--uwu-pink-tint-strong);
+}
+
+.login-inherit {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+}
+
+.field textarea {
+  font: inherit;
+  width: 100%;
+  padding: 8px 10px;
+  resize: vertical;
+  border-radius: var(--uwu-radius-control);
+  border: 1px solid var(--uwu-border);
+  background: var(--uwu-canvas);
+  color: var(--uwu-ink);
+}

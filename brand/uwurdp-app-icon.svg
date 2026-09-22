@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="UwURDP app icon: a monitor with cat ears on a little stand, showing a remote window and a mouse pointer">
+  <title>UwURDP</title>
+  <!--
+    Made to be told apart at 16–24 px in a taskbar: a deep night-blue tile
+    (UwUSSH's is dark plum, UwUMail's light pink), and a monitor on a stand as
+    big as the tile allows, in the same sticker style as Nyu — white die-cut
+    edge, plum outlines, pink body. The screen shows what the app is for: a
+    window from another computer, with a pointer reaching into it. At the
+    smallest sizes it reads as a pink screen-with-ears on a foot, the light
+    window in its middle.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1E2350"/>
+      <stop offset="1" stop-color="#0C1030"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.56" r="0.5">
+      <stop offset="0" stop-color="#FF4D8D" stop-opacity="0.5"/>
+      <stop offset="0.7" stop-color="#FF4D8D" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#FF4D8D" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#tile)"/>
+  <circle cx="256" cy="288" r="236" fill="url(#glow)"/>
+
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <!-- die-cut edge -->
+    <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="30">
+      <path d="M96 196 L128 62 L236 162 Z"/>
+      <path d="M416 196 L384 62 L276 162 Z"/>
+      <rect x="226" y="380" width="60" height="56"/>
+      <path d="M148 464 Q152 426 190 426 H322 Q360 426 364 464 Z"/>
+      <rect x="52" y="150" width="408" height="250" rx="56"/>
+    </g>
+
+    <!-- ears -->
+    <g fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14">
+      <path d="M96 196 L128 62 L236 162 Z"/>
+      <path d="M416 196 L384 62 L276 162 Z"/>
+    </g>
+    <path d="M124 168 L140 108 L192 158 Z" fill="#FFB8D3"/>
+    <path d="M388 168 L372 108 L320 158 Z" fill="#FFB8D3"/>
+
+    <!-- stand: neck behind the monitor, then the foot -->
+    <rect x="226" y="380" width="60" height="56" fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14"/>
+    <path d="M148 464 Q152 426 190 426 H322 Q360 426 364 464 Z" fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14"/>
+    <path d="M196 442 H316" stroke="#FFB8D3" stroke-width="10"/>
+
+    <!-- monitor, with its power light -->
+    <rect x="52" y="150" width="408" height="250" rx="56" fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14"/>
+    <circle cx="410" cy="378" r="9" fill="#B9F0D0" stroke="#4B1D3F" stroke-width="5"/>
+
+    <!-- screen: the remote desktop -->
+    <rect x="84" y="180" width="344" height="184" rx="30" fill="#2A2458" stroke="#4B1D3F" stroke-width="12"/>
+
+    <!-- a window over there: title bar with three dots -->
+    <rect x="132" y="206" width="236" height="132" rx="18" fill="#FFB8D3" stroke="#4B1D3F" stroke-width="10"/>
+    <path d="M137 244 H363" stroke="#4B1D3F" stroke-width="10"/>
+    <g fill="#FF4D8D">
+      <circle cx="160" cy="226" r="8"/>
+      <circle cx="186" cy="226" r="8"/>
+      <circle cx="212" cy="226" r="8"/>
+    </g>
+
+    <!-- and the pointer reaching into it from here -->
+    <path d="M300 268 L300 352 L320 334 L334 364 L352 356 L338 326 L364 324 Z" fill="#FFD66E" stroke="#4B1D3F" stroke-width="10"/>
+
+    <!-- blush, so the screen is also a face -->
+    <g fill="#FF4D8D" opacity="0.55">
+      <ellipse cx="110" cy="340" rx="12" ry="8"/>
+      <ellipse cx="402" cy="340" rx="12" ry="8"/>
+    </g>
+  </g>
+
+  <!-- sparkle -->
+  <path d="M430 34 Q436 70 472 76 Q436 82 430 118 Q424 82 388 76 Q424 70 430 34Z" fill="#FFD66E" stroke="#4B1D3F" stroke-width="8" stroke-linejoin="round"/>
+</svg>

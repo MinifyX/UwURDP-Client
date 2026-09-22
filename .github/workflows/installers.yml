@@ -1,0 +1,213 @@
+name: Installers
+
+# macOS and Linux: the checks Windows gets on Lorin's machine, and every file
+# `pnpm release` publishes except the Windows x64 setup: Windows on ARM, the
+# universal macOS disk image, and .deb, .rpm and portable folder for Linux x64
+# and arm64. Windows x64 is built there, next to the update signing key;
+# nothing here holds that key or any other secret. The files the updater runs
+# are signed by `pnpm release` after it downloads them from here.
+
+on:
+  push:
+    tags: ['v*']
+    # A branch to try the builds on before a release is tagged.
+    branches: ['ci/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+  CARGO_TERM_COLOR: always
+  # Tauri runs linuxdeploy, itself an AppImage; runners have no FUSE for it.
+  APPIMAGE_EXTRACT_AND_RUN: '1'
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Every `uses:` is pinned to a commit, with the version in the comment: a
+      # tag can be moved, and `@stable` is a branch.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # libasound2-dev: the ALSA headers cpal builds against, for the remote
+          # session's sound. The arm64 runner is native, so the same package.
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libdbus-1-dev libssl-dev libasound2-dev pkg-config patchelf file libfuse2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # tauri-build wants every app's frontendDist to exist.
+      - run: pnpm -r build
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace --no-fail-fast
+
+  installers:
+    name: Setup (${{ matrix.name }})
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One disk image for Intel and Apple silicon: both built on Apple
+          # silicon (the runner images for Intel Macs come and go) and joined.
+          - name: macos-universal
+            os: macos-latest
+            target: universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          # The oldest supported Ubuntu, so the packages and the portable
+          # folder run on anything as new or newer.
+          - name: linux-x64
+            os: ubuntu-22.04
+            target: ''
+          # Natively on ARM, same Ubuntu: nothing has to be cross-linked.
+          - name: linux-arm64
+            os: ubuntu-22.04-arm
+            target: ''
+          # Natively on ARM: ring's assembly wants clang for this target, which
+          # the ARM runner brings, and nothing has to be cross-linked.
+          - name: windows-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            rust-targets: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # libasound2-dev: the ALSA headers cpal builds against, for the remote
+          # session's sound. The arm64 runner is native, so the same package.
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libdbus-1-dev libssl-dev libasound2-dev pkg-config patchelf file libfuse2 xdg-utils
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust-targets }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.name }}
+
+      - name: Build the setup
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          if [ -n "$TARGET" ]; then
+            node scripts/build-setup.mjs --target "$TARGET"
+          else
+            node scripts/build-setup.mjs
+          fi
+          ls -la target/installers
+
+      # The setup unpacks what it carries into a scratch folder and checks the
+      # app arrived startable — the part of an install no window is needed
+      # for. The universal one runs as arm64 here, its Intel half is checked
+      # for being there. The Windows setup has no such mode and is checked by
+      # what it was built from.
+      - name: Check what the setup carries
+        if: runner.os == 'macOS' || matrix.name == 'linux-x64'
+        shell: bash
+        run: |
+          set -e
+          check="$RUNNER_TEMP/payload-check"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            setup=target/installers/UwURDP-update-macos-universal
+            chmod +x "$setup"
+            lipo "$setup" -verify_arch arm64 x86_64
+            "$setup" --check-payload "$check"
+            for app in "$check"/*.app; do
+              codesign --verify --deep --strict "$app"
+              lipo "$app"/Contents/MacOS/* -verify_arch arm64 x86_64
+              echo "signed, universal: $app"
+            done
+          else
+            setup=target/installers/UwURDP-update-linux-x64.AppImage
+            "$setup" --check-payload "$check"
+            ldd "$check/UwURDP/usr/bin/"* | grep "not found" && exit 1 || echo "every library found"
+          fi
+
+      # The .deb installs through dpkg as package `uwurdp` (what the app checks
+      # before it updates itself), the .rpm is named the same, and the portable
+      # folder has everything it needs next to it. No display here, so no start.
+      - name: Check the Linux packages
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          ARCH: ${{ matrix.name == 'linux-arm64' && 'arm64' || 'x64' }}
+        run: |
+          set -e
+          arch="$ARCH"
+          sudo apt-get install -y ./target/installers/UwURDP-linux-$arch.deb
+          test -f /var/lib/dpkg/info/uwurdp.list
+          grep -qx /usr/bin/uwurdp-desktop /var/lib/dpkg/info/uwurdp.list
+          grep -q '^Name=UwURDP$' /usr/share/applications/uwurdp.desktop
+          ldd /usr/bin/uwurdp-desktop | grep "not found" && exit 1 || echo "every library found"
+          sudo apt-get remove -y uwurdp
+          test ! -e /usr/bin/uwurdp-desktop
+
+          sudo apt-get install -y rpm
+          test "$(rpm -qp --queryformat '%{NAME}' target/installers/UwURDP-linux-$arch.rpm)" = uwurdp
+          rpm -qpl target/installers/UwURDP-linux-$arch.rpm | grep -qx /usr/bin/uwurdp-desktop
+
+          portable="$RUNNER_TEMP/portable"
+          mkdir -p "$portable"
+          tar -xzf target/installers/UwURDP-linux-$arch-portable.tar.gz -C "$portable"
+          test "$(ls "$portable")" = UwURDP
+          test -x "$portable/UwURDP/uwurdp" && test -x "$portable/UwURDP/AppRun"
+          test -f "$portable/UwURDP/README.txt"
+          LD_LIBRARY_PATH="$portable/UwURDP/usr/lib" ldd "$portable/UwURDP/usr/bin/uwurdp-desktop" \
+            | grep "not found" && exit 1 || echo "every library found"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installers-${{ matrix.name }}
+          path: target/installers/*
+          if-no-files-found: error
+          retention-days: 14

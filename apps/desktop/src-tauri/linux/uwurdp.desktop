@@ -1,0 +1,12 @@
+[Desktop Entry]
+Categories=Network;RemoteAccess;
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Exec={{exec}}
+Keywords=RDP;Remote Desktop;Remote;RDS;Windows;
+StartupWMClass={{exec}}
+Icon={{icon}}
+Name=UwURDP
+Terminal=false
+Type=Application

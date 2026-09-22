@@ -1,0 +1,6 @@
+dist/
+target/
+pnpm-lock.yaml
+brand/
+apps/*/src-tauri/gen/
+.claude/

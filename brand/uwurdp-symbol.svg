@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Nyu, the UwURDP remote-desktop cat">
+  <title>Nyu</title>
+  <!--
+    Nyu's hull for UwURDP: a monitor on a little stand. The screen is her face
+    (same place as UwUSSH's terminal, so every mood fits), the bezel carries a
+    power light where the terminal had its window dots, and the neck and foot
+    sit inside the die-cut edge like the rest of her.
+  -->
+
+  <!-- die-cut white edge -->
+  <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="20" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M62 88 L80 36 L114 88 Z"/>
+    <path d="M142 88 L176 36 L194 88 Z"/>
+    <rect x="112" y="210" width="32" height="28"/>
+    <path d="M82 246 Q84 234 100 234 H156 Q172 234 174 246 Z"/>
+    <rect x="28" y="74" width="200" height="146" rx="24"/>
+  </g>
+
+  <!-- ears -->
+  <g stroke="#4B1D3F" stroke-width="9" stroke-linejoin="round">
+    <path d="M62 88 L80 36 L114 88 Z" fill="#FF6FA6"/>
+    <path d="M142 88 L176 36 L194 88 Z" fill="#FF6FA6"/>
+  </g>
+  <path d="M76 82 L84 52 L100 82 Z" fill="#FFB8D3"/>
+  <path d="M156 82 L172 52 L180 82 Z" fill="#FFB8D3"/>
+
+  <!-- stand: neck behind the monitor, then the foot -->
+  <g fill="#FF6FA6" stroke="#4B1D3F" stroke-width="9" stroke-linejoin="round">
+    <rect x="112" y="210" width="32" height="28"/>
+    <path d="M82 246 Q84 234 100 234 H156 Q172 234 174 246 Z"/>
+  </g>
+
+  <!-- monitor -->
+  <rect x="28" y="74" width="200" height="146" rx="24" fill="#FF6FA6" stroke="#4B1D3F" stroke-width="9"/>
+
+  <!-- power light -->
+  <circle cx="204" cy="96" r="5.5" fill="#B9F0D0" stroke="#4B1D3F" stroke-width="3"/>
+
+  <!-- screen = face -->
+  <rect x="44" y="116" width="168" height="88" rx="16" fill="#FFB8D3" stroke="#4B1D3F" stroke-width="7"/>
+
+  <ellipse cx="74" cy="168" rx="12" ry="7.5" fill="#FF4D8D" opacity="0.5"/>
+  <ellipse cx="182" cy="168" rx="12" ry="7.5" fill="#FF4D8D" opacity="0.5"/>
+
+  <g fill="none" stroke="#4B1D3F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M88 142 Q102 160 116 142"/>
+    <path d="M140 142 Q154 160 168 142"/>
+    <path d="M112 170 L120 182 L128 170 L136 182 L144 170"/>
+  </g>
+</svg>

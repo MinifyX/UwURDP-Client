@@ -1,0 +1,89 @@
+name: AUR
+
+# Once a release is published (by `pnpm release`), the Arch Linux package
+# uwurdp-bin follows it: PKGBUILD and .SRCINFO from scripts/aur.mjs, with the
+# hashes from the release's SHA256SUMS.txt, pushed to the AUR. The job holds
+# the AUR key and nothing else — no signing key, a read-only token. Without
+# the key (AUR_SSH_PRIVATE_KEY, the private half of the SSH key on the AUR
+# account) it says so and does nothing; `pnpm release` has then written the
+# same files to target/aur/uwurdp-bin for pushing by hand.
+
+on:
+  release:
+    types: [published]
+  # Again for a release, e.g. once the key is in place.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, e.g. 0.2.0 or 0.3.0-beta.1'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aur
+  cancel-in-progress: false
+
+jobs:
+  aur:
+    name: Push uwurdp-bin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Look for the AUR key
+        id: key
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::notice::AUR_SSH_PRIVATE_KEY isn't set, so uwurdp-bin stays as it is. Push target/aur/uwurdp-bin from 'pnpm release' by hand, or add the secret and run this workflow again."
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Every `uses:` is pinned to a commit, with the version in the comment.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.key.outputs.push == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.key.outputs.push == 'true'
+        with:
+          node-version: 22
+
+      - name: Write PKGBUILD and .SRCINFO
+        if: steps.key.outputs.push == 'true'
+        env:
+          VERSION: ${{ github.event.release.tag_name || inputs.version }}
+        run: node scripts/aur.mjs "$VERSION" --out "$RUNNER_TEMP/uwurdp-bin"
+
+      - name: Push to the AUR
+        if: steps.key.outputs.push == 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          VERSION: ${{ github.event.release.tag_name || inputs.version }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          # The AUR's published host key, not whatever answers.
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes'
+
+          aur="$RUNNER_TEMP/aur"
+          git clone -q ssh://aur@aur.archlinux.org/uwurdp-bin.git "$aur"
+          cp "$RUNNER_TEMP/uwurdp-bin/PKGBUILD" "$RUNNER_TEMP/uwurdp-bin/.SRCINFO" "$aur/"
+          cd "$aur"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "uwurdp-bin is already at ${VERSION#v}"
+            exit 0
+          fi
+          git -c user.name='UwURDP Release' -c user.email='release@uwurdp.invalid' \
+            commit -qm "UwURDP ${VERSION#v}"
+          git push -q origin HEAD:master
+          rm -f ~/.ssh/aur

@@ -1,0 +1,29 @@
+[package]
+name = "uwurdp-import"
+version = "0.1.0-beta.1"
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/MinifyX/UwURDP-Client"
+description = "Importers for Remote Desktop Connection Manager (.rdg) and .rdp files"
+
+[dependencies]
+# .rdg and RDCMan.settings are XML; roxmltree is a small read-only tree that
+# keeps document order (which is how RDCMan encodes group nesting) without
+# pulling a schema or a writer we would never use.
+roxmltree = "0.20"
+# .rdg passwords are base64 around a DPAPI blob.
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+# Secrets are wiped on drop and never reach a serializer.
+zeroize = "1"
+
+[target.'cfg(windows)'.dependencies]
+# CryptUnprotectData for the real DPAPI implementation, and CryptProtectData in
+# the round-trip test. LocalFree releases the blob the API allocates.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+] }
+# Reading RDCMan.settings out of %LOCALAPPDATA% only needs std, but the recent
+# files it lists are expanded against the environment — winreg is not required.

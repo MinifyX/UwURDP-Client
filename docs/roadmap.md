@@ -13,7 +13,7 @@ boundary into a web page?
   certificate check before anything secret is sent, CredSSP with NTLM, the
   active session. See [architecture](architecture.md#connecting).
 - **The frame path**: the engine keeps the desktop image, merges what changed,
-  and sends straight RGBA rectangles over a binary channel at most every
+  and sends straight RGBA rectangles over a loopback WebSocket at most every
   16 ms, with at most two unacknowledged. Nothing is ever dropped — a slow page
   gets coarser updates, not missing ones. UwUSSH's terminal spike had already
   shown that flow control is not optional, so it was built in from the first
@@ -40,9 +40,9 @@ Done, in 0.1.0-beta.1:
 - **Certificates like SSH host keys**: SHA-256 fingerprint and the Windows
   thumbprint, asked on first contact, blocked when changed, synced.
 - **Tabs and the overview**: each desktop in a tab, several to one host,
-  live thumbnails of every open session or of one group, **Connect all** and
+  an overview of every open session or of one group, **Connect all** and
   **Disconnect all**.
-- **Display**: the desktop follows the tab's size, or a fixed size, or full
+- **Display**: the desktop takes the tab's size and follows the window, or a fixed size, or full
   screen with an mstsc-like connection bar; scale down or scroll.
 - **Clipboard text** both ways, **sound** played locally.
 - **Disconnect keeps the tab** with the last picture; a dropped connection

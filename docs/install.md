@@ -120,7 +120,7 @@ only your user can read, which protects less against someone with your disk.
   Ctrl+Alt+Del, **Ctrl+Alt+Break** toggles full screen, **Ctrl+Alt+Home** takes
   the keyboard back, **Ctrl+Alt+PgUp/PgDn** switch tabs. The rest are under
   Settings → Sessions.
-- **Ctrl+Shift+O** opens the overview: every open desktop as a live thumbnail.
+- **Ctrl+Shift+O** opens the overview: every open desktop at a glance.
 - **Several computers?** Settings → Sync connects a
   [UwUSSH server](https://github.com/MinifyX/UwUSSH-Server) of your own and
   keeps hosts, logins, passwords and trusted certificates the same everywhere,
@@ -311,8 +311,8 @@ gegen jemanden mit deiner Festplatte.
   Strg+Alt+Entf, **Strg+Alt+Pause** schaltet Vollbild um, **Strg+Alt+Pos1**
   holt die Tastatur zurück, **Strg+Alt+Bild↑/Bild↓** wechselt den Tab. Die
   übrigen stehen unter Einstellungen → Sitzungen.
-- **Strg+Umschalt+O** öffnet die Übersicht: jeder offene Desktop als
-  Live-Vorschau.
+- **Strg+Umschalt+O** öffnet die Übersicht: alle offenen Desktops auf
+  einen Blick.
 - **Mehrere Rechner?** Einstellungen → Sync verbindet einen eigenen
   [UwUSSH-Server](https://github.com/MinifyX/UwUSSH-Server) und hält Hosts,
   Anmeldungen, Passwörter und vertraute Zertifikate überall gleich,

@@ -165,8 +165,6 @@ export function App() {
   const disconnecting = useRef(new Set<string>());
   /** When each tab last reconnected on its own. */
   const reconnected = useRef(new Map<string, number>());
-  /** Bumped when a driver comes or goes, so the overview picks it up. */
-  const [driversVersion, setDriversVersion] = useState(0);
 
   const [hosts, setHosts] = useState<HostRecord[]>([]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
@@ -546,7 +544,6 @@ export function App() {
 
   const onDriverReady = useCallback((id: string, driver: RdpDriver) => {
     drivers.current.set(id, driver);
-    setDriversVersion((v) => v + 1);
     // Wait a tick: StrictMode disposes a first driver right away, and only the
     // one that is still there should start anything.
     window.setTimeout(() => {
@@ -556,7 +553,6 @@ export function App() {
 
   const onDriverDispose = useCallback((id: string, driver: RdpDriver) => {
     if (drivers.current.get(id) === driver) drivers.current.delete(id);
-    setDriversVersion((v) => v + 1);
   }, []);
 
   /** The open tab matching `match` that was in front last, if there is one. */
@@ -821,16 +817,11 @@ export function App() {
             .sort(
               (a, b) => (lastShown.current.get(b.id) ?? 0) - (lastShown.current.get(a.id) ?? 0),
             )[0] ?? null;
-        return { host, tab: open, driver: open ? (drivers.current.get(open.id) ?? null) : null };
+        return { host, tab: open };
       });
     }
-    return rdpTabs.map((other) => ({
-      host: other.host,
-      tab: other,
-      driver: drivers.current.get(other.id) ?? null,
-    }));
+    return rdpTabs.map((other) => ({ host: other.host, tab: other }));
   };
-  void driversVersion;
 
   // ── Keyboard ──────────────────────────────────────────────────────────────
 

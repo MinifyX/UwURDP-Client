@@ -71,8 +71,8 @@ einer RDCMan-Datei, die über Jahre gewachsen ist. Also: ich.
 - Jeder Host hat eine eigene Anmeldung oder erbt die seiner Gruppe
   (Rechtsklick → **Anmeldung der Gruppe…**).
 - Jeder Desktop in einem eigenen Tab, auch mehrere zum selben Host.
-- **Übersicht**: alle offenen Sitzungen als Live-Vorschau (alle 500 ms neu
-  gezeichnet), oder eine Gruppe inklusive nicht verbundener Hosts mit
+- **Übersicht**: alle offenen Sitzungen als Kacheln mit ihrem Zustand, ohne
+  Live-Bild, oder eine Gruppe inklusive nicht verbundener Hosts mit
   Verbinden-Knopf. **Alle verbinden** / **Alle trennen** pro Gruppe.
 - Trennen behält den Tab mit dem letzten Bild, abgedunkelt. Bricht die
   Verbindung ab, verbindet UwURDP einmal selbst neu.

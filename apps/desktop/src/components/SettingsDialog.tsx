@@ -13,13 +13,7 @@ import {
   type UpdateInfo,
   type VaultState,
 } from '../lib/session';
-import {
-  updateSettings,
-  useSettings,
-  workspaceName,
-  type StartupSetting,
-  type ThumbnailSize,
-} from '../lib/settings';
+import { updateSettings, useSettings, workspaceName, type StartupSetting } from '../lib/settings';
 import { systemName } from '../lib/platform';
 import { hostLine } from '../lib/tabs';
 import { ExportDialog } from './ExportDialog';
@@ -227,21 +221,6 @@ function Sessions() {
           label={t('Automatisch neu verbinden')}
           checked={settings.autoReconnect}
           onChange={(autoReconnect) => updateSettings({ autoReconnect })}
-        />
-      </Row>
-      <Row
-        label={t('Größe der Vorschaubilder')}
-        description={t('In der Übersicht, wie die Gruppenansicht im RDCMan.')}
-      >
-        <Segmented<ThumbnailSize>
-          label={t('Größe der Vorschaubilder')}
-          value={settings.thumbnailSize}
-          onChange={(thumbnailSize) => updateSettings({ thumbnailSize })}
-          options={[
-            { value: 'small', label: t('Klein') },
-            { value: 'medium', label: t('Mittel') },
-            { value: 'large', label: t('Groß') },
-          ]}
         />
       </Row>
       <Row

@@ -3,9 +3,15 @@
  *
  * The engine (`uwurdp-core`) sends binary messages: rectangles of RGBA
  * pixels, the desktop's size, the pointer. This draws them and sends back what
- * the keyboard and mouse do. Pixels are acknowledged message by message, so
- * the engine never has more than two in flight and coalesces everything else
- * into the next one — a slow page makes updates coarser, never late.
+ * the keyboard and mouse do, all over the session's own socket (`FrameLink`).
+ * Pixels are acknowledged message by message, so the engine never has more
+ * than two in flight and coalesces everything else into the next one — a slow
+ * page makes updates coarser, never late.
+ *
+ * The desktop keeps its resolution. Only a change of the window's size (or
+ * full screen) asks the server for a new one — switching tabs, the overview,
+ * a notice bar or the sidebar never do; smart sizing or scrollbars take up
+ * the difference.
  *
  * Message layout, little-endian, first byte the kind:
  *
@@ -18,13 +24,11 @@
 
 import { scancodeFor } from './keymap';
 import {
-  ackFrame,
   clipboardChanged,
   closeSession,
   resizeSession,
-  sendInput,
-  type DataHandler,
   type EndHandler,
+  type FrameLink,
   type InputEvent,
   type MouseButton,
   type SessionId,
@@ -42,6 +46,8 @@ export type Fit = {
 };
 
 const RESIZE_DELAY_MS = 450;
+/** How long after connecting the desktop may still take the tab's size. */
+const SETTLE_MS = 3_000;
 /** One notch of a mouse wheel, in RDP's units. */
 const WHEEL_NOTCH = 120;
 
@@ -67,10 +73,15 @@ export class RdpDriver {
   private moveFrame: number | null = null;
   private wheel = { x: 0, y: 0 };
   private lastSize: { width: number; height: number } | null = null;
-  private listeners = new Set<() => void>();
   private cleanup: (() => void)[] = [];
-  /** Frames drawn before the session id came back; acknowledged once it does. */
-  private earlyAcks = 0;
+  private link: FrameLink | null = null;
+  /** The window size the desktop was last sized for. */
+  private sizedFor: { width: number; height: number } | null = null;
+  /**
+   * Until then a fresh session may still fit itself to its tab once: the
+   * notice or dialog that was there while it connected goes away after.
+   */
+  private settleUntil = 0;
 
   constructor(container: HTMLElement, fit: Fit) {
     this.container = container;
@@ -93,16 +104,25 @@ export class RdpDriver {
     this.bindInput();
   }
 
-  /** Something about the picture changed: the overview redraws its thumbnail. */
-  onChange(listener: () => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  /** The tab's area in device pixels: the size to ask the server for. */
+  /**
+   * The tab's area in device pixels: the size to ask the server for. A tab
+   * that connects in the background is hidden and measures nothing, so it
+   * takes the size of the area every tab is shown in.
+   */
   viewport(): Viewport {
     const scale = window.devicePixelRatio || 1;
-    const rect = this.container.getBoundingClientRect();
+    let rect = this.contentRect();
+    if (rect.width === 0 || rect.height === 0) {
+      const area = this.container.closest<HTMLElement>('.session-wrap');
+      if (area) {
+        const style = getComputedStyle(area);
+        rect = {
+          width: area.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+          height:
+            area.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+        };
+      }
+    }
     return {
       width: clampSize(Math.round(rect.width * scale)),
       height: clampSize(Math.round(rect.height * scale)),
@@ -120,18 +140,25 @@ export class RdpDriver {
    * `onEnd` runs once when the session is over, however it ended.
    */
   async attach(
-    spawn: (onData: DataHandler, onEnd: EndHandler) => Promise<SessionId>,
+    spawn: (
+      onData: (bytes: Uint8Array, link: FrameLink) => void,
+      onEnd: EndHandler,
+    ) => Promise<{ session: SessionId; link: FrameLink }>,
     onEnd: (closed: Closed | null) => void,
   ): Promise<SessionId> {
     this.closed = null;
-    this.earlyAcks = 0;
     let ended = false;
-    const session = await spawn(
-      (bytes) => this.onMessage(bytes),
+    const { session, link } = await spawn(
+      (bytes, link) => {
+        // The engine starts sending before the page hears the session's id.
+        this.link = link;
+        this.onMessage(bytes);
+      },
       () => {
         if (ended) return;
         ended = true;
         this.session = null;
+        this.link = null;
         this.canvas.style.cursor = 'default';
         if (!this.disposed) onEnd(this.closed);
       },
@@ -142,10 +169,9 @@ export class RdpDriver {
     }
     if (!ended) {
       this.session = session;
-      // The engine starts sending before the page hears the session's id.
-      for (; this.earlyAcks > 0; this.earlyAcks -= 1) {
-        void ackFrame(session).catch(() => undefined);
-      }
+      this.link = link;
+      this.sizedFor = windowSize();
+      this.settleUntil = performance.now() + SETTLE_MS;
     }
     return session;
   }
@@ -155,9 +181,7 @@ export class RdpDriver {
   }
 
   send(events: InputEvent[]) {
-    if (this.session && events.length > 0) {
-      void sendInput(this.session, events).catch(() => undefined);
-    }
+    if (this.session && events.length > 0) this.link?.input(events);
   }
 
   ctrlAltDel() {
@@ -176,7 +200,7 @@ export class RdpDriver {
     if (this.session) void closeSession(this.session).catch(() => undefined);
     this.session = null;
     this.canvas.remove();
-    this.listeners.clear();
+    this.link = null;
   }
 
   /** Disconnects but keeps the last picture, for a tab that stays open. */
@@ -213,7 +237,6 @@ export class RdpDriver {
           }
           // Drawn: the engine may send the next one.
           this.ack();
-          for (const listener of this.listeners) listener();
           break;
         }
         case 2: {
@@ -269,8 +292,13 @@ export class RdpDriver {
   }
 
   private ack() {
-    if (this.session) void ackFrame(this.session).catch(() => undefined);
-    else this.earlyAcks += 1;
+    this.link?.ack();
+  }
+
+  /** The tab's area, zero while the tab is hidden. */
+  private contentRect(): { width: number; height: number } {
+    const rect = this.container.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
   }
 
   /** Puts the canvas where it belongs: 1:1, scaled down, or scrollable. */
@@ -297,9 +325,23 @@ export class RdpDriver {
     if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
     this.resizeTimer = window.setTimeout(() => {
       this.resizeTimer = null;
-      const { width, height, scale } = this.viewport();
+      if (!this.session) return;
       // Hidden tabs measure as zero: they keep the size they have.
-      if (width < 200 || height < 200 || !this.session) return;
+      const area = this.contentRect();
+      if (area.width < 100 || area.height < 100) return;
+      // Only the window itself changing size is a reason: a tab switch, the
+      // overview or a notice bar must not reshape a desktop someone works in.
+      const now = windowSize();
+      if (
+        performance.now() > this.settleUntil &&
+        this.sizedFor &&
+        this.sizedFor.width === now.width &&
+        this.sizedFor.height === now.height
+      ) {
+        return;
+      }
+      this.sizedFor = now;
+      const { width, height, scale } = this.viewport();
       if (this.lastSize && this.lastSize.width === width && this.lastSize.height === height) return;
       void resizeSession(this.session, width, height, scale).catch(() => undefined);
     }, RESIZE_DELAY_MS);
@@ -415,6 +457,10 @@ export class RdpDriver {
       this.send([{ type: 'unicode', ch: event.key, down }]);
     }
   }
+}
+
+function windowSize() {
+  return { width: window.innerWidth, height: window.innerHeight };
 }
 
 function clampSize(value: number): number {

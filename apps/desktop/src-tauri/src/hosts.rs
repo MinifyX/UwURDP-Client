@@ -11,9 +11,8 @@
 // cost worth boxing the engine's certificate details for.
 #![allow(clippy::result_large_err)]
 
-use crate::{err, AppState, ChannelSink, CommandResult};
+use crate::{err, AppState, CommandResult};
 use serde::{Deserialize, Serialize};
-use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::State;
 use uuid::Uuid;
 use uwurdp_core::{
@@ -359,9 +358,13 @@ pub(crate) async fn connect_host(
     scale: u32,
     login: Option<TypedLogin>,
     gateway_login: Option<TypedLogin>,
-    on_data: Channel<InvokeResponseBody>,
 ) -> Result<SessionId, ConnectFailure> {
     check_attempt(&attempt)?;
+    // The page opened the socket first; without it frames had nowhere to go.
+    let socket = state
+        .frames
+        .take(&attempt)
+        .ok_or_else(|| internal("the frame socket is not open"))?;
     let host = state
         .store
         .get_host(id)
@@ -458,12 +461,9 @@ pub(crate) async fn connect_host(
         gateway,
     };
 
-    match state
-        .sessions
-        .connect(&attempt, target, ChannelSink { channel: on_data })
-        .await
-    {
+    match state.sessions.connect(&attempt, target, socket.sink).await {
         Ok(session) => {
+            socket.link.bind(&state.sessions, session);
             if let Err(error) = state.store.mark_connected(host.id) {
                 tracing::warn!(%error, "could not record the connection time");
             }

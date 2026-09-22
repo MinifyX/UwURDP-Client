@@ -147,6 +147,13 @@ await page.waitFor(
     timeout: 20_000,
   },
 );
+// A notice from connecting goes away once live; the desktop then takes the tab's size.
+await page
+  .waitFor(
+    `(() => { const r = document.querySelector('.session-pane:not([hidden]) .rdp-view').getBoundingClientRect(); return ${driver}.canvas.width === Math.round(r.width * devicePixelRatio) && ${driver}.canvas.height === Math.round(r.height * devicePixelRatio); })()`,
+    { what: 'the desktop to fit its tab', timeout: 8_000 },
+  )
+  .catch(() => undefined);
 const size = await page.eval(`[${driver}.canvas.width, ${driver}.canvas.height].join('x')`);
 const viewport = await page.eval(
   `(() => { const r = document.querySelector('.session-pane:not([hidden]) .rdp-view').getBoundingClientRect(); return [Math.round(r.width * devicePixelRatio), Math.round(r.height * devicePixelRatio)].join('x'); })()`,
@@ -220,20 +227,24 @@ await page.waitFor(
 );
 check('the desktop follows a smaller window', true);
 await page.send('Emulation.clearDeviceMetricsOverride');
+await page.waitFor(
+  `(() => { const r = document.querySelector('.session-pane:not([hidden]) .rdp-view').getBoundingClientRect(); return Math.abs(${driver}.canvas.width - Math.round(r.width * devicePixelRatio)) <= 2; })()`,
+  { what: 'the desktop to follow the window back', timeout: 15_000 },
+);
 
 // ── Overview ────────────────────────────────────────────────────────────────
+const sizeBefore = await page.eval(`[${driver}.canvas.width, ${driver}.canvas.height].join('x')`);
 await page.click('.host .host-name', 'Übersicht');
-await page.waitFor(`document.querySelector('.thumb .thumb-canvas')`, { what: 'thumbnail' });
-await sleep(700);
+await page.waitFor(`document.querySelector('.thumb .thumb-screen')`, { what: 'overview tile' });
 check(
-  'the overview shows the live desktop',
-  await page.eval(`(() => {
-    const c = document.querySelector('.thumb .thumb-canvas');
-    const d = c.getContext('2d').getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data;
-    return d[3] === 255 && (d[0] + d[1] + d[2]) > 60;
-  })()`),
+  'the overview lists the session without a live picture',
+  await page.eval(
+    `!document.querySelector('.thumb canvas') && document.querySelector('.thumb').dataset.status === 'live'`,
+  ),
 );
 await page.screenshot(`${SHOTS}a5-overview.png`);
+// Longer than the resize delay: a hidden tab must not be asked to change.
+await sleep(1_200);
 await page.click('.thumb-screen');
 await page.waitFor(
   `document.querySelector('.tab[data-active="true"]')?.textContent.includes('dev-rdpd')`,
@@ -241,7 +252,14 @@ await page.waitFor(
     what: 'back to the desktop',
   },
 );
-check('a thumbnail brings its tab to the front', true);
+check('a tile brings its tab to the front', true);
+await sleep(1_200);
+const sizeAfter = await page.eval(`[${driver}.canvas.width, ${driver}.canvas.height].join('x')`);
+check(
+  'the overview and back keep the resolution',
+  sizeBefore === sizeAfter,
+  `${sizeBefore} → ${sizeAfter}`,
+);
 
 // ── Disconnect and reconnect ────────────────────────────────────────────────
 await page.click('.toolbar-button', 'Trennen');

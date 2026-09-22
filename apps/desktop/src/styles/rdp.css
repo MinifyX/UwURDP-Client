@@ -110,7 +110,8 @@
 
 .thumbs {
   display: grid;
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -126,6 +127,8 @@
   position: relative;
   display: grid;
   place-items: center;
+  width: 100%;
+  min-height: 96px;
   padding: 0;
   overflow: hidden;
   border: 2px solid var(--uwu-border);
@@ -147,11 +150,6 @@
   border-color: color-mix(in srgb, var(--uwu-online) 60%, var(--uwu-border));
 }
 
-.thumb-canvas {
-  display: block;
-  height: auto;
-}
-
 .thumb-idle {
   display: grid;
   justify-items: center;
@@ -159,6 +157,10 @@
   padding: 24px;
   color: #cfc4dc;
   font-size: 13px;
+}
+
+.thumb[data-status='live'] .thumb-idle {
+  color: var(--uwu-online);
 }
 
 .thumb-badge {

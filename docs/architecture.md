@@ -37,7 +37,7 @@ crates/uwurdp-proto   payloads and wire types shared with the server
 ```
 
 `uwurdp-core` has no idea there is a web page. The app implements its
-`FrameSink` over a Tauri IPC channel; the tests implement it over a `Vec`.
+`FrameSink` over a loopback WebSocket; the tests implement it over a `Vec`.
 
 ## The secret boundary
 
@@ -49,8 +49,8 @@ crates/uwurdp-proto   payloads and wire types shared with the server
 │                       │ │ │ Store          → SQLite               │
 │ no stored passwords   │ │ │                                       │
 └───────────────────────┘ │ └───────────────────────────────────────┘
-        ↓ connect, input, resize, ack (commands)
-        ↑ desktop pixels, pointer, closed (binary channel)
+        ↓ connect, resize (commands); input, ack (the desktop's socket)
+        ↑ desktop pixels, pointer, closed (the desktop's socket, binary)
 ```
 
 Passwords from the vault never cross that line. The page asks Rust to connect
@@ -105,7 +105,7 @@ server ──TLS──▶ session task ──▶ desktop image (RGBA) ──▶ 
                      ▲                                        │ ≤ 1 per 16 ms,
                      │ input, resize, clipboard               │ < 2 unacked
                      │                                        ▼
-page ──commands──▶ SessionManager                 IPC channel (binary) ──▶ page
+page ──socket───▶ SessionManager            WebSocket 127.0.0.1 (binary) ──▶ page
                                                    putImageData on a <canvas>
 ```
 
@@ -117,6 +117,25 @@ each. Instead the dirty region merges rectangles that overlap or nearly touch
 (when the union doesn't waste much area) and collapses into its bounding box
 when it gets busy. At most every 16 ms the task sends the _current_ pixels of
 what is dirty.
+
+### The socket
+
+Tauri's IPC is fine for commands and wrong for pixels. A channel message over
+1 KiB is an `eval` on the main thread plus a fetch through the webview's
+custom protocol, and input or acks as synchronous commands queue on that same
+main thread; a full-HD frame is 8 MB. So each desktop gets a **WebSocket on
+127.0.0.1** instead (`src-tauri/src/frames.rs`):
+
+- The app listens on a random port and makes a random 256-bit token at start;
+  the page gets both through the `frame_socket` command and the CSP allows
+  `ws://127.0.0.1:*` and nothing else.
+- Before `connect_host` the page opens a socket with the token and the
+  attempt's name. The app registers it and answers `ready`; only then does the
+  page connect, and `connect_host` takes that socket for the session.
+- App → page: the messages below as binary frames, then a close frame when
+  the session is over. Page → app: `[1]` acknowledges one `BITMAPS` message,
+  a text message is a JSON array of input events — both in order, and neither
+  touches Tauri's main thread.
 
 ### Messages
 
@@ -138,9 +157,9 @@ at 32 MiB (a full 4K frame fits); anything bigger goes as horizontal strips.
 
 ### Flow control
 
-UwUSSH learned this the hard way: `Channel::send` returns once Tauri has
-queued a message, not once the page has handled it, so without
-acknowledgements a slow page silently piles up work. UwURDP builds the same
+UwUSSH learned this the hard way: sending returns once a message is queued,
+not once the page has handled it, so without acknowledgements a slow page
+silently piles up work. UwURDP builds the same
 lesson in from the start:
 
 - The page acknowledges every `BITMAPS` message after drawing it.
@@ -170,10 +189,16 @@ lesson in from the start:
 
 ## Display
 
-- **Fit** (the default): the desktop follows the tab's size through the
-  DisplayControl virtual channel, like mstsc's dynamic resolution. Every resize
-  is a deactivation-reactivation; the page gets `DESKTOP_SIZE` and a full
-  frame. Servers without DisplayControl keep their size and the page scales.
+- **Fit** (the default): the desktop takes the tab's size when it connects
+  and follows **the window** through the DisplayControl virtual channel, like
+  mstsc's dynamic resolution. Every resize is a deactivation-reactivation; the
+  page gets `DESKTOP_SIZE` and a full frame. So only the window changing size
+  (or full screen) asks for one: switching tabs, the overview, a notice bar or
+  the sidebar never do, and a tab that connects in the background is sized
+  for the area it will be shown in. In the first seconds after connecting the
+  desktop may still fit itself once, when the notice or dialog of connecting
+  goes away. Servers without DisplayControl keep their size and the page
+  scales.
 - **Fixed** width × height, and **full screen**, with an mstsc-like connection
   bar at the top.
 - A desktop that doesn't fit the tab is **scaled down** (smart sizing, the
@@ -232,9 +257,10 @@ used in RDCMan.
 
 - Each desktop gets its own **tab**, several to one host too (a click shows an
   open one, the context menu or Ctrl+Shift+D opens another).
-- The **overview** (Ctrl+Shift+O) shows every open session as a live
-  thumbnail, redrawn every 500 ms from the tab's canvas — or one group,
-  including its hosts that aren't connected, each with a connect button.
+- The **overview** (Ctrl+Shift+O) shows every open session as a tile with
+  its state — or one group, including its hosts that aren't connected, each
+  with a connect button. No live pictures: redrawing them cost every session
+  time and they said little the name doesn't.
   **Connect all** and **Disconnect all** work on a group.
 - **Disconnecting keeps the tab**, with the last picture dimmed and a
   reconnect button. A connection that **drops** reconnects once on its own;
@@ -272,7 +298,7 @@ and they stay so the protocol stays the same.
 
 **What stays local** and never syncs: where this device stands with its server,
 the vault key sealed for this device ("remember on this device"), when a host
-was last connected, and the app's own settings (look, thumbnail size, what
+was last connected, and the app's own settings (look, what
 opens on start), which live in the web view's storage.
 
 ## Vault

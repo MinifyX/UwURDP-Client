@@ -4,7 +4,7 @@
  * Everything the UI knows about Tauri lives here.
  */
 
-import { Channel, invoke } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 
 export type SessionId = string;
 
@@ -12,30 +12,72 @@ export type DataHandler = (bytes: Uint8Array) => void;
 export type EndHandler = () => void;
 
 /**
- * Frames arrive as raw bytes. Depending on the Tauri version they land as an
- * ArrayBuffer or as a plain number array, so normalise both rather than
- * guessing — a wrong guess here shows up as a black screen with no error.
+ * A desktop's own line to the engine: a WebSocket on 127.0.0.1 (see
+ * `src-tauri/src/frames.rs`). Frames come in as binary messages; acks and
+ * input go out on it too, off Tauri's main thread and in order.
  */
-function toBytes(message: unknown): Uint8Array | null {
-  if (message instanceof ArrayBuffer) return new Uint8Array(message);
-  if (ArrayBuffer.isView(message)) {
-    return new Uint8Array(message.buffer, message.byteOffset, message.byteLength);
-  }
-  if (Array.isArray(message)) return new Uint8Array(message as number[]);
-  return null;
-}
+export type FrameLink = {
+  /** One frame message is drawn: the engine may send the next. */
+  ack(): void;
+  input(events: InputEvent[]): void;
+};
 
-function channelFor(onData: DataHandler, onEnd: EndHandler): Channel<unknown> {
-  const channel = new Channel<unknown>();
-  channel.onmessage = (message) => {
-    const bytes = toBytes(message);
-    if (!bytes) return;
-    // Real frames are never empty; an empty one is the engine saying the
-    // session is over.
-    if (bytes.length === 0) onEnd();
-    else onData(bytes);
+const ACK = new Uint8Array([1]);
+const OPEN_TIMEOUT_MS = 5_000;
+
+let endpoint: Promise<{ port: number; token: string }> | null = null;
+
+/**
+ * Opens the socket for one connect attempt and waits until the app has it.
+ * `onEnd` runs once when the app closes it after the session; `quiet()`
+ * closes it without calling `onEnd`, for an attempt that never became one.
+ */
+async function openLink(
+  attempt: string,
+  onData: DataHandler,
+  onEnd: EndHandler,
+): Promise<FrameLink & { quiet(): void }> {
+  endpoint ??= invoke<{ port: number; token: string }>('frame_socket');
+  const { port, token } = await endpoint;
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${port}/?t=${encodeURIComponent(token)}&a=${encodeURIComponent(attempt)}`,
+  );
+  socket.binaryType = 'arraybuffer';
+  let quiet = false;
+  let ready = false;
+  await new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      socket.close();
+      reject(new Error('the frame socket did not open'));
+    }, OPEN_TIMEOUT_MS);
+    socket.onmessage = (event) => {
+      if (ready) {
+        if (event.data instanceof ArrayBuffer) onData(new Uint8Array(event.data));
+        return;
+      }
+      if (event.data === 'ready') {
+        ready = true;
+        window.clearTimeout(timer);
+        resolve();
+      }
+    };
+    socket.onclose = () => {
+      window.clearTimeout(timer);
+      if (!ready) reject(new Error('the frame socket closed'));
+      else if (!quiet) onEnd();
+    };
+  });
+  const send = (data: string | Uint8Array) => {
+    if (socket.readyState === WebSocket.OPEN) socket.send(data);
   };
-  return channel;
+  return {
+    ack: () => send(ACK),
+    input: (events) => send(JSON.stringify(events)),
+    quiet: () => {
+      quiet = true;
+      socket.close();
+    },
+  };
 }
 
 // ── Sessions ────────────────────────────────────────────────────────────────
@@ -52,15 +94,6 @@ export type InputEvent =
   | { type: 'releaseAll' }
   | { type: 'ctrlAltDel' };
 
-/**
- * Deliberately not awaited by callers in a hurry, but always in order: Tauri
- * runs synchronous commands on the main thread in the order they arrive, so a
- * key-up never overtakes its key-down.
- */
-export function sendInput(id: SessionId, events: InputEvent[]): Promise<void> {
-  return invoke('rdp_input', { id, events });
-}
-
 /** The tab changed size: ask the server for a desktop of `width` × `height` device pixels. */
 export function resizeSession(
   id: SessionId,
@@ -69,11 +102,6 @@ export function resizeSession(
   scale: number,
 ): Promise<void> {
   return invoke('resize_session', { id, width, height, scale });
-}
-
-/** The page has drawn one frame message; the engine may send the next. */
-export function ackFrame(id: SessionId): Promise<void> {
-  return invoke('ack_frame', { id });
 }
 
 /** The session got the focus back: offer this computer's clipboard to the server again. */
@@ -298,26 +326,38 @@ export type Viewport = { width: number; height: number; scale: number };
  * Open a remote desktop. `attempt` names the tab that connects, so closing it
  * can cancel exactly that attempt. `login` and `gatewayLogin` are what the
  * connect dialog asked for — sent for this one call and not kept anywhere.
+ * `onData` gets the link with each message, so frames that arrive before the
+ * session's id can already be acknowledged.
  */
-export function connectHost(
+export async function connectHost(
   id: string,
   attempt: string,
   viewport: Viewport,
   login: TypedLogin | null,
   gatewayLogin: TypedLogin | null,
-  onData: DataHandler,
+  onData: (bytes: Uint8Array, link: FrameLink) => void,
   onEnd: EndHandler,
-): Promise<SessionId> {
-  return invoke<SessionId>('connect_host', {
-    id,
+): Promise<{ session: SessionId; link: FrameLink }> {
+  const link: FrameLink & { quiet(): void } = await openLink(
     attempt,
-    width: viewport.width,
-    height: viewport.height,
-    scale: viewport.scale,
-    login,
-    gatewayLogin,
-    onData: channelFor(onData, onEnd),
-  });
+    (bytes) => onData(bytes, link),
+    onEnd,
+  );
+  try {
+    const session = await invoke<SessionId>('connect_host', {
+      id,
+      attempt,
+      width: viewport.width,
+      height: viewport.height,
+      scale: viewport.scale,
+      login,
+      gatewayLogin,
+    });
+    return { session, link };
+  } catch (error) {
+    link.quiet();
+    throw error;
+  }
 }
 
 /** The user closed the tab or a dialog: stop the attempt that was waiting. */

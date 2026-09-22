@@ -22,7 +22,6 @@ export type StartupSetting = 'nothing' | 'overview' | 'hosts';
 /** Beta gets pre-releases (tags like v0.1.0-beta.1) before everyone else. */
 export type UpdateChannel = 'stable' | 'beta';
 /** How big the overview draws each desktop. */
-export type ThumbnailSize = 'small' | 'medium' | 'large';
 
 export type Settings = {
   language: LanguageSetting;
@@ -34,7 +33,6 @@ export type Settings = {
   confirmCloseWithSessions: boolean;
   /** A session that drops without being ended gets one quiet try to come back. */
   autoReconnect: boolean;
-  thumbnailSize: ThumbnailSize;
   updateChannel: UpdateChannel;
   /** Private and business hosts apart, like UwUMail's workspaces. */
   workspaces: boolean;
@@ -52,7 +50,6 @@ export const DEFAULT_SETTINGS: Settings = {
   startupHosts: [],
   confirmCloseWithSessions: true,
   autoReconnect: true,
-  thumbnailSize: 'medium',
   // Someone who installed a beta wants the next beta too.
   updateChannel: pkg.version.includes('-') ? 'beta' : 'stable',
   workspaces: true,
@@ -92,11 +89,6 @@ export function sanitize(raw: unknown): Settings {
       : [],
     confirmCloseWithSessions: bool(input.confirmCloseWithSessions, d.confirmCloseWithSessions),
     autoReconnect: bool(input.autoReconnect, d.autoReconnect),
-    thumbnailSize: oneOf(
-      input.thumbnailSize,
-      ['small', 'medium', 'large'] as const,
-      d.thumbnailSize,
-    ),
     updateChannel: oneOf(input.updateChannel, ['stable', 'beta'] as const, d.updateChannel),
     workspaces: bool(input.workspaces, d.workspaces),
     activeWorkspace: oneOf(

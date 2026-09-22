@@ -40,8 +40,8 @@ dimmed last picture of a disconnected session, full screen. A light frame
 around a Windows desktop glares, and the desktop's own colours are the
 server's business — UwURDP never tints, filters or rounds them.
 
-The thumbnails in the overview follow the same rule: dark tiles, the desktop
-as it is, the host name and status on the card underneath.
+The tiles in the overview follow the same rule: dark tiles with the state of
+the session, the host name and status on the card underneath.
 
 ## Type
 
@@ -83,7 +83,7 @@ as it is, the host name and status on the card underneath.
 - **Tabs** sit above the desktop, one per session. The active tab has a pink
   top edge, a status dot says connecting (pulsing pink), online (mint) or
   disconnected (grey), and a second tab to the same host gets a small number.
-- The **overview** is a tab of its own: a grid of live thumbnails. A click
+- The **overview** is a tab of its own: a grid of tiles, one per session. A click
   switches to the session; a host that isn't connected shows a connect button
   in its place. With nothing open, Nyu naps.
 - **Full screen** hides everything but the desktop and an mstsc-like

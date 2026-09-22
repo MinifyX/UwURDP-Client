@@ -14,6 +14,7 @@
 mod backup;
 mod device;
 mod dialogs;
+mod frames;
 mod hosts;
 mod import;
 mod sessions;
@@ -24,13 +25,14 @@ mod updates;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::Manager;
-use uwurdp_core::{FrameSink, ObservedCertificate, SessionId, SessionManager, SinkError};
+use uwurdp_core::{ObservedCertificate, SessionId, SessionManager};
 use uwurdp_store::Store;
 
 pub(crate) struct AppState {
     pub sessions: Arc<SessionManager>,
+    /// Where desktop frames, acks and input travel; see [`frames`].
+    pub frames: Arc<frames::FrameServer>,
     pub store: Arc<Store>,
     /// Certificates a server presented in the last connection attempt, per
     /// address and port. Trusting one is only possible for one in here, so a
@@ -41,27 +43,6 @@ pub(crate) struct AppState {
     pub session_hosts: Mutex<HashMap<SessionId, uuid::Uuid>>,
     pub picked_export: backup::PickedExport,
     pub pending_import: import::PendingImport,
-}
-
-/// Desktop frames on their way to the webview.
-///
-/// This is the whole Tauri-specific surface of the data path. Everything else —
-/// decoding, coalescing, flow control — is transport-agnostic in `uwurdp-core`.
-pub(crate) struct ChannelSink {
-    pub channel: Channel<InvokeResponseBody>,
-}
-
-impl FrameSink for ChannelSink {
-    fn send(&self, frame: &[u8]) -> Result<(), SinkError> {
-        self.channel
-            .send(InvokeResponseBody::Raw(frame.to_vec()))
-            .map_err(|err| SinkError::Other(err.to_string()))
-    }
-
-    /// An empty frame is the end-of-stream marker; real frames are never empty.
-    fn finish(&self) {
-        let _ = self.channel.send(InvokeResponseBody::Raw(Vec::new()));
-    }
 }
 
 pub(crate) type CommandResult<T> = Result<T, String>;
@@ -105,8 +86,11 @@ pub fn run() {
                 tracing::warn!(%error, "could not open the vault with this device's key");
             }
 
+            let sessions = Arc::new(SessionManager::new());
+            let frames = frames::FrameServer::start(sessions.clone())?;
             app.manage(AppState {
-                sessions: Arc::new(SessionManager::new()),
+                sessions,
+                frames,
                 store: Arc::new(store),
                 presented: Mutex::new(HashMap::new()),
                 session_hosts: Mutex::new(HashMap::new()),
@@ -118,9 +102,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            sessions::rdp_input,
+            sessions::frame_socket,
             sessions::resize_session,
-            sessions::ack_frame,
             sessions::clipboard_changed,
             sessions::close_session,
             sessions::set_fullscreen,

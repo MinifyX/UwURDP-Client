@@ -489,7 +489,7 @@ export function HostList(props: Props) {
               className="host"
               aria-current={activeId === 'overview'}
               onClick={() => props.onOverview(null, null)}
-              title={t('Alle offenen Sitzungen als Vorschau (Strg+Umschalt+O)')}
+              title={t('Alle offenen Sitzungen im Überblick (Strg+Umschalt+O)')}
             >
               <span className="host-icon host-glyph" aria-hidden>
                 <Icon name="grid" size={17} />

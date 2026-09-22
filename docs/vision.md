@@ -33,7 +33,7 @@ Four things it has to get right:
 
 1. **Groups and logins, the RDCMan way.** A group has a login, its hosts
    inherit it, a host can have its own. Open a whole group at once, see all of
-   it as thumbnails, jump between desktops without hunting for windows.
+   it at a glance, jump between desktops without hunting for windows.
 2. **Your hosts, your passwords, your server.** Sync is end-to-end encrypted
    and the server is yours. It relays ciphertext; it cannot read what it
    stores. Running no server at all is an equal option, not a punished one.

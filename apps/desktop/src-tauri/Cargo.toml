@@ -37,6 +37,8 @@ tracing.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

@@ -1,28 +1,18 @@
-//! What the page does with an open desktop: input, size, acknowledgements,
-//! the clipboard, closing, and full screen for the window.
+//! What the page does with an open desktop besides frames, acks and input
+//! (those travel over [`crate::frames`]): size, the clipboard, closing, and
+//! full screen for the window.
 
-use crate::{err, AppState, CommandResult};
+use crate::{err, frames::Endpoint, AppState, CommandResult};
 use tauri::{Manager, State};
-use uwurdp_core::{InputEvent, SessionId};
+use uwurdp_core::SessionId;
 
-/// Deliberately not `async`. Async commands run concurrently on the runtime,
-/// so a key-up could overtake its key-down. Synchronous commands run on the
-/// main thread in the order they were invoked, and all this does is put the
-/// events on the session's queue, so it never blocks.
+/// Where the page opens a desktop's socket.
 #[tauri::command]
-pub(crate) fn rdp_input(
-    state: State<'_, AppState>,
-    id: SessionId,
-    events: Vec<InputEvent>,
-) -> CommandResult<()> {
-    // A page sends a handful per frame; anything like this is not a keyboard.
-    if events.len() > 256 {
-        return Err("too many input events at once".into());
-    }
-    state.sessions.input(id, events).map_err(err)
+pub(crate) fn frame_socket(state: State<'_, AppState>) -> Endpoint {
+    state.frames.endpoint()
 }
 
-/// Synchronous for the same reason as [`rdp_input`].
+/// Deliberately not `async`: resizes reach the session in the order asked.
 #[tauri::command]
 pub(crate) fn resize_session(
     state: State<'_, AppState>,
@@ -40,13 +30,6 @@ pub(crate) fn resize_session(
             scale.clamp(100, 500),
         )
         .map_err(err)
-}
-
-/// The page has drawn one frame message. This is what lets the engine pause
-/// before the webview drowns.
-#[tauri::command]
-pub(crate) fn ack_frame(state: State<'_, AppState>, id: SessionId) -> CommandResult<()> {
-    state.sessions.ack(id).map_err(err)
 }
 
 #[tauri::command]

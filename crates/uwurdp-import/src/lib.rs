@@ -216,6 +216,19 @@ pub(crate) fn decode_dpapi_plaintext(raw: &[u8]) -> Secret {
     Secret::new(String::from_utf16_lossy(&units))
 }
 
+/// Split `"host:3389"` into `("host", Some(3389))`, leaving IPv6/other text as
+/// an address with no port.
+pub(crate) fn split_host_port(raw: &str) -> (String, Option<u16>) {
+    if let Some((host, port)) = raw.rsplit_once(':') {
+        if let Ok(p) = port.trim().parse::<u16>() {
+            if !host.is_empty() && !host.contains(':') {
+                return (host.trim().to_string(), Some(p));
+            }
+        }
+    }
+    (raw.trim().to_string(), None)
+}
+
 /// A named credential the app already has, used to resolve `scope="Local"`
 /// profile references in a `.rdg` file (RDCMan's own credential profiles live
 /// outside the file).

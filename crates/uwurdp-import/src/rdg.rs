@@ -18,8 +18,9 @@ use base64::Engine;
 use roxmltree::{Document, Node};
 
 use crate::{
-    Decrypt, ImportBundle, ImportError, ImportedAudio, ImportedCredential, ImportedDisplay,
-    ImportedGateway, ImportedGroup, ImportedHost, ImportedSettings, NamedCredential, Source,
+    split_host_port, Decrypt, ImportBundle, ImportError, ImportedAudio, ImportedCredential,
+    ImportedDisplay, ImportedGateway, ImportedGroup, ImportedHost, ImportedSettings,
+    NamedCredential, Source,
 };
 
 /// The default RDP port, used when neither the address nor the connection
@@ -228,25 +229,7 @@ impl<'a> Ctx<'a> {
     /// base64 DPAPI blob goes through [`Decrypt`]. Returns whether a password
     /// was present but could not be recovered.
     fn read_password(&self, node: Node) -> (Option<crate::Secret>, bool) {
-        let Some(pw) = find_child(node, "password") else {
-            return (None, false);
-        };
-        let Some(text) = pw.text().map(str::trim).filter(|t| !t.is_empty()) else {
-            return (None, false);
-        };
-        if pw.attribute("storeAsClearText") == Some("True") {
-            return (Some(crate::Secret::new(text.to_string())), false);
-        }
-        if self.cert_encrypted {
-            return (None, true);
-        }
-        match base64::engine::general_purpose::STANDARD.decode(text) {
-            Ok(blob) => match self.decrypt.decrypt(&blob) {
-                Some(secret) => (Some(secret), false),
-                None => (None, true),
-            },
-            Err(_) => (None, true),
-        }
+        read_password_static(node, self.decrypt, self.cert_encrypted)
     }
 }
 
@@ -570,19 +553,6 @@ fn inherits_from_parent(node: Node) -> bool {
 /// A `<profileName scope="Local">` reference points at the app's own profiles.
 fn profile_is_local(node: Node) -> bool {
     find_child(node, "profileName").and_then(|p| p.attribute("scope")) == Some("Local")
-}
-
-/// Split `"host:3389"` into `("host", Some(3389))`, leaving IPv6/other text as
-/// an address with no port.
-fn split_host_port(raw: &str) -> (String, Option<u16>) {
-    if let Some((host, port)) = raw.rsplit_once(':') {
-        if let Ok(p) = port.trim().parse::<u16>() {
-            if !host.is_empty() && !host.contains(':') {
-                return (host.trim().to_string(), Some(p));
-            }
-        }
-    }
-    (raw.trim().to_string(), None)
 }
 
 /// Push every child element not in `mapped` into `extras`, so a recognised but

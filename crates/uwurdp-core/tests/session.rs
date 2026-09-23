@@ -353,9 +353,11 @@ async fn the_graphics_pipeline_carries_the_whole_session() {
     let page = open(&server).await;
     full_session(&server, page).await;
     let (uncompressed, h264) = server.graphics_frames();
-    // At least: the first picture, the square, the dot, the hue, the resize.
+    // `full_session` saw every change arrive. The server folds changes that
+    // come while frames wait for acknowledgement into one, so only the first
+    // picture and the resized one are certain to be frames of their own.
     assert!(
-        uncompressed >= 5,
+        uncompressed >= 2,
         "only {uncompressed} frames through the pipeline"
     );
     assert_eq!(h264, 0, "no H.264 without OpenH264");

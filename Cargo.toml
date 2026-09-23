@@ -55,5 +55,7 @@ opt-level = 3
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+# Unwinding, not abort: a panic in one session's task must end that session,
+# not the app with every other desktop in it (see uwurdp-core's manager).
+panic = "unwind"
 strip = true

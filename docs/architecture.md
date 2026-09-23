@@ -212,9 +212,27 @@ lesson in from the start:
   changes once a second and when the window gets focus, and answers the
   server's requests. A broken clipboard is logged and swallowed, never takes
   the session down. Files through the clipboard aren't supported yet.
-- **Sound:** RDPSND, played locally through `cpal` as PCM. Opus is off. "Leave
-  it on the server" and "off" both tell the server not to redirect sound —
-  IronRDP can't send the flag for the first one yet.
+- **Sound:** RDPSND, played locally through `cpal` as PCM. Opus is off. The
+  backend is ours (`uwurdp-core/src/audio.rs`), not `ironrdp-rdpsnd-native`'s:
+  that one never starts its stream, so on Windows nothing played and every
+  wave piled up in memory until the app ran out of it. Ours starts the stream
+  and keeps at most half a second of sound waiting; older sound is dropped,
+  since the server doesn't wait for playback. "Leave it on the server" and
+  "off" both tell the server not to redirect sound — IronRDP can't send the
+  flag for the first one yet.
+
+## Failures and logs
+
+- Every session runs in its own task. A panic in one (a decoder tripping over
+  what a server sent, say) ends that session with "internal error" and leaves
+  the others running; the release build unwinds instead of aborting for this.
+- The app logs to `uwurdp.log` in its log folder
+  (`%LOCALAPPDATA%app.uwurdp.desktoplogs` on Windows,
+  `~/Library/Logs/app.uwurdp.desktop` on macOS,
+  `~/.local/share/app.uwurdp.desktop/logs` on Linux), the previous run's as
+  `uwurdp.old.log`, at most 20 MB per run. Panics land there with their
+  location. `UWURDP_LOG` takes a `tracing` filter (default
+  `uwurdp=debug,warn`).
 
 ## Certificates
 

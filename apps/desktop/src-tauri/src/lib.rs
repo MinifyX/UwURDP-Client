@@ -54,17 +54,14 @@ pub(crate) fn err(e: impl std::fmt::Display) -> String {
 pub fn run() {
     system::restrict_dll_search();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            std::env::var("UWURDP_LOG").unwrap_or_else(|_| "uwurdp=debug,warn".to_string()),
-        )
-        .init();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            init_logging(app.path().app_log_dir().ok());
+            tracing::info!(version = %app.package_info().version, "UwURDP starting");
+
             if updates::apply_pending_on_start(app.handle()) {
                 // The downloaded setup replaces this version and starts UwURDP again.
                 std::process::exit(0);
@@ -156,4 +153,86 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to start UwURDP");
+}
+
+/// The log file stops growing here; what matters is usually near the start
+/// or is a panic, and a runaway warning must not fill the disk.
+const LOG_LIMIT: u64 = 20 * 1024 * 1024;
+
+/// Logs to stdout and, so that a crash on someone's machine leaves a trace,
+/// to `uwurdp.log` in the app's log folder (`%LOCALAPPDATA%\app.uwurdp.desktop\logs`
+/// on Windows). The previous run's file is kept as `uwurdp.old.log`. Panics
+/// are logged too, with where they happened, before they end the thread.
+fn init_logging(dir: Option<std::path::PathBuf>) {
+    use tracing_subscriber::layer::SubscriberExt as _;
+    use tracing_subscriber::util::SubscriberInitExt as _;
+
+    let filter = tracing_subscriber::EnvFilter::new(
+        std::env::var("UWURDP_LOG").unwrap_or_else(|_| "uwurdp=debug,warn".to_string()),
+    );
+    let file = dir.and_then(|dir| {
+        std::fs::create_dir_all(&dir).ok()?;
+        let path = dir.join("uwurdp.log");
+        let _ = std::fs::rename(&path, dir.join("uwurdp.old.log"));
+        std::fs::File::create(path).ok()
+    });
+    let _ = tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer())
+        .with(file.map(|file| {
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(LogFile::new(file))
+        }))
+        .try_init();
+
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        tracing::error!(
+            thread = thread.name().unwrap_or("unnamed"),
+            "panic: {info}\n{}",
+            std::backtrace::Backtrace::force_capture()
+        );
+        default_hook(info);
+    }));
+}
+
+/// A log file that stops taking lines at [`LOG_LIMIT`].
+struct LogFile {
+    file: Mutex<std::fs::File>,
+    written: std::sync::atomic::AtomicU64,
+}
+
+impl LogFile {
+    fn new(file: std::fs::File) -> Self {
+        Self {
+            file: Mutex::new(file),
+            written: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+}
+
+impl std::io::Write for &LogFile {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        use std::sync::atomic::Ordering;
+        let len = buf.len() as u64;
+        if self.written.fetch_add(len, Ordering::Relaxed) + len > LOG_LIMIT {
+            // Swallowed, not an error: logging must never fail the app.
+            return Ok(buf.len());
+        }
+        self.file.lock().write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.lock().flush()
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogFile {
+    type Writer = &'a LogFile;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        self
+    }
 }

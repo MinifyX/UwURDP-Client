@@ -8,6 +8,7 @@ use crate::clipboard::{self, TextClipboardBackend};
 use crate::config::RdpTarget;
 use crate::connect::{self, Channels};
 use crate::error::{RdpError, SessionError};
+use crate::frame::{self, CloseReason};
 use crate::input::InputEvent;
 use crate::session::{self, Command, SessionParts};
 use crate::sink::FrameSink;
@@ -17,7 +18,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use tokio::sync::{mpsc, watch};
-use tracing::debug;
+use tracing::{debug, error};
+
+/// What the page hears when a session task panicked.
+const CRASHED: &str =
+    "UwURDP ran into an internal error in this session. The details are in the log.";
 
 struct Entry {
     commands: mpsc::UnboundedSender<Command>,
@@ -115,8 +120,17 @@ impl SessionManager {
             clipboard,
         };
         let inner: Weak<Inner> = Arc::downgrade(&self.inner);
+        let sink = Arc::new(sink);
         tokio::spawn(async move {
-            session::run(parts, &sink).await;
+            // Its own task, so a panic in there (a decoder tripping over
+            // what a server sent, say) ends this session and no other.
+            let running = sink.clone();
+            let ended = tokio::spawn(async move { session::run(parts, &*running).await }).await;
+            if let Err(error) = ended {
+                error!(%id, %error, "the session task failed");
+                sink.send(&frame::closed(CloseReason::Error, CRASHED)).ok();
+                sink.finish();
+            }
             open.store(false, Ordering::Relaxed);
             if let Some(inner) = inner.upgrade() {
                 inner.sessions.lock().remove(&id);

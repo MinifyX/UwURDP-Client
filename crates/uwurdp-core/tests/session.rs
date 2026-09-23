@@ -9,6 +9,7 @@
 mod dev_server;
 
 use dev_server::{DevServer, DevServerOptions};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -86,6 +87,28 @@ struct Page {
     first_kinds: Vec<u8>,
     closed: Option<serde_json::Value>,
     finished: bool,
+}
+
+impl Page {
+    fn new(
+        manager: Arc<SessionManager>,
+        id: SessionId,
+        events: mpsc::UnboundedReceiver<Event>,
+    ) -> Self {
+        Self {
+            manager,
+            id,
+            events,
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+            sizes: Vec::new(),
+            bitmaps: 0,
+            first_kinds: Vec::new(),
+            closed: None,
+            finished: false,
+        }
+    }
 }
 
 fn u16_at(bytes: &[u8], at: usize) -> u16 {
@@ -197,19 +220,7 @@ async fn open(server: &DevServer) -> Page {
         .await
         .expect("connect");
     assert!(manager.is_open(id));
-    Page {
-        manager,
-        id,
-        events,
-        width: 0,
-        height: 0,
-        pixels: Vec::new(),
-        sizes: Vec::new(),
-        bitmaps: 0,
-        first_kinds: Vec::new(),
-        closed: None,
-        finished: false,
-    }
+    Page::new(manager, id, events)
 }
 
 async fn connect_err(target: RdpTarget) -> RdpError {
@@ -426,4 +437,80 @@ async fn a_session_streams_reacts_to_input_resizes_and_closes() {
     assert!(closed["message"].as_str().is_some_and(|m| !m.is_empty()));
     assert!(!page.manager.is_open(page.id));
     assert!(page.manager.ack(page.id).is_err());
+}
+
+/// Panics the first time it is handed pixels, like a decoder bug would.
+struct PanickingSink {
+    inner: ChannelSink,
+    tripped: AtomicBool,
+}
+
+impl FrameSink for PanickingSink {
+    fn send(&self, frame: &[u8]) -> Result<(), SinkError> {
+        if frame[0] == 1 && !self.tripped.swap(true, Ordering::SeqCst) {
+            panic!("a bug in one session");
+        }
+        self.inner.send(frame)
+    }
+
+    fn finish(&self) {
+        self.inner.finish();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_panicking_session_takes_no_other_down() {
+    let healthy_server = server();
+    let crashing_server = server();
+    let mut healthy = open(&healthy_server).await;
+    healthy.until("the first frame", |p| p.bitmaps > 0).await;
+
+    let (tx, events) = mpsc::unbounded_channel();
+    let id = healthy
+        .manager
+        .connect(
+            "crashing",
+            target(
+                &crashing_server,
+                dev_server::PASSWORD,
+                Some(crashing_server.fingerprint.clone()),
+            ),
+            PanickingSink {
+                inner: ChannelSink(tx),
+                tripped: AtomicBool::new(false),
+            },
+        )
+        .await
+        .expect("connect");
+    let mut crashing = Page::new(healthy.manager.clone(), id, events);
+
+    // The page hears why, and the stream ends.
+    crashing
+        .until("the end of the crashed session", |p| p.finished)
+        .await;
+    let closed = crashing.closed.clone().expect("CLOSED before finish");
+    assert_eq!(closed["reason"], "error", "{closed}");
+    assert!(closed["message"]
+        .as_str()
+        .is_some_and(|m| m.contains("internal error")));
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while healthy.manager.is_open(id) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the crashed session stays open"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    // The other session never noticed.
+    assert!(healthy.manager.is_open(healthy.id));
+    healthy
+        .manager
+        .input(healthy.id, vec![InputEvent::Move { x: 300, y: 200 }])
+        .expect("input");
+    healthy
+        .until("the square under the cursor", |p| {
+            p.pixel(300, 200).iter().all(|&c| c > 230)
+        })
+        .await;
 }

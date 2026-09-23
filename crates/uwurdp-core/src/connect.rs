@@ -119,7 +119,7 @@ fn build_connector(
     #[cfg(feature = "audio")]
     if target.settings.audio == AudioMode::Local {
         connector.attach_static_channel(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(
-            ironrdp_rdpsnd_native::cpal::RdpsndBackend::new(),
+            crate::audio::CpalBackend::new(),
         )));
     }
 

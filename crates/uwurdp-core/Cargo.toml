@@ -13,7 +13,7 @@ default = ["audio"]
 # Plays remote audio on this machine (RDPSND over cpal). On Linux cpal links
 # against ALSA, so building it needs libasound2-dev (Debian/Ubuntu) or
 # alsa-lib-devel (Fedora). Turn the feature off to build without it.
-audio = ["dep:ironrdp-rdpsnd", "dep:ironrdp-rdpsnd-native"]
+audio = ["dep:ironrdp-rdpsnd", "dep:cpal"]
 
 [dependencies]
 ironrdp-connector = "0.10"
@@ -30,9 +30,9 @@ ironrdp-svc = "0.8"
 # because we only speak NTLM (see `connect.rs`) and never need a KDC client.
 ironrdp-tokio = "0.10"
 ironrdp-rdpsnd = { version = "0.9", optional = true }
-# Without the default `opus` feature: bundled libopus needs CMake to build.
-# The server then sends plain PCM, which cpal plays directly.
-ironrdp-rdpsnd-native = { version = "0.7", default-features = false, optional = true }
+# Played through our own backend (src/audio.rs), not ironrdp-rdpsnd-native's:
+# that one never starts its stream. Plain PCM only, so no Opus and no CMake.
+cpal = { version = "0.17", optional = true }
 
 # `ring` instead of rustls' default `aws-lc-rs`: aws-lc needs CMake and NASM to
 # build on Windows, ring needs nothing beyond the C compiler.

@@ -3039,18 +3039,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ironrdp-rdpsnd-native"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3d2d36d9bb45863f9bc5225bf3bccda125fafb1b225c1f99dbeaeebb258e7dc"
-dependencies = [
- "cpal",
- "ironrdp-error",
- "ironrdp-rdpsnd",
- "tracing",
-]
-
-[[package]]
 name = "ironrdp-server"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7196,6 +7184,7 @@ dependencies = [
  "arboard",
  "async-trait",
  "base64 0.22.1",
+ "cpal",
  "ironrdp-cliprdr",
  "ironrdp-connector",
  "ironrdp-core",
@@ -7205,7 +7194,6 @@ dependencies = [
  "ironrdp-input",
  "ironrdp-pdu",
  "ironrdp-rdpsnd",
- "ironrdp-rdpsnd-native",
  "ironrdp-server",
  "ironrdp-session",
  "ironrdp-svc",

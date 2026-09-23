@@ -78,6 +78,8 @@
 // connection attempt, so its size costs nothing that matters.
 #![allow(clippy::result_large_err)]
 
+#[cfg(feature = "audio")]
+mod audio;
 mod clipboard;
 mod config;
 mod connect;

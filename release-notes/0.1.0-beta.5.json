@@ -1,0 +1,4 @@
+{
+  "de": "- Behoben: Bei echten Windows-Servern blieb der Desktop mit der Grafik-Pipeline ein Flickenteppich aus einfarbigen und schwarzen Kacheln, der sich nicht von selbst erholte. Fotos, Flächen, Text und Oberfläche (Progressive und ClearCodec) werden jetzt so dekodiert, wie Windows sie schickt\n- Wiederholte Dekodierfehler füllen das Protokoll nicht mehr mit tausenden Zeilen",
+  "en": "- Fixed: against real Windows servers, the desktop in the graphics pipeline stayed a patchwork of flat and black tiles that never recovered. Photos, surfaces, text and UI (Progressive and ClearCodec) are now decoded the way Windows sends them\n- Repeated decode errors no longer fill the log with thousands of lines"
+}

@@ -7178,7 +7178,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-core"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.3"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7215,7 +7215,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-desktop"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.3"
 dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
@@ -7250,7 +7250,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-import"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.3"
 dependencies = [
  "base64 0.22.1",
  "roxmltree",
@@ -7262,7 +7262,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-proto"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -7271,7 +7271,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-setup"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.3"
 dependencies = [
  "libc",
  "semver",
@@ -7289,7 +7289,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-store"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.3"
 dependencies = [
  "base64 0.22.1",
  "parking_lot",
@@ -7308,7 +7308,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-sync"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.3"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -7335,7 +7335,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-vault"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.3"
 dependencies = [
  "argon2",
  "chacha20poly1305",

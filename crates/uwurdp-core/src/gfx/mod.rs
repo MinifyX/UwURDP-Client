@@ -46,7 +46,7 @@ use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use surface::{from_edges, Pixels};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 /// Largest surface or desktop edge we accept (what RDP allows for a desktop).
 pub const MAX_EDGE: u16 = 8192;
@@ -57,8 +57,10 @@ const MAX_SURFACE_BYTES: usize = 512 * 1024 * 1024;
 /// books. We allow some slack before refusing entries.
 const MAX_CACHE_SLOTS: u16 = 4096;
 const MAX_CACHE_BYTES: usize = 64 * 1024 * 1024;
-/// How many decode failures are logged as warnings before they go quiet.
+/// How many decode failures are logged as warnings, and how many more at
+/// debug level, before they only count towards the stats.
 const LOUD_ERRORS: u32 = 5;
+const LOGGED_ERRORS: u32 = 100;
 
 /// The pipeline, shared by the channel (which fills it) and the session
 /// (which takes the changes out and draws from the output).
@@ -227,6 +229,7 @@ impl Pipeline {
                     self.surface_bytes -= old.pixels.data.len();
                 }
                 self.pending.remove(&delete.surface_id);
+                self.codecs.delete_surface(delete.surface_id);
             }
             GfxPdu::MapSurfaceToOutput(map) => {
                 self.map(map.surface_id, map.output_origin_x, map.output_origin_y);
@@ -237,9 +240,13 @@ impl Pipeline {
                 debug!("scaled output mapping shown unscaled");
                 self.map(map.surface_id, map.output_origin_x, map.output_origin_y);
             }
-            GfxPdu::StartFrame(_) => self.in_frame = true,
+            GfxPdu::StartFrame(_) => {
+                self.in_frame = true;
+                self.codecs.start_frame();
+            }
             GfxPdu::EndFrame(end) => {
                 self.in_frame = false;
+                self.codecs.end_frame();
                 self.compose_pending();
                 self.frames_decoded = self.frames_decoded.wrapping_add(1);
                 self.stats.frames = self.stats.frames.wrapping_add(1);
@@ -307,6 +314,7 @@ impl Pipeline {
                     return None;
                 };
                 let result = self.codecs.progressive(
+                    pdu.surface_id,
                     pdu.codec_context_id,
                     &pdu.bitmap_data,
                     &mut surface.pixels,
@@ -314,7 +322,8 @@ impl Pipeline {
                 self.updated(pdu.surface_id, result);
             }
             GfxPdu::DeleteEncodingContext(pdu) => {
-                self.codecs.delete_progressive_context(pdu.codec_context_id);
+                self.codecs
+                    .delete_progressive_context(pdu.surface_id, pdu.codec_context_id);
             }
             GfxPdu::SolidFill(pdu) => {
                 self.stats.fills += 1;
@@ -463,8 +472,10 @@ impl Pipeline {
         self.stats.errors += 1;
         if self.stats.errors <= LOUD_ERRORS {
             warn!("graphics pipeline: {message}");
-        } else {
+        } else if self.stats.errors <= LOGGED_ERRORS {
             debug!("graphics pipeline: {message}");
+        } else {
+            trace!("graphics pipeline: {message}");
         }
     }
 

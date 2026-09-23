@@ -10,12 +10,12 @@
 use super::surface::{from_edges, intersect, Pixels};
 use crate::dirty::Rect;
 use ironrdp_core::{Decode as _, ReadCursor};
-use ironrdp_graphics::clearcodec::ClearCodecDecoder;
 use ironrdp_graphics::color_conversion::{self, YCbCrBuffer};
-use ironrdp_graphics::progressive::ProgressiveDecoder;
 use ironrdp_graphics::rdp6::BitmapStreamDecoder;
 use ironrdp_graphics::{dwt, quantization, rlgr, subband_reconstruction};
-use ironrdp_pdu::codecs::rfx::{self, progressive::ProgressiveBlock, Quant, RfxRectangle};
+use ironrdp_graphics_next::clearcodec::ClearCodecDecoder;
+use ironrdp_graphics_next::progressive::ProgressiveDecoder;
+use ironrdp_pdu::codecs::rfx::{self, Quant, RfxRectangle};
 
 /// RemoteFX and progressive tiles are 64×64.
 const TILE: u16 = 64;
@@ -104,35 +104,30 @@ impl Codecs {
     }
 
     /// RemoteFX Progressive (`WireToSurface2`). Tiles land at their place on
-    /// the surface, clipped to the region the server updates.
+    /// the surface, clipped to the region the server updates. Its state lives
+    /// per surface and codec context, across frames.
     pub fn progressive(
         &mut self,
+        surface_id: u16,
         context: u32,
         data: &[u8],
         surface: &mut Pixels,
     ) -> CodecResult<Vec<Rect>> {
         let tiles = self
             .progressive
-            .decode_bitmap(context, surface.width, surface.height, data)
+            .decode_bitmap(surface_id, context, surface.width, surface.height, data)
             .map_err(|e| format!("progressive: {e}"))?;
-        let mut clip: Vec<Rect> = rfx::progressive::decode_progressive_stream(data)
-            .map_err(|e| format!("progressive: {e}"))?
-            .iter()
-            .filter_map(|block| match block {
-                ProgressiveBlock::Region(region) => Some(region.rects.iter().map(rfx_rect)),
-                _ => None,
-            })
-            .flatten()
-            .collect();
-        if clip.is_empty() {
-            clip.push(surface.bounds());
-        }
         let mut written = Vec::new();
         for tile in tiles {
             let (Some(x), Some(y)) = (tile.x_idx.checked_mul(TILE), tile.y_idx.checked_mul(TILE))
             else {
                 continue;
             };
+            let clip: Vec<Rect> = tile
+                .update_rectangles
+                .iter()
+                .map(|r| from_edges(r.left, r.top, r.right, r.bottom))
+                .collect();
             written.extend(surface.write_clipped(
                 x,
                 y,
@@ -146,8 +141,22 @@ impl Codecs {
         Ok(written)
     }
 
-    pub fn delete_progressive_context(&mut self, context: u32) {
-        self.progressive.delete_context(context);
+    /// Progressive REGION blocks of one graphics frame may build on each
+    /// other, so the decoder has to know where frames begin and end.
+    pub fn start_frame(&mut self) {
+        self.progressive.begin_frame();
+    }
+
+    pub fn end_frame(&mut self) {
+        self.progressive.end_frame();
+    }
+
+    pub fn delete_progressive_context(&mut self, surface_id: u16, context: u32) {
+        self.progressive.delete_context(surface_id, context);
+    }
+
+    pub fn delete_surface(&mut self, surface_id: u16) {
+        self.progressive.delete_surface(surface_id);
     }
 
     /// RemoteFX (`CAVIDEO`, MS-RDPRFX messages): tiles and region rectangles
@@ -338,6 +347,111 @@ mod tests {
         p.data[i..i + 4].try_into().expect("4 bytes")
     }
 
+    /// A Progressive stream as Windows sends it: a first-pass tile at full
+    /// quality (0xFF) with no progressive quant table, SYNC + CONTEXT only in
+    /// the context's first frame.
+    fn windows_progressive(with_context: bool, x_idx: u16, y_data: &[u8]) -> Vec<u8> {
+        use ironrdp_pdu_next::codecs::rfx::progressive::*;
+        use ironrdp_pdu_next::codecs::rfx::RfxRectangle;
+        let mut blocks = vec![ProgressiveBlock::Sync(ProgressiveSyncPdu)];
+        if with_context {
+            blocks.push(ProgressiveBlock::Context(ProgressiveContextPdu {
+                context_id: 0,
+                tile_size: 0x40,
+                flags: 0,
+            }));
+        }
+        blocks.extend([
+            ProgressiveBlock::FrameBegin(ProgressiveFrameBeginPdu {
+                frame_index: 0,
+                region_count: 1,
+            }),
+            ProgressiveBlock::Region(ProgressiveRegion {
+                tile_size: 0x40,
+                rects: vec![RfxRectangle {
+                    x: x_idx * 64,
+                    y: 0,
+                    width: 64,
+                    height: 64,
+                }],
+                quant_vals: vec![ComponentCodecQuant::LOSSLESS],
+                quant_prog_vals: vec![],
+                flags: 0,
+                tiles: vec![ProgressiveTile::First(TileFirst {
+                    quant_idx_y: 0,
+                    quant_idx_cb: 0,
+                    quant_idx_cr: 0,
+                    x_idx,
+                    y_idx: 0,
+                    flags: 0,
+                    quality: 0xFF,
+                    y_data,
+                    cb_data: y_data,
+                    cr_data: y_data,
+                    tail_data: &[],
+                })],
+            }),
+            ProgressiveBlock::FrameEnd(ProgressiveFrameEndPdu),
+        ]);
+        encode_progressive_stream(&blocks).expect("progressive stream")
+    }
+
+    /// One component of a flat tile, RLGR1-coded.
+    fn flat_component(value: i16) -> Vec<u8> {
+        use ironrdp_graphics_next::progressive::{encode_first_pass, COEFFICIENTS_PER_COMPONENT};
+        use ironrdp_pdu_next::codecs::rfx::progressive::ComponentCodecQuant;
+        let mut coefficients = [value; COEFFICIENTS_PER_COMPONENT];
+        let mut out = vec![0; 8192];
+        let len = encode_first_pass(
+            &mut coefficients,
+            &mut out,
+            &ComponentCodecQuant::LOSSLESS,
+            &ComponentCodecQuant::LOSSLESS,
+            false,
+        )
+        .expect("encode");
+        out.truncate(len);
+        out
+    }
+
+    #[test]
+    fn progressive_decodes_windows_streams() {
+        let mut codecs = Codecs::default();
+        let mut surface = Pixels::new(192, 64);
+        let red = [255, 0, 0, 255];
+        surface.fill(surface.bounds(), red);
+        let component = flat_component(0);
+
+        // The first frame establishes the context...
+        codecs.start_frame();
+        let written = codecs
+            .progressive(
+                1,
+                7,
+                &windows_progressive(true, 0, &component),
+                &mut surface,
+            )
+            .expect("first frame");
+        codecs.end_frame();
+        assert_eq!(written, vec![Rect::new(0, 0, 64, 64)]);
+        assert_ne!(at(&surface, 10, 10), red);
+
+        // ...and the next one relies on it, as Windows does.
+        codecs.start_frame();
+        let written = codecs
+            .progressive(
+                1,
+                7,
+                &windows_progressive(false, 1, &component),
+                &mut surface,
+            )
+            .expect("frame without CONTEXT");
+        codecs.end_frame();
+        assert_eq!(written, vec![Rect::new(64, 0, 64, 64)]);
+        assert_eq!(at(&surface, 100, 10), at(&surface, 10, 10));
+        assert_eq!(at(&surface, 150, 10), red, "outside the region");
+    }
+
     #[test]
     fn uncompressed_is_blue_first() {
         let codecs = Codecs::default();
@@ -409,7 +523,7 @@ mod tests {
         let junk = [0xFFu8; 37];
         assert!(codecs.planar(&junk, dest, &mut surface).is_err());
         assert!(codecs.clear(&junk, dest, &mut surface).is_err());
-        assert!(codecs.progressive(1, &junk, &mut surface).is_err());
+        assert!(codecs.progressive(1, 1, &junk, &mut surface).is_err());
         assert!(codecs.remotefx(&junk, dest, &mut surface).is_err());
     }
 }

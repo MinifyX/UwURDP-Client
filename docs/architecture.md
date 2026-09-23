@@ -137,9 +137,17 @@ DVC ──zgfx──▶ GfxChannel ──▶ Pipeline: surfaces ──(mapped)�
 - Lossy codecs only write inside the regions the server names, so a RemoteFX
   or H.264 tile can't smear over text ClearCodec drew losslessly.
 - Nothing a server sends ends a session: a PDU or payload that doesn't decode
-  is logged (the first few as warnings) and skipped. Surfaces are capped at
+  is logged (the first few as warnings, the first hundred at all) and
+  skipped; the stats count every one. Surfaces are capped at
   8192 px per edge and 512 MiB together, the cache at the small cache's 4096
   slots and 64 MiB.
+- Progressive and ClearCodec come from IronRDP's master branch, pinned to a
+  commit (`ironrdp-graphics-next` in `uwurdp-core/Cargo.toml`): the released
+  0.9 decodes neither as Windows sends them. It rejects Progressive's
+  full-quality tiles and then every frame after them, and it reads
+  ClearCodec's short V-bars in the wrong bit order, so text and UI tiles stay
+  flat or black. Back to a release once one has IronRDP #1443, #1694, #1696,
+  #1698 and #1728.
 - What we advertise: with H.264, version 8.1 with AVC420 (AVC444 would need a
   second decoding pass); without, 10.7 with AVC off. Both with the small
   cache. A host can turn the pipeline off (`graphicsPipeline` in its RDP

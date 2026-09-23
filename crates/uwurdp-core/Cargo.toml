@@ -28,6 +28,11 @@ ironrdp-dvc = "0.8"
 # The graphics pipeline's PDUs; the client side is ours (src/gfx).
 ironrdp-egfx = "0.3"
 ironrdp-graphics = "0.9"
+# Progressive and ClearCodec as Windows sends them: 0.9 decodes neither
+# (Progressive stops at the coarse first pass, ClearCodec lacks NSCodec).
+# The fixes (IronRDP #1443, #1696, #1698, #1703, #1728) are on master only;
+# pinned until a release has them. Nothing crosses between the two copies.
+ironrdp-graphics-next = { package = "ironrdp-graphics", git = "https://github.com/Devolutions/IronRDP", rev = "9b151c4c2e47c6014e1e8e55909d4180aa8bdb99" }
 ironrdp-input = "0.7"
 ironrdp-pdu = "0.9"
 ironrdp-session = "0.11"
@@ -67,6 +72,8 @@ zeroize = "1"
 # names its provider explicitly, which keeps that ambiguity harmless. With
 # `egfx` it also serves the graphics pipeline.
 ironrdp-server = { version = "0.13", features = ["egfx"] }
+# The PDUs that go with ironrdp-graphics-next, to build Progressive streams.
+ironrdp-pdu-next = { package = "ironrdp-pdu", git = "https://github.com/Devolutions/IronRDP", rev = "9b151c4c2e47c6014e1e8e55909d4180aa8bdb99" }
 rcgen = "0.14"
 anyhow = "1"
 async-trait = "0.1"

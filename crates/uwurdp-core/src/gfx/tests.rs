@@ -381,6 +381,35 @@ mod avc {
         assert_eq!(pixel(&p, 40, 10), [0, 0, 0, 255], "outside the region");
     }
 
+    /// Cisco's binary itself, when `UWURDP_OPENH264` names a downloaded copy
+    /// (the app never gets it from anywhere else, so neither do the tests).
+    #[test]
+    fn ciscos_binary_decodes_like_the_source_build() {
+        let Some(path) = std::env::var_os("UWURDP_OPENH264") else {
+            eprintln!("UWURDP_OPENH264 not set; skipping");
+            return;
+        };
+        let mut p = desktop(64, 64);
+        p.codecs.h264 = Some(h264::H264Decoder::load(path.as_ref()).expect("Cisco's OpenH264"));
+        let h264 = encoded(64, 64, [30, 180, 220]);
+        let region = Avc420Region::new(0, 0, 64, 64, 22, 100);
+        p.handle(GfxPdu::WireToSurface1(WireToSurface1Pdu {
+            surface_id: 1,
+            codec_id: Codec1Type::Avc420,
+            pixel_format: PixelFormat::XRgb,
+            destination_rectangle: rect(0, 0, 64, 64),
+            bitmap_data: encode_avc420_bitmap_stream(&[region], &h264),
+        }));
+        assert_eq!(p.stats.errors, 0);
+        for (x, y) in [(0, 0), (32, 32), (63, 63)] {
+            assert!(
+                close_to(pixel(&p, x, y), [30, 180, 220]),
+                "{:?}",
+                pixel(&p, x, y)
+            );
+        }
+    }
+
     #[test]
     fn avc420_without_a_decoder_is_an_error_not_a_crash() {
         let mut p = desktop(16, 16);

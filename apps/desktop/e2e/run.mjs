@@ -13,6 +13,10 @@
 //   node apps/desktop/e2e/run.mjs --only=a   just phase A
 //   node apps/desktop/e2e/run.mjs --only=e   just phase E
 //
+// With UWURDP_E2E_H264=1, phase A also turns H.264 on, which downloads
+// Cisco's OpenH264 (about 450 KB) from ciscobinary.openh264.org, checks that
+// a session then arrives as H.264, and turns it off again.
+//
 // Phase E needs the server built next to this repository:
 // ../UwUSync-Server/target/debug/uwusync-server.exe (or UWURDP_SERVER_EXE).
 //

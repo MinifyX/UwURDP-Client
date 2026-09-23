@@ -352,6 +352,67 @@ check(
 );
 await page.screenshot(`${SHOTS}a8-h264-setting.png`);
 
+// ── H.264 for real (UWURDP_E2E_H264=1: downloads Cisco's OpenH264) ─────────
+if (process.env.UWURDP_E2E_H264 === '1') {
+  const h264Dir = join(process.env.LOCALAPPDATA ?? '', 'app.uwurdp.desktop', 'openh264');
+  const h264Installed = () =>
+    existsSync(h264Dir) && readdirSync(h264Dir).some((name) => name.startsWith('openh264-'));
+  const sessionsDone = () =>
+    existsSync(LOG)
+      ? readFileSync(LOG, 'utf8')
+          .split('\n')
+          .filter((line) => line.includes('graphics pipeline done'))
+      : [];
+
+  await page.eval(`${h264Row}.querySelector('[role=switch]').click()`);
+  await page.waitFor(
+    `document.querySelector('.setting-result')?.textContent.includes('installiert')`,
+    { what: 'OpenH264 from Cisco', timeout: 90_000 },
+  );
+  check('turning H.264 on fetches OpenH264 from Cisco', h264Installed(), h264Dir);
+  await page.screenshot(`${SHOTS}a9-h264-installed.png`);
+  await page.click('.settings-close');
+
+  // The next connection offers H.264, and the dev server answers with it.
+  await page.click('.tab', 'dev-rdpd');
+  await page.click('.toolbar-button', 'Trennen');
+  await page.waitFor(
+    `document.querySelector('.session-pane:not([hidden]) .pane-overlay[data-tone="ended"]')`,
+    { what: 'ended overlay', timeout: 15_000 },
+  );
+  const doneBefore = sessionsDone().length;
+  await page.click('.session-pane:not([hidden]) .pane-overlay button', 'Neu verbinden');
+  await page.waitFor(`${driver}?.session`, { what: 'reconnected with H.264', timeout: 30_000 });
+  await sleep(1_500);
+  await page.click('.toolbar-button', 'Trennen');
+  // The session before this one may log its stats late; it had no H.264.
+  const avc = (line) => Number(line.match(/avc420: (\d+)/)?.[1] ?? 0);
+  let done = [];
+  for (let i = 0; i < 40 && !done.some((line) => avc(line) > 0); i += 1) {
+    done = sessionsDone().slice(doneBefore);
+    await sleep(250);
+  }
+  check(
+    'with H.264 on, the desktop arrives as H.264',
+    done.some((line) => avc(line) > 0),
+    done.at(-1) ?? 'no stats',
+  );
+  await page.screenshot(`${SHOTS}a10-h264-session.png`);
+
+  // Off again: the file goes.
+  await page.click('[aria-label="Einstellungen"]');
+  await page.waitFor(`document.querySelector('.settings-nav')`, { what: 'settings' });
+  await page.click('.settings-nav button', 'Sitzungen');
+  await page.waitFor(`${h264Row}`, { what: 'the H.264 setting' });
+  await page.eval(`${h264Row}.querySelector('[role=switch]').click()`);
+  let gone = false;
+  for (let i = 0; i < 20 && !gone; i += 1) {
+    gone = !h264Installed();
+    if (!gone) await sleep(250);
+  }
+  check('turning H.264 off deletes OpenH264', gone, h264Dir);
+}
+
 // ── Export ──────────────────────────────────────────────────────────────────
 await page.click('.settings-nav button', 'Import & Export');
 await page.click('.setting-row button', 'Exportieren');

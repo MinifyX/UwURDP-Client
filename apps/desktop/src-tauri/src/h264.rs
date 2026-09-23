@@ -295,6 +295,19 @@ mod tests {
         assert!(unpack(b"not bzip2").is_err());
     }
 
+    /// The real download from Cisco; run by hand with `--ignored` after
+    /// bumping `VERSION`, or when Cisco changes its server.
+    #[test]
+    #[ignore = "downloads from Cisco"]
+    fn ciscos_file_downloads_and_matches() {
+        let dir = std::env::temp_dir().join(format!("uwurdp-h264-{}", uuid::Uuid::new_v4()));
+        let binary = binary().expect("a binary for this platform");
+        let path = dir.join(binary.file);
+        download(&binary, &path).expect("download");
+        assert!(intact(&path, binary.sha256));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn only_the_known_file_counts_as_intact() {
         let dir = std::env::temp_dir().join(format!("uwurdp-h264-{}", uuid::Uuid::new_v4()));

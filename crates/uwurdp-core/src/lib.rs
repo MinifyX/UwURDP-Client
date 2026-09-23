@@ -20,7 +20,7 @@
 //!    authenticates (NTLM over CredSSP when `nla`), and finishes the RDP
 //!    connection sequence. Then it spawns one task per session.
 //! 2. The task decodes server updates into an RGBA image (IronRDP's
-//!    `ActiveStage`), records what changed, and every 16 ms at most sends the
+//!    `ActiveStage`, or the graphics pipeline's output), records what changed, and every 16 ms at most sends the
 //!    current pixels of the changed area — but only while fewer than two
 //!    `BITMAPS` messages wait for the page's [`SessionManager::ack`]. Nothing
 //!    is dropped: while waiting, changes keep accumulating.
@@ -60,8 +60,15 @@
 //! - **Audio**: with the `audio` feature (default), [`AudioMode::Local`]
 //!   plays through cpal as PCM. `Remote` and `Off` both tell the server not
 //!   to redirect audio: IronRDP cannot send the "leave it on the server" flag.
+//! - **Graphics pipeline** (RDPEGFX, [`SessionSettings::graphics_pipeline`],
+//!   on by default): what current Windows servers are fast with. Progressive,
+//!   ClearCodec, planar, RemoteFX and uncompressed are decoded here; H.264
+//!   (AVC420) with the `h264` feature and Cisco's OpenH264 binary, which the
+//!   app downloads and names in [`SessionSettings::h264_library`]. AVC444 is
+//!   not offered.
 //! - **Resize**: through the DisplayControl channel; servers without it keep
-//!   their size and the page scales.
+//!   their size and the page scales. With the graphics pipeline the server
+//!   answers with a `ResetGraphics`.
 //! - **Admin/console session**: not possible with IronRDP 0.17 (it always
 //!   sends an empty cluster data block); `admin` is ignored.
 //! - **RD Gateway**: not supported yet ([`RdpError::Gateway`]).
@@ -86,6 +93,7 @@ mod connect;
 pub mod dirty;
 mod error;
 pub mod frame;
+mod gfx;
 mod input;
 mod manager;
 mod session;

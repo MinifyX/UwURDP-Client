@@ -10,11 +10,13 @@
 //! - [`backup`] — exporting to and importing from `.uwurdp` files
 //! - [`sync`] — Settings → Sync and the thread that keeps devices in step
 //! - [`system`] — updates, links, a fresh start for a reloaded page
+//! - [`h264`] — Cisco's OpenH264, fetched when the user turns H.264 on
 
 mod backup;
 mod device;
 mod dialogs;
 mod frames;
+mod h264;
 mod hosts;
 mod import;
 mod sessions;
@@ -94,6 +96,7 @@ pub fn run() {
                 picked_export: backup::PickedExport::default(),
                 pending_import: import::PendingImport::default(),
             });
+            app.manage(h264::Codec::new(app.handle()));
             updates::start(app.handle());
             sync::start(app.handle());
             Ok(())
@@ -150,6 +153,8 @@ pub fn run() {
             system::check_for_updates,
             system::install_update,
             system::open_project_page,
+            system::h264_status,
+            system::set_h264,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start UwURDP");

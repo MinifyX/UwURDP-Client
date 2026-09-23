@@ -3,11 +3,14 @@ import pkg from '../../package.json';
 import { N_, t, useLanguage } from '../lib/i18n';
 import {
   checkForUpdates,
+  h264Status,
   listHosts,
   lockVault,
   openProjectPage,
+  setH264,
   setVaultRemembered,
   vaultState,
+  type H264Status,
   type HostRecord,
   type ProjectPage,
   type UpdateInfo,
@@ -223,6 +226,7 @@ function Sessions() {
           onChange={(autoReconnect) => updateSettings({ autoReconnect })}
         />
       </Row>
+      <H264Row />
       <Row
         label={t('Vor dem Schließen nachfragen')}
         description={t('Wenn noch Sitzungen offen sind.')}
@@ -550,6 +554,80 @@ function Updates({
   );
 }
 
+/** Cisco's wording, which must stand where H.264 is switched on and off. */
+const CISCO = 'OpenH264 Video Codec provided by Cisco Systems, Inc.';
+
+function H264Row() {
+  const settings = useSettings();
+  const [status, setStatus] = useState<H264Status | null>(null);
+
+  // Hand the setting over (idempotent) and follow a download until it ends.
+  useEffect(() => {
+    let alive = true;
+    let timer: number | undefined;
+    const follow = (next: H264Status) => {
+      if (!alive) return;
+      setStatus(next);
+      if (next.state === 'downloading') {
+        timer = window.setTimeout(() => void h264Status().then(follow, () => undefined), 600);
+      }
+    };
+    void setH264(settings.h264).then(follow, () => undefined);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [settings.h264]);
+
+  const unsupported = status?.state === 'unsupported';
+  return (
+    <>
+      <Row
+        label={t('H.264-Video')}
+        description={
+          <>
+            {t(
+              'Bewegte Bilder – Videos, Scrollen, Animationen – kommen per H.264 flüssiger und mit weniger Bandbreite an. Dafür lädt UwURDP Ciscos OpenH264 (rund 1 MB) direkt von Cisco herunter; Ausschalten löscht es wieder. Gilt ab der nächsten Verbindung.',
+            )}{' '}
+            <span lang="en">{CISCO}</span>
+          </>
+        }
+      >
+        <Toggle
+          label={t('H.264-Video')}
+          checked={settings.h264 && !unsupported}
+          onChange={(h264) => !unsupported && updateSettings({ h264 })}
+        />
+      </Row>
+      {status && status.state !== 'off' && (
+        <p
+          className="setting-result"
+          data-tone={status.state === 'failed' ? 'error' : undefined}
+          role="status"
+        >
+          {status.state === 'downloading' && t('OpenH264 wird von Cisco geladen …')}
+          {status.state === 'ready' &&
+            t('OpenH264 {version} ist installiert.', { version: status.version })}
+          {status.state === 'unsupported' &&
+            t('Für dieses System gibt es kein OpenH264 von Cisco.')}
+          {status.state === 'failed' && (
+            <>
+              {t('OpenH264 konnte nicht geladen werden: {message}', { message: status.message })}{' '}
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => void setH264(true).then(setStatus, () => undefined)}
+              >
+                {t('Erneut versuchen')}
+              </button>
+            </>
+          )}
+        </p>
+      )}
+    </>
+  );
+}
+
 function About() {
   useLanguage();
   const open = (page: ProjectPage) => void openProjectPage(page).catch(() => undefined);
@@ -566,6 +644,20 @@ function About() {
         )}
       </p>
       <p className="about-text">{t('Remotedesktop mit IronRDP von Devolutions, in Rust.')}</p>
+      <details className="about-notice">
+        <summary>{t('H.264 (OpenH264)')}</summary>
+        <p lang="en">
+          {CISCO} UwURDP does not include it: when you turn H.264 on, Cisco&apos;s binary is
+          downloaded from Cisco to this device, and turning H.264 off deletes it again. Cisco
+          licenses its binary under the AVC/H.264 patent portfolio only on these conditions: the
+          binary is downloaded to the user&apos;s device separately, not integrated into or combined
+          with third-party software before that; the user can enable, disable and re-enable its use;
+          the software shows the text &quot;{CISCO}&quot; where the user controls it; and any
+          software using the binary reproduces this text, including this last condition, where
+          licensing information is presented to the user. OpenH264 is BSD-2-Clause licensed,
+          Copyright (c) 2013, Cisco Systems.
+        </p>
+      </details>
       <div className="about-actions">
         <button onClick={() => open('source')}>{t('Quellcode auf GitHub')}</button>
         <button onClick={() => open('releases')}>{t('Versionen')}</button>

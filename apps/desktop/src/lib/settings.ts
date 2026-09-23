@@ -33,6 +33,12 @@ export type Settings = {
   confirmCloseWithSessions: boolean;
   /** A session that drops without being ended gets one quiet try to come back. */
   autoReconnect: boolean;
+  /**
+   * H.264 through Cisco's OpenH264, which the app downloads when this is
+   * turned on. Off by default: the user decides whether Cisco's binary comes
+   * onto the machine.
+   */
+  h264: boolean;
   updateChannel: UpdateChannel;
   /** Private and business hosts apart, like UwUMail's workspaces. */
   workspaces: boolean;
@@ -50,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   startupHosts: [],
   confirmCloseWithSessions: true,
   autoReconnect: true,
+  h264: false,
   // Someone who installed a beta wants the next beta too.
   updateChannel: pkg.version.includes('-') ? 'beta' : 'stable',
   workspaces: true,
@@ -89,6 +96,7 @@ export function sanitize(raw: unknown): Settings {
       : [],
     confirmCloseWithSessions: bool(input.confirmCloseWithSessions, d.confirmCloseWithSessions),
     autoReconnect: bool(input.autoReconnect, d.autoReconnect),
+    h264: bool(input.h264, d.h264),
     updateChannel: oneOf(input.updateChannel, ['stable', 'beta'] as const, d.updateChannel),
     workspaces: bool(input.workspaces, d.workspaces),
     activeWorkspace: oneOf(

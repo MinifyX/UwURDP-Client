@@ -152,6 +152,10 @@ pub struct RdpSettings {
     /// Network Level Authentication (CredSSP). Off only for old servers.
     pub nla: bool,
     pub wallpaper: bool,
+    /// Offer the graphics pipeline (RDPEGFX). Off only for a server that
+    /// draws wrongly with it; the old bitmap path is much slower on current
+    /// Windows.
+    pub graphics_pipeline: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gateway: Option<GatewaySettings>,
     #[serde(flatten, skip_serializing_if = "extra_is_empty")]
@@ -171,6 +175,7 @@ impl Default for RdpSettings {
             admin: false,
             nla: true,
             wallpaper: true,
+            graphics_pipeline: true,
             gateway: None,
             extra: Extra::new(),
         }

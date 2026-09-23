@@ -15,11 +15,16 @@
 //! region are sent. A page that falls behind therefore sees fewer, larger
 //! updates — never stale or missing pixels. Pointer and size messages are
 //! small and go out immediately.
+//!
+//! With the graphics pipeline the pixels come from [`gfx::Pipeline`]'s
+//! output instead of IronRDP's image; after every step the session takes the
+//! pipeline's changes (new size, dirty rectangles) into the same machinery.
 
 use crate::clipboard::{ClipboardHandle, WorkerMsg};
 use crate::connect::{Established, Stream};
 use crate::dirty::{DirtyRegion, Rect};
 use crate::frame::{self, CloseReason};
+use crate::gfx;
 use crate::input::{InputEvent, InputState};
 use crate::sink::{FrameSink, SinkError};
 use ironrdp_cliprdr::backend::ClipboardMessage;
@@ -134,9 +139,27 @@ impl Screen {
     }
 
     /// Sends as much of the dirty region as the ack window allows; whatever
-    /// does not fit stays dirty for the next round.
-    fn flush(&mut self, out: &Output<'_>) {
-        let (width, height) = (self.image.width(), self.image.height());
+    /// does not fit stays dirty for the next round. The pixels come from the
+    /// graphics pipeline once it draws, from IronRDP's image before.
+    fn flush(&mut self, out: &Output<'_>, graphics: Option<&gfx::Shared>) {
+        let pipeline = graphics.map(|g| g.lock());
+        let (pixels, stride, source_width, source_height) =
+            match pipeline.as_ref().and_then(|p| p.output()) {
+                Some(output) => (
+                    &output.data[..],
+                    output.stride(),
+                    output.width,
+                    output.height,
+                ),
+                None => (
+                    self.image.data(),
+                    self.image.stride(),
+                    self.image.width(),
+                    self.image.height(),
+                ),
+            };
+        let width = self.image.width().min(source_width);
+        let height = self.image.height().min(source_height);
         let rects: Vec<Rect> = self
             .dirty
             .take()
@@ -146,11 +169,7 @@ impl Screen {
             .collect();
         let mut messages = frame::plan_bitmaps(&rects).into_iter();
         for message in messages.by_ref() {
-            out.send(&frame::bitmaps(
-                self.image.data(),
-                self.image.stride(),
-                &message,
-            ));
+            out.send_owned(frame::bitmaps(pixels, stride, &message));
             self.unacked += 1;
             if self.unacked >= ACK_WINDOW {
                 break;
@@ -171,10 +190,19 @@ struct Output<'a> {
 
 impl Output<'_> {
     fn send(&self, message: &[u8]) {
-        if self.gone.load(Ordering::Relaxed) {
-            return;
+        if !self.gone.load(Ordering::Relaxed) {
+            self.delivered(self.sink.send(message));
         }
-        match self.sink.send(message) {
+    }
+
+    fn send_owned(&self, message: Vec<u8>) {
+        if !self.gone.load(Ordering::Relaxed) {
+            self.delivered(self.sink.send_owned(message));
+        }
+    }
+
+    fn delivered(&self, result: Result<(), SinkError>) {
+        match result {
             Ok(()) => {}
             Err(SinkError::Closed) => {
                 debug!("the page is gone; closing the session");
@@ -189,6 +217,7 @@ pub(crate) struct SessionParts {
     pub established: Established,
     pub commands: mpsc::UnboundedReceiver<Command>,
     pub clipboard: Option<ClipboardHandle>,
+    pub graphics: Option<gfx::Shared>,
 }
 
 /// Runs the session to its end, then sends `CLOSED` and finishes the sink.
@@ -208,6 +237,7 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
         established: Established { result, framed },
         mut commands,
         clipboard,
+        graphics,
     } = parts;
 
     let (mut reader, mut writer) = split_tokio_framed(framed);
@@ -302,7 +332,7 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                 Some(Command::Clipboard(message)) => Ok(clipboard_message(&mut active_stage, message)),
             },
             () = sleep_until(flush_at), if can_flush => {
-                screen.flush(out);
+                screen.flush(out, graphics.as_ref());
                 continue;
             }
             () = sleep_until(resize_at), if pending_resize.is_some() => {
@@ -434,6 +464,28 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                 ActiveStageOutput::AutoDetect(request) => {
                     trace!(?request, "auto-detect");
                 }
+            }
+        }
+
+        if let Some(graphics) = &graphics {
+            let changes = graphics.lock().take_changes();
+            if let Some((width, height)) = changes.resized {
+                if (width, height) == (screen.image.width(), screen.image.height()) {
+                    // The size the page already has: redraw, but don't make
+                    // it start over (that would flash black).
+                    screen.mark_all_dirty();
+                } else {
+                    // The same as a reactivation: new size first, old pixels void.
+                    screen = Screen {
+                        unacked: screen.unacked,
+                        ..Screen::new(width, height)
+                    };
+                    input.set_desktop_size(width, height);
+                    out.send(&frame::desktop_size(width, height));
+                }
+            }
+            for rect in changes.dirty {
+                screen.dirty.add(rect);
             }
         }
     }
@@ -671,7 +723,7 @@ mod tests {
             gone: AtomicBool::new(false),
         };
         let mut screen = Screen::new(64, 64);
-        screen.flush(&out);
+        screen.flush(&out, None);
         assert_eq!(screen.unacked, 1);
         assert!(screen.dirty.is_empty());
         assert_eq!(sink.0.lock().len(), 1);
@@ -679,7 +731,7 @@ mod tests {
 
         screen.dirty.add(Rect::new(0, 0, 8, 8));
         assert!(screen.can_flush());
-        screen.flush(&out);
+        screen.flush(&out, None);
         assert_eq!(screen.unacked, 2);
 
         // Window full: updates pile up but are not sent.

@@ -8,16 +8,28 @@
 //! key press. It speaks CredSSP (NLA) only and accepts exactly one account.
 //! DisplayControl resizes are honored.
 //!
+//! With `graphics` on it also serves the graphics pipeline, the way current
+//! Windows servers do: once a client opens it, every picture goes through it
+//! — H.264 (OpenH264 built from source) when the client offers AVC420,
+//! uncompressed otherwise — and nothing through the old bitmap path.
+//!
 //! `ironrdp-server` handles one connection at a time; a second client waits
 //! until the first one leaves.
 
 #![allow(dead_code)] // Each includer uses a different subset.
 
+use ironrdp_egfx::pdu::{
+    Avc420Region, CapabilitiesAdvertisePdu, CapabilitiesV107Flags, CapabilitiesV81Flags,
+    CapabilitySet,
+};
+use ironrdp_egfx::server::{GraphicsPipelineHandler, GraphicsPipelineServer};
 use ironrdp_server::tokio_rustls::rustls;
 use ironrdp_server::tokio_rustls::TlsAcceptor;
 use ironrdp_server::{
-    BitmapUpdate, Credentials, DesktopSize, DisplayUpdate, KeyboardEvent, MouseEvent, PixelFormat,
-    RdpServer, RdpServerDisplay, RdpServerDisplayUpdates, RdpServerInputHandler, ServerEvent,
+    BitmapUpdate, Credentials, DesktopSize, DisplayUpdate, EgfxServerMessage, GfxDvcBridge,
+    GfxServerFactory, GfxServerHandle, KeyboardEvent, MouseEvent, PixelFormat, RdpServer,
+    RdpServerDisplay, RdpServerDisplayUpdates, RdpServerInputHandler, ServerEvent,
+    ServerEventSender,
 };
 use std::net::SocketAddr;
 use std::num::{NonZeroU16, NonZeroUsize};
@@ -40,6 +52,8 @@ pub struct DevServerOptions {
     pub addr: SocketAddr,
     pub width: u16,
     pub height: u16,
+    /// Serve the graphics pipeline to clients that open it.
+    pub graphics: bool,
 }
 
 impl Default for DevServerOptions {
@@ -48,6 +62,7 @@ impl Default for DevServerOptions {
             addr: SocketAddr::from(([127, 0, 0, 1], 0)),
             width: 1024,
             height: 768,
+            graphics: false,
         }
     }
 }
@@ -71,6 +86,12 @@ impl DevServer {
     /// How many key presses the server has seen.
     pub fn key_presses(&self) -> u32 {
         self.scene.scene.lock().expect("scene lock").key_presses
+    }
+
+    /// Frames sent through the graphics pipeline: (uncompressed, H.264).
+    pub fn graphics_frames(&self) -> (u32, u32) {
+        let gfx = self.scene.gfx.lock().expect("gfx lock");
+        (gfx.uncompressed_frames, gfx.h264_frames)
     }
 }
 
@@ -96,6 +117,22 @@ struct Scene {
 struct Shared {
     scene: Mutex<Scene>,
     changed: Notify,
+    gfx: Mutex<Gfx>,
+}
+
+/// The graphics pipeline of the current connection, if the client opened it.
+#[derive(Default)]
+struct Gfx {
+    handle: Option<GfxServerHandle>,
+    events: Option<mpsc::UnboundedSender<ServerEvent>>,
+    /// The surface showing the desktop: id, width, height.
+    surface: Option<(u16, u16, u16)>,
+    encoder: Option<(openh264::encoder::Encoder, u16, u16)>,
+    /// Whether the client offered H.264. ironrdp-egfx's server confirms its
+    /// own preferred flags and would send H.264 to a client that said no.
+    client_h264: bool,
+    uncompressed_frames: u32,
+    h264_frames: u32,
 }
 
 impl Shared {
@@ -249,6 +286,7 @@ impl RdpServerDisplayUpdates for Updates {
         loop {
             {
                 let mut scene = self.0.scene.lock().expect("scene lock");
+                let graphics = self.0.graphics_ready();
                 if let Some((width, height)) = scene.pending_resize.take() {
                     if (width, height) != (scene.width, scene.height) {
                         scene.width = width;
@@ -256,18 +294,185 @@ impl RdpServerDisplayUpdates for Updates {
                         scene.cursor.0 = scene.cursor.0.min(width - 1);
                         scene.cursor.1 = scene.cursor.1.min(height - 1);
                         scene.dirty = true;
-                        return Ok(Some(DisplayUpdate::Resize(DesktopSize { width, height })));
+                        // The pipeline resizes itself (ResetGraphics), like
+                        // Windows does; only the old path reactivates.
+                        if !graphics {
+                            return Ok(Some(DisplayUpdate::Resize(DesktopSize { width, height })));
+                        }
                     }
                 }
                 if scene.dirty {
-                    scene.dirty = false;
-                    return Ok(full_frame(&scene));
+                    if graphics {
+                        // Sent through the pipeline, or held back until the
+                        // client acknowledged enough frames (then it asks
+                        // again: `on_frame_ack` notifies).
+                        if self.0.send_graphics(&scene) {
+                            scene.dirty = false;
+                        }
+                    } else {
+                        scene.dirty = false;
+                        return Ok(full_frame(&scene));
+                    }
                 }
             }
             // Cancel-safe: a notification that arrives while nobody waits
             // is kept as a permit for the next call.
             self.0.changed.notified().await;
         }
+    }
+}
+
+impl Shared {
+    fn graphics_ready(&self) -> bool {
+        let gfx = self.gfx.lock().expect("gfx lock");
+        gfx.handle
+            .as_ref()
+            .is_some_and(|h| h.lock().expect("gfx server lock").is_ready())
+    }
+
+    /// Sends the scene through the graphics pipeline; false when the client
+    /// has too many frames unacknowledged.
+    fn send_graphics(&self, scene: &Scene) -> bool {
+        let mut gfx = self.gfx.lock().expect("gfx lock");
+        let Some(handle) = gfx.handle.clone() else {
+            return false;
+        };
+        let mut server = handle.lock().expect("gfx server lock");
+        let (width, height) = (scene.width, scene.height);
+
+        let surface = match gfx.surface {
+            Some((id, w, h)) if (w, h) == (width, height) => id,
+            previous => {
+                if previous.is_some() {
+                    server.resize(width, height);
+                } else {
+                    server.set_output_dimensions(width, height);
+                }
+                let Some(id) = server.create_surface(width, height) else {
+                    return false;
+                };
+                server.map_surface_to_output(id, 0, 0);
+                gfx.surface = Some((id, width, height));
+                id
+            }
+        };
+
+        let bgra = render(scene);
+        let h264 = server.supports_avc420() && gfx.client_h264;
+        let sent = if h264 && width % 2 == 0 && height % 2 == 0 {
+            let h264 = gfx.encode(&bgra, width, height);
+            // Exclusive edges, as Windows sends them.
+            let region = Avc420Region::new(0, 0, width, height, 22, 100);
+            let sent = server.send_avc420_frame(surface, &h264, &[region], 0);
+            gfx.h264_frames += u32::from(sent.is_some());
+            sent
+        } else {
+            let sent = server.send_uncompressed_frame(surface, &bgra, width, height, 0);
+            gfx.uncompressed_frames += u32::from(sent.is_some());
+            sent
+        };
+
+        let messages = server.drain_output();
+        let channel = server.channel_id();
+        drop(server);
+        if let (Some(channel), Some(events)) = (channel, gfx.events.as_ref()) {
+            if !messages.is_empty() {
+                match ironrdp_dvc::encode_dvc_messages(
+                    channel,
+                    messages,
+                    ironrdp_svc::ChannelFlags::SHOW_PROTOCOL,
+                ) {
+                    Ok(messages) => {
+                        let _ = events.send(ServerEvent::Egfx(EgfxServerMessage::SendMessages {
+                            messages,
+                        }));
+                    }
+                    Err(e) => eprintln!("dev_rdpd: graphics message: {e}"),
+                }
+            }
+        }
+        sent.is_some()
+    }
+}
+
+impl Gfx {
+    /// One H.264 access unit (Annex B) of a BGRA picture.
+    fn encode(&mut self, bgra: &[u8], width: u16, height: u16) -> Vec<u8> {
+        use openh264::formats::{RgbSliceU8, YUVBuffer};
+        let (w, h) = (usize::from(width), usize::from(height));
+        let rgb: Vec<u8> = bgra
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|px| [px[2], px[1], px[0]])
+            .collect();
+        let yuv = YUVBuffer::from_rgb_source(RgbSliceU8::new(&rgb, (w, h)));
+        let fresh = !matches!(&self.encoder, Some((_, ew, eh)) if (*ew, *eh) == (width, height));
+        if fresh {
+            self.encoder = openh264::encoder::Encoder::new()
+                .ok()
+                .map(|e| (e, width, height));
+        }
+        match self.encoder.as_mut() {
+            Some((encoder, _, _)) => encoder
+                .encode(&yuv)
+                .map(|bits| bits.to_vec())
+                .unwrap_or_default(),
+            None => Vec::new(),
+        }
+    }
+}
+
+/// Hands ironrdp-server a pipeline per connection and keeps a handle to it.
+struct GfxFactory(Arc<Shared>);
+
+impl ServerEventSender for GfxFactory {
+    fn set_sender(&mut self, sender: mpsc::UnboundedSender<ServerEvent>) {
+        self.0.gfx.lock().expect("gfx lock").events = Some(sender);
+    }
+}
+
+impl GfxServerFactory for GfxFactory {
+    fn build_gfx_handler(&self) -> Box<dyn GraphicsPipelineHandler> {
+        Box::new(GfxHandler(self.0.clone()))
+    }
+
+    fn build_server_with_handle(&self) -> Option<(GfxDvcBridge, GfxServerHandle)> {
+        let server = GraphicsPipelineServer::new(self.build_gfx_handler());
+        let handle: GfxServerHandle = Arc::new(Mutex::new(server));
+        let mut gfx = self.0.gfx.lock().expect("gfx lock");
+        gfx.handle = Some(handle.clone());
+        gfx.surface = None;
+        gfx.encoder = None;
+        gfx.client_h264 = false;
+        Some((GfxDvcBridge::new(handle.clone()), handle))
+    }
+}
+
+struct GfxHandler(Arc<Shared>);
+
+impl GraphicsPipelineHandler for GfxHandler {
+    fn capabilities_advertise(&mut self, pdu: &CapabilitiesAdvertisePdu) {
+        let h264 = pdu.0.iter().any(|raw| match raw.parsed() {
+            Ok(Some(CapabilitySet::V8_1 { flags })) => {
+                flags.contains(CapabilitiesV81Flags::AVC420_ENABLED)
+            }
+            Ok(Some(CapabilitySet::V10_7 { flags })) => {
+                !flags.contains(CapabilitiesV107Flags::AVC_DISABLED)
+            }
+            _ => false,
+        });
+        self.0.gfx.lock().expect("gfx lock").client_h264 = h264;
+    }
+
+    fn on_ready(&mut self, _negotiated: &CapabilitySet) {
+        // Everything from now on goes through the pipeline: start with a
+        // full picture.
+        self.0.update(|_| {});
+    }
+
+    fn on_frame_ack(&mut self, _frame_id: u32, _queue_depth: u32, _decoded: u32) {
+        self.0.changed.notify_one();
     }
 }
 
@@ -342,19 +547,24 @@ pub fn start(options: DevServerOptions) -> Result<DevServer, BoxError> {
             key_presses: 0,
         }),
         changed: Notify::new(),
+        gfx: Mutex::new(Gfx::default()),
     });
 
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     let thread_shared = shared.clone();
+    let graphics = options.graphics;
     std::thread::Builder::new()
         .name("dev-rdpd".into())
         .spawn(move || {
             // Built here: RdpServer is not Send.
+            let gfx_factory: Option<Box<dyn GfxServerFactory>> =
+                graphics.then(|| Box::new(GfxFactory(thread_shared.clone())) as _);
             let mut server = RdpServer::builder()
                 .with_addr(options.addr)
                 .with_hybrid(acceptor, public_key)
                 .with_input_handler(Input(thread_shared.clone()))
                 .with_display_handler(Display(thread_shared))
+                .with_gfx_factory(gfx_factory)
                 .with_honor_client_desktop_size(true)
                 .build();
             server.set_credentials(Some(Credentials {

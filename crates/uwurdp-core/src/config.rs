@@ -1,6 +1,7 @@
 //! What the app asks for: the target and the session settings.
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use zeroize::Zeroizing;
 
 /// Settings the page picks per connection.
@@ -32,6 +33,19 @@ pub struct SessionSettings {
     /// Shown on the server; the app passes the hostname. Truncated to 15
     /// characters by the protocol.
     pub client_name: String,
+    /// Offer the graphics pipeline (RDPEGFX). Current Windows servers are
+    /// much faster with it; off falls back to plain bitmap updates.
+    #[serde(default = "yes")]
+    pub graphics_pipeline: bool,
+    /// Cisco's OpenH264 library, downloaded by the app. With it the
+    /// graphics pipeline also offers H.264; a file that is not a known Cisco
+    /// release is refused and the session goes on without H.264.
+    #[serde(default)]
+    pub h264_library: Option<PathBuf>,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Default for SessionSettings {
@@ -50,6 +64,8 @@ impl Default for SessionSettings {
             font_smoothing: true,
             keyboard_layout: 0,
             client_name: String::from("UwURDP"),
+            graphics_pipeline: true,
+            h264_library: None,
         }
     }
 }

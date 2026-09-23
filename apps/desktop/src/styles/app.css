@@ -1155,6 +1155,20 @@ dd {
   color: var(--uwu-muted);
 }
 
+.about-notice {
+  max-width: 380px;
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--uwu-muted);
+  text-align: left;
+}
+
+.about-notice summary {
+  cursor: pointer;
+  text-align: center;
+}
+
 .about-actions {
   display: flex;
   flex-wrap: wrap;

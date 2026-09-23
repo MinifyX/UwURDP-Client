@@ -143,6 +143,8 @@ export type RdpSettings = {
   admin: boolean;
   nla: boolean;
   wallpaper: boolean;
+  /** Offer the graphics pipeline (RDPEGFX): much faster on current Windows. */
+  graphicsPipeline: boolean;
   gateway?: GatewaySettings | null;
 };
 
@@ -157,6 +159,7 @@ export const DEFAULT_RDP: RdpSettings = {
   admin: false,
   nla: true,
   wallpaper: true,
+  graphicsPipeline: true,
   gateway: null,
 };
 
@@ -499,6 +502,23 @@ export type UpdateInfo = { version: string; notes: string | null };
 
 export function setUpdateChannel(channel: 'stable' | 'beta'): Promise<void> {
   return invoke('set_update_channel', { channel });
+}
+
+/** Cisco's OpenH264 on this machine, as `h264.rs` reports it. */
+export type H264Status =
+  | { state: 'unsupported' }
+  | { state: 'off' }
+  | { state: 'downloading' }
+  | { state: 'ready'; version: string }
+  | { state: 'failed'; message: string };
+
+export function h264Status(): Promise<H264Status> {
+  return invoke<H264Status>('h264_status');
+}
+
+/** Hands over the setting; turning it on downloads OpenH264 from Cisco. */
+export function setH264(enabled: boolean): Promise<H264Status> {
+  return invoke<H264Status>('set_h264', { enabled });
 }
 
 export function updateStatus(): Promise<UpdateInfo | null> {

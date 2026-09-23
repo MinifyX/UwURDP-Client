@@ -1,8 +1,10 @@
 //! App-level commands: updates, links out of the app, and a fresh start for a
 //! page that (re)loaded.
 
+use crate::h264::{Codec, Status};
 use crate::updates::{self, Channel, UpdateInfo};
 use crate::{AppState, CommandResult};
+use std::sync::Arc;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -20,6 +22,18 @@ pub(crate) async fn close_all_sessions(state: State<'_, AppState>) -> Result<usi
 #[tauri::command]
 pub(crate) fn set_update_channel(app: AppHandle, channel: Channel) {
     updates::set_channel(&app, channel);
+}
+
+/// Where OpenH264 stands (the page asks again while it downloads).
+#[tauri::command]
+pub(crate) fn h264_status(codec: State<'_, Arc<Codec>>) -> Status {
+    codec.status()
+}
+
+/// The page hands over the H.264 setting on start and on every change.
+#[tauri::command]
+pub(crate) fn set_h264(codec: State<'_, Arc<Codec>>, enabled: bool) -> Status {
+    codec.set_enabled(enabled)
 }
 
 /// A downloaded update waiting for a restart, if any.

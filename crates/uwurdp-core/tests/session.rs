@@ -22,11 +22,22 @@ use zeroize::Zeroizing;
 const WAIT: Duration = Duration::from_secs(20);
 
 fn server() -> DevServer {
+    server_with(DevServerOptions::default())
+}
+
+fn server_with(options: DevServerOptions) -> DevServer {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_test_writer()
         .try_init();
-    dev_server::start(DevServerOptions::default()).expect("dev server")
+    dev_server::start(options).expect("dev server")
+}
+
+fn graphics_server() -> DevServer {
+    server_with(DevServerOptions {
+        graphics: true,
+        ..DevServerOptions::default()
+    })
 }
 
 fn settings() -> SessionSettings {
@@ -205,18 +216,20 @@ impl Page {
 }
 
 async fn open(server: &DevServer) -> Page {
+    open_with(server, settings()).await
+}
+
+async fn open_with(server: &DevServer, settings: SessionSettings) -> Page {
     let manager = Arc::new(SessionManager::new());
     let (tx, events) = mpsc::unbounded_channel();
+    let mut target = target(
+        server,
+        dev_server::PASSWORD,
+        Some(server.fingerprint.clone()),
+    );
+    target.settings = settings;
     let id = manager
-        .connect(
-            "test",
-            target(
-                server,
-                dev_server::PASSWORD,
-                Some(server.fingerprint.clone()),
-            ),
-            ChannelSink(tx),
-        )
+        .connect("test", target, ChannelSink(tx))
         .await
         .expect("connect");
     assert!(manager.is_open(id));
@@ -326,12 +339,65 @@ async fn a_hanging_attempt_can_be_cancelled() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_session_streams_reacts_to_input_resizes_and_closes() {
     let server = server();
-    let mut page = open(&server).await;
+    let page = open(&server).await;
+    full_session(&server, page).await;
+    assert_eq!(server.graphics_frames(), (0, 0));
+}
 
+/// The same session through the graphics pipeline, as Windows serves it:
+/// the client announces it, the server opens it, and every picture after
+/// that — resize included — comes through it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_graphics_pipeline_carries_the_whole_session() {
+    let server = graphics_server();
+    let page = open(&server).await;
+    full_session(&server, page).await;
+    let (uncompressed, h264) = server.graphics_frames();
+    // At least: the first picture, the square, the dot, the hue, the resize.
+    assert!(
+        uncompressed >= 5,
+        "only {uncompressed} frames through the pipeline"
+    );
+    assert_eq!(h264, 0, "no H.264 without OpenH264");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn without_the_pipeline_a_graphics_server_uses_bitmaps() {
+    let server = graphics_server();
+    let mut page = open_with(
+        &server,
+        SessionSettings {
+            graphics_pipeline: false,
+            ..settings()
+        },
+    )
+    .await;
+    page.until("the pink desktop", |p| {
+        p.bitmaps > 0 && {
+            let [r, g, b, a] = p.pixel(5, 5);
+            a == 255 && r > 200 && g < 150 && b > 60
+        }
+    })
+    .await;
+    assert_eq!(server.graphics_frames(), (0, 0));
+}
+
+async fn full_session(server: &DevServer, mut page: Page) {
     // DESKTOP_SIZE first, then a full-screen BITMAPS, then the real desktop.
+    // (The graphics pipeline announces the same size once more, possibly
+    // before the first pixels.)
     page.until("the first frame", |p| p.bitmaps > 0).await;
-    assert_eq!(page.first_kinds, vec![2, 1]);
-    assert_eq!(page.sizes, vec![(1024, 768)]);
+    assert_eq!(page.first_kinds[0], 2, "{:?}", page.first_kinds);
+    assert!(
+        matches!(page.first_kinds[1], 1 | 2),
+        "{:?}",
+        page.first_kinds
+    );
+    assert!(
+        page.sizes.iter().all(|&size| size == (1024, 768)),
+        "{:?}",
+        page.sizes
+    );
     page.until("the pink desktop", |p| {
         let [r, g, b, a] = p.pixel(5, 5);
         a == 255 && r > 200 && g < 150 && b > 60
@@ -435,7 +501,12 @@ async fn a_session_streams_reacts_to_input_resizes_and_closes() {
     let closed = page.closed.clone().expect("CLOSED before finish");
     assert_eq!(closed["reason"], "disconnect", "{closed}");
     assert!(closed["message"].as_str().is_some_and(|m| !m.is_empty()));
-    assert!(!page.manager.is_open(page.id));
+    // The session is removed a moment after its stream finished.
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while page.manager.is_open(page.id) {
+        assert!(tokio::time::Instant::now() < deadline, "still open");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     assert!(page.manager.ack(page.id).is_err());
 }
 

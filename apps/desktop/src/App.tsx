@@ -28,6 +28,7 @@ import {
   listHosts,
   setFullscreen,
   setHostLogin,
+  setH264,
   setUpdateChannel,
   trustCertificate,
   updateStatus,
@@ -732,6 +733,11 @@ export function App() {
   useEffect(() => {
     void setUpdateChannel(settings.updateChannel).catch(() => undefined);
   }, [settings.updateChannel]);
+
+  // The H.264 setting lives here; Rust fetches or deletes OpenH264 to match.
+  useEffect(() => {
+    void setH264(settings.h264).catch(() => undefined);
+  }, [settings.h264]);
 
   useEffect(() => {
     void updateStatus()

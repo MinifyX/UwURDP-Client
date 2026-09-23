@@ -229,3 +229,26 @@ the steps.
 UwURDP is free software under the [GNU GPL v3.0](LICENSE): use it, change it,
 fork it, share it. If you pass on a changed version, its source has to stay
 open too.
+
+### H.264: OpenH264 Video Codec provided by Cisco Systems, Inc.
+
+UwURDP does not include an H.264 decoder. When you turn on H.264 video in the
+settings, UwURDP downloads Cisco's OpenH264 binary from Cisco to your device;
+turning it off deletes it again. Cisco licenses its binary under the AVC/H.264
+patent portfolio only on these conditions:
+
+1. The Cisco-provided binary is separately downloaded to an end user's device,
+   and not integrated into or combined with third party software prior to
+   being downloaded to the end user's device;
+2. The end user must have the ability to control (e.g., to enable, disable, or
+   re-enable) the use of the Cisco-provided binary;
+3. Third party software, in the location where end users can control the use
+   of the Cisco-provided binary, must display the following text:
+   "OpenH264 Video Codec provided by Cisco Systems, Inc.";
+4. Any third-party software that makes use of the Cisco-provided binary must
+   reproduce all of the above text, as well as this last condition, in the
+   EULA and/or in another location where licensing information is to be
+   presented to the end user.
+
+OpenH264 is licensed under the BSD-2-Clause license, Copyright (c) 2013, Cisco
+Systems. All rights reserved.

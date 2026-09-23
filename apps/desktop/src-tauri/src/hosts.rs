@@ -13,6 +13,7 @@
 
 use crate::{err, AppState, CommandResult};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 use uwurdp_core::{
@@ -351,6 +352,7 @@ fn client_name() -> String {
 #[tauri::command]
 pub(crate) async fn connect_host(
     state: State<'_, AppState>,
+    codec: State<'_, Arc<crate::h264::Codec>>,
     id: Uuid,
     attempt: String,
     width: u16,
@@ -457,6 +459,8 @@ pub(crate) async fn connect_host(
             font_smoothing: true,
             keyboard_layout: 0,
             client_name: client_name(),
+            graphics_pipeline: rdp.graphics_pipeline,
+            h264_library: rdp.graphics_pipeline.then(|| codec.library()).flatten(),
         },
         gateway,
     };

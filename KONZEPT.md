@@ -111,6 +111,15 @@ _ring_) → **Zertifikatsprüfung** → CredSSP/NTLM → aktive Sitzung. Beworbe
 wird nur RemoteFX; Bulk-Kompression ist aus, weil IronRDP den Dekompressor
 beim Resize verliert.
 
+**Grafik-Pipeline (RDPEGFX).** Aktuelle Windows-Server liefern den alten
+Bitmap-Weg nur noch langsam und Kachel für Kachel (das Bild baut sich wie auf
+einem alten Röhrenfernseher von oben links auf). Deshalb spricht UwURDP die
+Grafik-Pipeline wie mstsc: eigener Client in `uwurdp-core::gfx` (Surfaces,
+Cache, Codecs Progressive/ClearCodec/Planar/RemoteFX aus `ironrdp-graphics`),
+pro Host abschaltbar. **H.264** nur mit Ciscos OpenH264, das die App auf Wunsch
+von Cisco lädt (Lizenzbedingung: separat heruntergeladen, abschaltbar, Hinweis
+„OpenH264 Video Codec provided by Cisco Systems, Inc.“) — nie mitgeliefert.
+
 **Bildpfad.** Die Engine hält das Desktop-Bild, sammelt geänderte Rechtecke,
 fasst sie zusammen und schickt RGBA-Rechtecke als Binärnachricht über einen
 Tauri-Channel — höchstens alle 16 ms und höchstens zwei unquittiert. Die Seite

@@ -5,11 +5,13 @@
 // login is prefilled from the group and only the password is typed, and saved
 // into a vault made on the way. The desktop draws, the mouse and the keyboard
 // reach it, the overview shows it live, a disconnect keeps the tab, and a
-// reconnect asks nothing. A host that nobody answers on fails plainly. At the
-// end, everything goes into an export file.
+// reconnect asks nothing. The picture comes through the graphics pipeline,
+// as from a current Windows server. A host that nobody answers on fails
+// plainly. At the end, everything goes into an export file.
 //
 // Arguments: the dev server's certificate fingerprint, the folder exports land in.
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { check, connect, failed, sleep } from './cdp.mjs';
 
 const SHOTS = new URL('./shots/', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
@@ -20,6 +22,12 @@ const page = await connect();
 const top = `[...document.querySelectorAll('.modal')].pop()`;
 const topTitle = `${top}?.querySelector('.modal-title')?.textContent ?? ''`;
 const driver = `window.__uwurdpDriver`;
+
+// The app's log, to see which graphics path a session took.
+const LOG = join(process.env.LOCALAPPDATA ?? '', 'app.uwurdp.desktop', 'logs', 'uwurdp.log');
+const pipelineStarts = () =>
+  existsSync(LOG) ? readFileSync(LOG, 'utf8').split('graphics pipeline active').length - 1 : 0;
+const pipelineBefore = pipelineStarts();
 
 await page.waitFor(`document.querySelector('.sidebar')`, { what: 'app shell' });
 check(
@@ -159,6 +167,12 @@ const viewport = await page.eval(
   `(() => { const r = document.querySelector('.session-pane:not([hidden]) .rdp-view').getBoundingClientRect(); return [Math.round(r.width * devicePixelRatio), Math.round(r.height * devicePixelRatio)].join('x'); })()`,
 );
 check('the desktop has the size of the tab', size === viewport, `${size} vs ${viewport}`);
+let viaPipeline = false;
+for (let i = 0; i < 20 && !viaPipeline; i += 1) {
+  viaPipeline = pipelineStarts() > pipelineBefore;
+  if (!viaPipeline) await sleep(250);
+}
+check('the desktop comes through the graphics pipeline', viaPipeline, LOG);
 await page.screenshot(`${SHOTS}a3-desktop.png`);
 
 // The mouse: dev_rdpd draws a dot where the left button goes down.
@@ -307,6 +321,12 @@ await page.eval(`${top}.querySelectorAll('input')[1].select()`);
 await page.type('3390');
 await page.eval(`${top}.querySelectorAll('input')[2].focus()`);
 await page.type('by-hand');
+check(
+  'the graphics pipeline is on for a new host',
+  await page.eval(
+    `[...${top}.querySelectorAll('.check')].some(c => c.textContent.includes('Grafik-Pipeline') && c.querySelector('input').checked)`,
+  ),
+);
 await page.screenshot(`${SHOTS}a7-host-form.png`);
 await page.click('.modal-footer button', 'Speichern');
 await page.waitFor(
@@ -315,9 +335,24 @@ await page.waitFor(
 );
 check('a host saved by hand appears', true);
 
-// ── Export ──────────────────────────────────────────────────────────────────
+// ── H.264 stays off until asked for ─────────────────────────────────────────
 await page.click('[aria-label="Einstellungen"]');
 await page.waitFor(`document.querySelector('.settings-nav')`, { what: 'settings' });
+await page.click('.settings-nav button', 'Sitzungen');
+await page.waitFor(
+  `[...document.querySelectorAll('.setting-row')].some(r => r.textContent.includes('H.264'))`,
+  { what: 'the H.264 setting' },
+);
+const h264Row = `[...document.querySelectorAll('.setting-row')].find(r => r.textContent.includes('H.264'))`;
+check(
+  'H.264 is off until the user turns it on, and names Cisco',
+  await page.eval(
+    `${h264Row}.querySelector('[role=switch]').getAttribute('aria-checked') === 'false' && ${h264Row}.textContent.includes('OpenH264 Video Codec provided by Cisco Systems, Inc.')`,
+  ),
+);
+await page.screenshot(`${SHOTS}a8-h264-setting.png`);
+
+// ── Export ──────────────────────────────────────────────────────────────────
 await page.click('.settings-nav button', 'Import & Export');
 await page.click('.setting-row button', 'Exportieren');
 await page.waitFor(`(${topTitle}) === 'Exportieren'`, { what: 'export dialog' });

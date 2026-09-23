@@ -106,6 +106,12 @@ impl FrameSink for SocketSink {
             .map_err(|_| SinkError::Closed)
     }
 
+    fn send_owned(&self, frame: Vec<u8>) -> Result<(), SinkError> {
+        self.tx
+            .send(Message::Binary(frame.into()))
+            .map_err(|_| SinkError::Closed)
+    }
+
     fn finish(&self) {
         let _ = self.tx.send(Message::Close(None));
     }

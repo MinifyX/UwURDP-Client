@@ -157,5 +157,13 @@
   "Der Code öffnet zusammen mit dem Master-Passwort deinen Tresor auf jedem Gerät. Zeig ihn niemandem und schreib ihn nur dorthin, wo er sicher ist.": "Together with the master password, this code opens your vault on any device. Show it to no one and only write it down somewhere safe.",
   "Recovery-Kit": "Recovery kit",
   "Der Code, den dein Tresor neben dem Master-Passwort braucht. Dieses Gerät zeigt ihn nach dem Master-Passwort noch einmal.": "The code your vault needs besides the master password. This device shows it again after the master password.",
-  "Anzeigen…": "Show…"
+  "Anzeigen…": "Show…",
+  "H.264-Video": "H.264 video",
+  "Bewegte Bilder – Videos, Scrollen, Animationen – kommen per H.264 flüssiger und mit weniger Bandbreite an. Dafür lädt UwURDP Ciscos OpenH264 (rund 1 MB) direkt von Cisco herunter; Ausschalten löscht es wieder. Gilt ab der nächsten Verbindung.": "Moving pictures – videos, scrolling, animations – arrive smoother and with less bandwidth through H.264. For that, UwURDP downloads Cisco’s OpenH264 (about 1 MB) straight from Cisco; turning it off deletes it again. Applies from the next connection.",
+  "OpenH264 wird von Cisco geladen …": "Downloading OpenH264 from Cisco …",
+  "OpenH264 {version} ist installiert.": "OpenH264 {version} is installed.",
+  "Für dieses System gibt es kein OpenH264 von Cisco.": "Cisco offers no OpenH264 for this system.",
+  "OpenH264 konnte nicht geladen werden: {message}": "OpenH264 could not be downloaded: {message}",
+  "Erneut versuchen": "Try again",
+  "H.264 (OpenH264)": "H.264 (OpenH264)"
 }

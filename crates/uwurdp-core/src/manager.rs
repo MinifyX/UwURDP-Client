@@ -9,6 +9,7 @@ use crate::config::RdpTarget;
 use crate::connect::{self, Channels};
 use crate::error::{RdpError, SessionError};
 use crate::frame::{self, CloseReason};
+use crate::gfx;
 use crate::input::InputEvent;
 use crate::session::{self, Command, SessionParts};
 use crate::sink::FrameSink;
@@ -18,11 +19,32 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use tokio::sync::{mpsc, watch};
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 /// What the page hears when a session task panicked.
 const CRASHED: &str =
     "UwURDP ran into an internal error in this session. The details are in the log.";
+
+/// The graphics pipeline for a session, with H.264 when the settings name
+/// an OpenH264 library that loads.
+#[cfg(feature = "h264")]
+fn graphics_channel(target: &RdpTarget) -> (gfx::GfxChannel, gfx::Shared) {
+    let decoder = target.settings.h264_library.as_deref().and_then(|path| {
+        match gfx::h264::H264Decoder::load(path) {
+            Ok(decoder) => Some(decoder),
+            Err(error) => {
+                warn!(%error, path = %path.display(), "OpenH264 could not be loaded; no H.264 for this session");
+                None
+            }
+        }
+    });
+    gfx::channel(decoder)
+}
+
+#[cfg(not(feature = "h264"))]
+fn graphics_channel(_target: &RdpTarget) -> (gfx::GfxChannel, gfx::Shared) {
+    gfx::channel()
+}
 
 struct Entry {
     commands: mpsc::UnboundedSender<Command>,
@@ -76,7 +98,7 @@ impl SessionManager {
         };
 
         let (commands_tx, commands_rx) = mpsc::unbounded_channel();
-        let (channels, clipboard) = if target.settings.clipboard {
+        let (mut channels, clipboard) = if target.settings.clipboard {
             let to_session = commands_tx.clone();
             let worker = clipboard::spawn_worker(Box::new(move |m| {
                 let _ = to_session.send(Command::Clipboard(m));
@@ -91,12 +113,19 @@ impl SessionManager {
             (
                 Channels {
                     clipboard: Some(backend),
+                    graphics: None,
                 },
                 Some(worker),
             )
         } else {
             (Channels::default(), None)
         };
+
+        let graphics = target.settings.graphics_pipeline.then(|| {
+            let (channel, shared) = graphics_channel(&target);
+            channels.graphics = Some(channel);
+            shared
+        });
 
         let established = tokio::select! {
             result = connect::establish(&target, channels) => result?,
@@ -118,6 +147,7 @@ impl SessionManager {
             established,
             commands: commands_rx,
             clipboard,
+            graphics,
         };
         let inner: Weak<Inner> = Arc::downgrade(&self.inner);
         let sink = Arc::new(sink);

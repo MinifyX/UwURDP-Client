@@ -23,11 +23,16 @@ uwurdp-sync.workspace = true
 uwurdp-vault.workspace = true
 
 base64.workspace = true
+# Unpacks Cisco's OpenH264 download (pure Rust, see h264.rs).
+bzip2 = "0.6"
 minisign-verify = "0.2"
 parking_lot.workspace = true
 semver = "1"
+# Fetches OpenH264 from Cisco; the same client and TLS setup uwurdp-sync uses.
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls-no-provider"] }
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

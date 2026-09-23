@@ -182,5 +182,7 @@
   "Deine Hosts und Passwörter kommen mit – nichts wird neu verschlüsselt.": "Your hosts and passwords come along – nothing is encrypted again.",
   "Zuerst den Tresor dieses Geräts öffnen: seine Passwörter ziehen mit in den Tresor des Kontos.": "First open this device's vault: its passwords move into the account's vault.",
   "Passwörter liegen verschlüsselt im Tresor. Dafür brauchst du einmal ein Master-Passwort.": "Passwords are kept encrypted in the vault. For that you need a master password, once.",
-  "Passwörter liegen verschlüsselt im Tresor.": "Passwords are kept encrypted in the vault."
+  "Passwörter liegen verschlüsselt im Tresor.": "Passwords are kept encrypted in the vault.",
+  "Grafik-Pipeline (GFX)": "Graphics pipeline (GFX)",
+  "Wie mstsc: Aktuelle Windows-Server liefern das Bild damit um ein Vielfaches schneller. Nur ausschalten, wenn ein Server damit falsch zeichnet.": "Like mstsc: current Windows servers deliver the picture many times faster with it. Only turn it off if a server draws wrongly with it."
 }

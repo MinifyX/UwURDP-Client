@@ -3,11 +3,14 @@
 //! ```text
 //! cargo run --example dev_rdpd
 //! UWURDP_DEV_RDPD_ADDR=0.0.0.0:3390 cargo run --example dev_rdpd
+//! UWURDP_DEV_RDPD_GFX=0 cargo run --example dev_rdpd   # old bitmap path only
 //! ```
 //!
 //! Log in as `uwu` / `nyu` (NLA). A fresh self-signed certificate is made on
 //! every start; its fingerprint is printed so it can be compared with what
-//! the app shows in its trust dialog.
+//! the app shows in its trust dialog. It serves the graphics pipeline like a
+//! current Windows server (H.264 to clients that offer it) unless
+//! `UWURDP_DEV_RDPD_GFX=0`.
 
 // The dev-dependency ironrdp-server links aws-lc, whose objects export a few
 // symbols; MSVC then reports creating an import library. Harmless, and it
@@ -26,6 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let server = dev_server::start(dev_server::DevServerOptions {
         addr,
+        graphics: std::env::var("UWURDP_DEV_RDPD_GFX").map_or(true, |v| v != "0"),
         ..Default::default()
     })?;
 

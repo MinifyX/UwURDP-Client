@@ -584,6 +584,14 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
               checked={rdp.wallpaper}
               onChange={(wallpaper) => patch({ wallpaper })}
             />
+            <Check
+              label={t('Grafik-Pipeline (GFX)')}
+              hint={t(
+                'Wie mstsc: Aktuelle Windows-Server liefern das Bild damit um ein Vielfaches schneller. Nur ausschalten, wenn ein Server damit falsch zeichnet.',
+              )}
+              checked={rdp.graphicsPipeline}
+              onChange={(graphicsPipeline) => patch({ graphicsPipeline })}
+            />
           </Section>
 
           <Section title={t('Lokale Ressourcen')}>

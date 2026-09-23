@@ -9,11 +9,15 @@ repository = "https://github.com/MinifyX/UwURDP-Client"
 rust-version = "1.89"
 
 [features]
-default = ["audio"]
+default = ["audio", "h264"]
 # Plays remote audio on this machine (RDPSND over cpal). On Linux cpal links
 # against ALSA, so building it needs libasound2-dev (Debian/Ubuntu) or
 # alsa-lib-devel (Fedora). Turn the feature off to build without it.
 audio = ["dep:ironrdp-rdpsnd", "dep:cpal"]
+# H.264 in the graphics pipeline, decoded by Cisco's OpenH264 binary that the
+# app downloads to the user's machine and names in the session settings. No
+# decoder is compiled in: only Cisco's own binary carries their patent license.
+h264 = ["dep:openh264"]
 
 [dependencies]
 ironrdp-connector = "0.10"
@@ -21,6 +25,8 @@ ironrdp-core = { version = "0.2", features = ["alloc"] }
 ironrdp-cliprdr = "0.7"
 ironrdp-displaycontrol = "0.8"
 ironrdp-dvc = "0.8"
+# The graphics pipeline's PDUs; the client side is ours (src/gfx).
+ironrdp-egfx = "0.3"
 ironrdp-graphics = "0.9"
 ironrdp-input = "0.7"
 ironrdp-pdu = "0.9"
@@ -33,6 +39,9 @@ ironrdp-rdpsnd = { version = "0.9", optional = true }
 # Played through our own backend (src/audio.rs), not ironrdp-rdpsnd-native's:
 # that one never starts its stream. Plain PCM only, so no Opus and no CMake.
 cpal = { version = "0.17", optional = true }
+# Only the loader for a prebuilt library (checked against Cisco's release
+# hashes), no OpenH264 sources.
+openh264 = { version = "0.9", default-features = false, features = ["libloading"], optional = true }
 
 # `ring` instead of rustls' default `aws-lc-rs`: aws-lc needs CMake and NASM to
 # build on Windows, ring needs nothing beyond the C compiler.
@@ -55,10 +64,14 @@ zeroize = "1"
 # The toy server behind `examples/dev_rdpd.rs` and the integration tests.
 # ironrdp-server pulls tokio-rustls with its default (aws-lc) provider, so the
 # test build has both providers compiled in; every rustls config in this crate
-# names its provider explicitly, which keeps that ambiguity harmless.
-ironrdp-server = "0.13"
+# names its provider explicitly, which keeps that ambiguity harmless. With
+# `egfx` it also serves the graphics pipeline.
+ironrdp-server = { version = "0.13", features = ["egfx"] }
 rcgen = "0.14"
 anyhow = "1"
 async-trait = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+# OpenH264 built from source, to encode and decode test pictures. Tests only:
+# the app never ships a source build (see the h264 feature).
+openh264 = { version = "0.9", features = ["source"] }

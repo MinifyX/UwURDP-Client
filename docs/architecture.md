@@ -82,18 +82,94 @@ The order matters for security, so it is fixed in `uwurdp-core::connect`:
    into the app. NTLM works against every Windows host that allows it, domain
    members reached by IP included.
 5. The rest of the RDP connection sequence: capabilities, licensing, channels.
+   With the graphics pipeline on (the default), the client core data says so
+   (`RNS_UD_CS_SUPPORT_DYNVC_GFX_PROTOCOL`). IronRDP 0.17 never sets that
+   flag, so UwURDP takes the step that builds the MCS Connect Initial, sets it
+   and sends the amended PDU instead.
 
 Then one task per session owns the connection.
 
 Two choices in the capabilities are deliberate:
 
-- **RemoteFX is the only codec advertised.** IronRDP's defaults also list
-  QOI whenever any crate in the build turns on its feature (the test server
-  does), and advertising a codec the client can't decode means a black
-  screen. Windows servers speak RemoteFX anyway.
+- **RemoteFX is the only bitmap codec advertised** for the old path.
+  IronRDP's defaults also list QOI whenever any crate in the build turns on
+  its feature (the test server does), and advertising a codec the client
+  can't decode means a black screen.
 - **No bulk compression.** IronRDP can't carry the decompressor across a
   deactivation-reactivation, which is every resize, and a fresh one falls out
   of step with the server's history.
+
+## The graphics pipeline
+
+Windows 10/11 and Server 2016+ are built for the graphics pipeline
+(MS-RDPEGFX, the dynamic channel `Microsoft::Windows::RDS::Graphics`). A client
+without it gets the old bitmap path, which current Windows serves slowly and
+tile by tile: the desktop builds up from the top left like an old CRT. With
+it, the server picks a codec per region and has cheap commands for the rest:
+
+| What the server sends              | Used for                           | Decoded by                       |
+| ---------------------------------- | ---------------------------------- | -------------------------------- |
+| AVC420 (H.264)                     | video, scrolling, the whole screen | Cisco's OpenH264, when installed |
+| RemoteFX Progressive               | photos, gradients                  | `ironrdp-graphics`               |
+| ClearCodec                         | text, UI (lossless)                | `ironrdp-graphics`               |
+| Planar, uncompressed               | everything else                    | `ironrdp-graphics`, ours         |
+| RemoteFX (CAVIDEO)                 | older servers                      | ours, on IronRDP's primitives    |
+| SolidFill, SurfaceToSurface, cache | fills, scrolling, repeats          | ours                             |
+
+`uwurdp-core::gfx` is the client side. IronRDP 0.17 only has the pipeline's
+PDUs (`ironrdp-egfx`); surfaces, the bitmap cache, composing and codec
+dispatch are ours:
+
+```
+DVC ──zgfx──▶ GfxChannel ──▶ Pipeline: surfaces ──(mapped)──▶ output ──▶ session flush
+                                ▲  cache, codecs                  │ dirty rects,
+                                └──── FrameAcknowledge ◀── EndFrame   size changes
+```
+
+- The channel runs inside IronRDP's `ActiveStage::process`, on the session
+  task; after every step the session takes the pipeline's changes (a new size
+  from `ResetGraphics`, dirty rectangles) into the same dirty-region and ack
+  machinery as before, and draws from the pipeline's output instead of
+  IronRDP's image.
+- Updates inside a frame reach the output only at `EndFrame`, so the page
+  never sees half a frame. `EndFrame` is acknowledged right away: flow
+  control towards the page stays the dirty region's job.
+- Lossy codecs only write inside the regions the server names, so a RemoteFX
+  or H.264 tile can't smear over text ClearCodec drew losslessly.
+- Nothing a server sends ends a session: a PDU or payload that doesn't decode
+  is logged (the first few as warnings) and skipped. Surfaces are capped at
+  8192 px per edge and 512 MiB together, the cache at the small cache's 4096
+  slots and 64 MiB.
+- What we advertise: with H.264, version 8.1 with AVC420 (AVC444 would need a
+  second decoding pass); without, 10.7 with AVC off. Both with the small
+  cache. A host can turn the pipeline off (`graphicsPipeline` in its RDP
+  settings); the session then uses the old path.
+- The log says which codecs a server used: the line `graphics pipeline done`
+  with its counters is the first thing to look at when a server draws slowly.
+
+### H.264 and Cisco's license
+
+H.264 is patented. Cisco pays the license for its own OpenH264 binaries, but
+only if the binary is downloaded from Cisco to the user's device separately,
+the user can turn its use on and off, and the app shows "OpenH264 Video Codec
+provided by Cisco Systems, Inc." where that switch is. A decoder compiled into
+UwURDP would have no such license. So:
+
+- UwURDP ships no H.264 code. `uwurdp-core` has the `openh264` crate with
+  only its loader (`libloading`), which checks a library's SHA-256 against
+  Cisco's releases before loading it.
+- Settings → Sessions → **H.264 video** is off by default. Turning it on makes
+  `src-tauri/src/h264.rs` download `openh264-2.6.0-<platform>.bz2` from
+  `ciscobinary.openh264.org` over HTTPS, unpack it, check it against the
+  SHA-256 pinned per platform and keep it in the app's local data folder.
+  Turning it off deletes it. Each new session loads it (checked again); a
+  missing or wrong file just means no H.264.
+- The About page carries Cisco's conditions.
+
+The tests encode and decode with OpenH264 built from source (a dev-dependency,
+never in the app), and the dev server speaks the pipeline too (H.264 to
+clients that offer it, uncompressed otherwise), so the whole path runs in
+`cargo test` and in the end-to-end run.
 
 ## The frame path
 

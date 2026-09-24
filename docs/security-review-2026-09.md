@@ -89,6 +89,11 @@ Listed, not changed in this round.
   wraps in release builds; the result is only drawn in the wrong place.
 - **I4, Info — the user name goes out before the certificate check**, in the
   connection request cookie. mstsc does the same, and it is documented.
+- **I5, Info — `rsa` 0.10.0-rc.18 carries RUSTSEC-2023-0071 (Marvin).** Its
+  private-key operations are not constant-time, and no fixed version exists. It
+  comes in through the shared SSH-key code and CredSSP; exploiting it would take a
+  server timing a great many operations with the same key. Watched, to be taken
+  when a fix exists.
 
 ## Checked and fine
 

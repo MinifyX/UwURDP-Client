@@ -22,7 +22,7 @@
 //! neither wants to be interleaved with the terminal's data path.
 
 use uwurdp_proto::{EntityKind, Envelope, PullResponse, PushResponse, SyncCursor, MAX_BATCH};
-use uwurdp_store::{ApplyReport, Pushed, Store, StoreError, Withheld};
+use uwurdp_store::{ApplyReport, Problem, Pushed, Store, StoreError, Withheld};
 
 /// What the client needs from a server. The real one speaks HTTP; the tests
 /// use [`crate::MemoryServer`], which is the same set of rules without a
@@ -83,9 +83,11 @@ pub struct SyncReport {
     pub cursor: u64,
     /// What the other devices' manifests say this one should have and does
     /// not: anything here means the server is keeping records back or handing
-    /// out old versions. Carried over from the last complete check when this
-    /// pass could not make one.
+    /// out old versions. When this pass could not make a check, whatever the
+    /// last complete one found, and the incomplete pull on top.
     pub withheld: Withheld,
+    /// Whether the pull reached the end and the manifests were checked.
+    pub complete: bool,
 }
 
 /// How often a pass may go round before it stops trying. Three is generous:
@@ -108,6 +110,7 @@ pub fn sync_once<T: Transport>(store: &Store, transport: &T) -> Result<SyncRepor
         let complete = pull_all(store, transport, &mut report)?;
         if conflicts == 0 {
             let complete = complete && publish_manifest(store, transport, &mut report)?;
+            report.complete = complete;
             report.withheld = check(store, transport, &mut report, complete)?;
             report.cursor = store.sync_state()?.cursor;
             return Ok(report);
@@ -165,7 +168,10 @@ fn pull_all<T: Transport>(
 ///
 /// Only a pull that reached the end can tell what is missing: until then, a
 /// listed record may just be on a page not fetched yet, so an incomplete pass
-/// keeps what the last complete one found. And before the alarm goes up for
+/// keeps what the last complete one found. It does not count as silence,
+/// though: a server that never lets a pull finish would switch the check off
+/// that way, so the incomplete pull itself is written down as something kept
+/// back, until a complete one clears it. And before the alarm goes up for
 /// the first time, everything is pulled once more from the start: whatever
 /// this device missed by accident — a cursor carried over from somewhere, a
 /// page lost along the way — it gets now, and what is still missing after
@@ -177,11 +183,16 @@ fn check<T: Transport>(
     complete: bool,
 ) -> Result<Withheld, SyncError> {
     if !complete {
-        return Ok(store.withheld()?);
+        return Ok(store.note_incomplete_pull()?);
     }
-    let before = store.withheld()?;
+    // Whether a check already raised the alarm; an incomplete pull before
+    // this one did not, and a cursor it left behind is worth nothing anyway.
+    let alarmed = store
+        .manifest_violations()?
+        .iter()
+        .any(|found| matches!(found.problem, Problem::Missing | Problem::Older));
     let found = store.check_manifests()?;
-    if !found.any() || before.any() {
+    if !found.any() || alarmed {
         return Ok(found);
     }
     tracing::info!(
@@ -192,7 +203,8 @@ fn check<T: Transport>(
     if pull_all(store, transport, report)? {
         Ok(store.check_manifests()?)
     } else {
-        Ok(found)
+        report.complete = false;
+        Ok(store.note_incomplete_pull()?)
     }
 }
 

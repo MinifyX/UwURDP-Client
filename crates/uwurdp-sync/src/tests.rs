@@ -1069,6 +1069,83 @@ fn a_manifest_the_server_does_not_know_yet_holds_up_nothing() {
 }
 
 #[test]
+fn a_server_that_never_lets_a_pull_finish_does_not_switch_the_check_off() {
+    use crate::{Transport, TransportError};
+    use uwurdp_proto::{PullResponse, PushResponse, SyncCursor};
+
+    /// A server that always says there is more: one validly sealed old
+    /// record per page, under a cursor that keeps going up.
+    struct Endless {
+        server: MemoryServer,
+        replay: Envelope,
+    }
+    impl Transport for Endless {
+        fn pull(&self, since: SyncCursor, _limit: usize) -> Result<PullResponse, TransportError> {
+            let next = SyncCursor(since.0 + 1);
+            Ok(PullResponse {
+                envelopes: vec![Envelope {
+                    seq: Some(next.0),
+                    ..self.replay.clone()
+                }],
+                cursor: next,
+                has_more: true,
+            })
+        }
+        fn push(&self, envelopes: Vec<Envelope>) -> Result<PushResponse, TransportError> {
+            self.server.push(envelopes)
+        }
+    }
+
+    let server = MemoryServer::new();
+    let a = first_device();
+    a.trust_host_key(
+        "one.lan",
+        22,
+        "ssh-ed25519",
+        "SHA256:one",
+        "ssh-ed25519 ONE",
+    )
+    .unwrap();
+    sync_once(&a, &server).unwrap();
+    let floor = a.published_manifest().unwrap().unwrap();
+    let endless = Endless {
+        replay: known_host_envelope(&server),
+        server,
+    };
+
+    // Freshly paired, with the manifest the pairing promised: nothing from
+    // another device is trusted before a check has found it.
+    let c = joined_device(&a);
+    c.set_manifest_floor(Some(floor)).unwrap();
+    let before = c.withheld().unwrap();
+    assert!(before.host_keys);
+    assert_eq!(
+        before.records, 0,
+        "no alarm: nothing is known to be missing"
+    );
+
+    let report = sync_once(&c, &endless).unwrap();
+    assert!(!report.complete);
+    assert!(report.withheld.host_keys);
+    assert!(report.withheld.any(), "a pull that never ends is an alarm");
+    assert_eq!(c.list_known_hosts().unwrap().len(), 1, "the key did arrive");
+    assert!(c.known_host("one.lan", 22).unwrap().is_none());
+
+    // A device without a floor is no different.
+    let d = joined_device(&a);
+    let report = sync_once(&d, &endless).unwrap();
+    assert!(!report.complete);
+    assert!(report.withheld.host_keys);
+    assert!(d.known_host("one.lan", 22).unwrap().is_none());
+
+    // A pull that reaches the end clears it.
+    let report = sync_once(&c, &endless.server).unwrap();
+    assert!(report.complete);
+    assert_eq!(report.withheld, Default::default());
+    assert!(c.known_host("one.lan", 22).unwrap().is_some());
+}
+
+#[test]
 fn rdp_settings_a_group_login_and_a_gateway_travel_along() {
     let server = MemoryServer::new();
     let a = first_device();

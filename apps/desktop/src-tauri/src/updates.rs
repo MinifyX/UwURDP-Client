@@ -414,17 +414,12 @@ fn other_instances_running() -> bool {
 
 /// Starts the checked setup to replace this UwURDP, which then quits. The file
 /// stays locked until the setup process exists.
-fn hand_over(pending: Pending, relaunch: bool) -> Result<(), String> {
+fn hand_over(app: &AppHandle, pending: Pending, relaunch: bool) -> Result<(), String> {
     let update = &pending.update;
     // Each download gets one attempt. If the setup refuses (e.g. an older
     // version), the next start must not hand over again and again.
     if let Some(dir) = update.file.parent() {
         let _ = std::fs::remove_file(dir.join(PENDING));
-    }
-    let pid = std::process::id().to_string();
-    let mut args = vec!["--update", "--wait-pid", pid.as_str()];
-    if relaunch {
-        args.push("--relaunch");
     }
     #[cfg(unix)]
     {
@@ -432,24 +427,84 @@ fn hand_over(pending: Pending, relaunch: bool) -> Result<(), String> {
         std::fs::set_permissions(&update.file, std::fs::Permissions::from_mode(0o700))
             .map_err(|e| format!("Couldn't start the update: {e}"))?;
     }
-    let mut command = std::process::Command::new(&update.file);
-    command.args(&args);
-    // The Linux setup is an AppImage. Unpacked and run, it needs no FUSE,
-    // which many systems no longer have.
+    // The Linux setup is an AppImage, and unpacks itself into a folder of the
+    // user's own (see `setup_command`).
     #[cfg(target_os = "linux")]
-    command.env("APPIMAGE_EXTRACT_AND_RUN", "1");
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // Its own process group, so it lives on when UwURDP quits.
-        command.process_group(0);
-    }
-    let started = command
+    let unpack_in = {
+        let dir = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|e| format!("Couldn't start the update: {e}"))?
+            .join(SETUP_TMP);
+        fresh_private_dir(&dir).map_err(|e| format!("Couldn't start the update: {e}"))?;
+        Some(dir)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let unpack_in: Option<PathBuf> = {
+        let _ = app;
+        None
+    };
+    let started = setup_command(&update.file, relaunch, unpack_in.as_deref())
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("Couldn't start the update: {e}"));
     drop(pending);
     started
+}
+
+/// Where the Linux setup unpacks itself, in UwURDP's local data folder —
+/// outside `updates/`, which goes when no update waits.
+#[cfg(target_os = "linux")]
+const SETUP_TMP: &str = "setup-tmp";
+
+/// What the setup gets told the `TMPDIR` from before was, empty when there was
+/// none, so the UwURDP it starts again gets that back. The same name as in
+/// `apps/setup/src-tauri/src/system_unix.rs`.
+const TMPDIR_BEFORE: &str = "UWURDP_TMPDIR_BEFORE";
+
+/// The setup, in update mode, as its own process group so it lives on when
+/// UwURDP quits.
+///
+/// `unpack_in` is for the Linux AppImage: unpacked and run, it needs no FUSE,
+/// which many systems no longer have. It unpacks into `$TMPDIR`, by default
+/// the shared `/tmp`, under a name anyone can work out from the public release
+/// — and runs what it finds there, whoever put it there first. So `TMPDIR`
+/// points at a fresh folder only this user can open.
+fn setup_command(file: &Path, relaunch: bool, unpack_in: Option<&Path>) -> std::process::Command {
+    let mut command = std::process::Command::new(file);
+    command.args(["--update", "--wait-pid", &std::process::id().to_string()]);
+    if relaunch {
+        command.arg("--relaunch");
+    }
+    if let Some(dir) = unpack_in {
+        command
+            .env("APPIMAGE_EXTRACT_AND_RUN", "1")
+            .env(
+                TMPDIR_BEFORE,
+                std::env::var_os("TMPDIR").unwrap_or_default(),
+            )
+            .env("TMPDIR", dir);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command
+}
+
+/// An empty folder at `dir` that only this user can open, whatever was there.
+#[cfg(target_os = "linux")]
+fn fresh_private_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    match std::fs::remove_dir_all(dir) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
+        _ => {}
+    }
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::DirBuilder::new().mode(0o700).create(dir)
 }
 
 /// Installs a checked `.deb` or `.rpm` through the package manager, asking for
@@ -531,7 +586,9 @@ pub fn apply_pending_on_start(app: &AppHandle) -> bool {
             // Another window still has sessions open; the update waits. So
             // does a package, for "Restart now": nobody wants a password
             // prompt just for starting UwURDP.
-            kind == Install::Setup && !other_instances_running() && hand_over(pending, true).is_ok()
+            kind == Install::Setup
+                && !other_instances_running()
+                && hand_over(app, pending, true).is_ok()
         }
         _ => {
             if let Some(dir) = updates_dir(app) {
@@ -646,7 +703,7 @@ pub async fn install_now(app: &AppHandle) -> Result<(), String> {
     // on the file that runs.
     let pending = open_pending(app, kind).ok_or("The downloaded update is damaged.")?;
     if kind == Install::Setup {
-        hand_over(pending, true)?;
+        hand_over(app, pending, true)?;
     } else {
         // The password prompt and the package manager take their time; the
         // window keeps drawing meanwhile.
@@ -817,5 +874,54 @@ mod tests {
         assert_eq!(target, "windows-x86_64");
         #[cfg(all(windows, target_arch = "aarch64"))]
         assert_eq!(target, "windows-aarch64");
+    }
+
+    #[test]
+    fn the_setup_unpacks_in_the_folder_it_is_given_and_hands_the_old_tmpdir_on() {
+        let env = |command: &std::process::Command, name: &str| {
+            command
+                .get_envs()
+                .find(|(key, _)| *key == name)
+                .and_then(|(_, value)| value)
+                .map(|value| value.to_string_lossy().into_owned())
+        };
+        let dir = Path::new("/home/uwu/.local/share/app.uwurdp.desktop/setup-tmp");
+        let command = setup_command(Path::new("setup"), true, Some(dir));
+        let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
+        assert_eq!(args[..2], ["--update", "--wait-pid"]);
+        assert_eq!(args.last().unwrap(), "--relaunch");
+        assert_eq!(env(&command, "TMPDIR").as_deref(), dir.to_str());
+        assert_eq!(
+            env(&command, "APPIMAGE_EXTRACT_AND_RUN").as_deref(),
+            Some("1")
+        );
+        assert_eq!(
+            env(&command, TMPDIR_BEFORE).unwrap_or_default(),
+            std::env::var("TMPDIR").unwrap_or_default()
+        );
+
+        // Windows and macOS: nothing to unpack, nothing changed.
+        let command = setup_command(Path::new("setup"), false, None);
+        assert_eq!(command.get_envs().count(), 0);
+        assert!(command.get_args().all(|a| a != "--relaunch"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_linux_setup_unpacks_in_a_fresh_folder_only_this_user_can_open() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("app.uwurdp.desktop").join(SETUP_TMP);
+        fresh_private_dir(&dir).unwrap();
+        let mode = |dir: &Path| std::fs::metadata(dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&dir), 0o700);
+
+        // Whatever was there before is gone, and so is a mode anyone could use.
+        std::fs::create_dir_all(dir.join("appimage_extracted_0123")).unwrap();
+        std::fs::write(dir.join("appimage_extracted_0123/AppRun"), "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        fresh_private_dir(&dir).unwrap();
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
     }
 }

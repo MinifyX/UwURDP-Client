@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   asBackupFailure,
   importExportFile,
@@ -16,6 +16,7 @@ import {
   scanRdcmanFile,
   type ImportReport,
   type ImportSummary,
+  type PasswordRecipient,
   type RdcManFile,
 } from '../lib/session';
 import { Icon } from './Icon';
@@ -33,7 +34,7 @@ type Props = {
 type Step =
   | { kind: 'loading' }
   | { kind: 'pick'; rdcman: RdcManFile[] }
-  | { kind: 'preview'; summary: ImportSummary }
+  | { kind: 'preview'; summary: ImportSummary; ownPasswords: boolean }
   | { kind: 'file-password'; file: PickedExport; wrong: boolean }
   | { kind: 'file-preview'; file: PickedExport; summary: BackupSummary; password: string | null }
   | { kind: 'done'; report: ImportReport };
@@ -43,7 +44,8 @@ type Step =
  * listed right away), `.rdp` files saved from mstsc, or an UwURDP export. Pick
  * a source, see what it holds in counts, and write it. Passwords need the
  * vault; the vault dialog comes in between and the import goes on right after.
- * Previews and results show counts only, never a host or a secret.
+ * Previews and results show counts, never a secret; hosts only where a
+ * password this Windows account opened would go, before the user decides.
  */
 export function ImportDialog({ onClose, onImported }: Props) {
   useLanguage();
@@ -97,14 +99,14 @@ export function ImportDialog({ onClose, onImported }: Props) {
 
   async function pickFiles(kind: 'rdg' | 'rdp') {
     const summary = await pickImportFiles(kind);
-    if (summary) setStep({ kind: 'preview', summary });
+    if (summary) setStep({ kind: 'preview', summary, ownPasswords: false });
   }
 
-  async function writeImport() {
+  async function writeImport(ownPasswords: boolean) {
     await withVault(async () => {
       // Into the workspace the host list shows, like a host added by hand.
       const { workspaces, activeWorkspace } = getSettings();
-      const report = await runImport(workspaces ? activeWorkspace : 'private');
+      const report = await runImport(workspaces ? activeWorkspace : 'private', ownPasswords);
       onImported();
       setStep({ kind: 'done', report });
     });
@@ -186,7 +188,11 @@ export function ImportDialog({ onClose, onImported }: Props) {
                     title={file.folder}
                     onClick={() =>
                       void guard(async () =>
-                        setStep({ kind: 'preview', summary: await scanRdcmanFile(file.token) }),
+                        setStep({
+                          kind: 'preview',
+                          summary: await scanRdcmanFile(file.token),
+                          ownPasswords: false,
+                        }),
                       )
                     }
                   >
@@ -235,7 +241,14 @@ export function ImportDialog({ onClose, onImported }: Props) {
             ]}
             secrets={step.summary.needsVault}
             skipped={step.summary.skipped}
-          />
+          >
+            <OwnPasswords
+              recipients={step.summary.passwordRecipients}
+              checked={step.ownPasswords}
+              disabled={busy}
+              onChange={(ownPasswords) => setStep({ ...step, ownPasswords })}
+            />
+          </Preview>
         );
 
       case 'file-password': {
@@ -305,7 +318,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
             <button
               className="primary"
               disabled={busy || nothing}
-              onClick={() => void guard(writeImport)}
+              onClick={() => void guard(() => writeImport(step.ownPasswords))}
             >
               {busy ? t('Importiere…') : t('Importieren')}
             </button>
@@ -373,11 +386,13 @@ function Preview({
   counts,
   secrets,
   skipped,
+  children,
 }: {
   source: string;
   counts: [string, number][];
   secrets: boolean;
   skipped: string[];
+  children?: ReactNode;
 }) {
   useLanguage();
   return (
@@ -401,9 +416,86 @@ function Preview({
       {secrets && (
         <p className="import-note">{t('Die Passwörter landen verschlüsselt im Tresor.')}</p>
       )}
+      {children}
       <Skipped items={skipped} />
     </div>
   );
+}
+
+/**
+ * Passwords this Windows account opened — sealed in the file, or the user's
+ * own RDCMan profile the file names — go to addresses the file chose. They
+ * are taken only when the user ticks the box under the list of those
+ * addresses; otherwise the hosts get the username alone.
+ */
+function OwnPasswords({
+  recipients,
+  checked,
+  disabled,
+  onChange,
+}: {
+  recipients: PasswordRecipient[];
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  useLanguage();
+  if (recipients.length === 0) return null;
+  return (
+    <div className="import-own-passwords">
+      <p className="import-warning">
+        {t(
+          'Diese Datei gibt Passwörter, die dein Windows-Konto entschlüsselt hat, an die folgenden Adressen. Übernimm sie nur, wenn du jeder davon vertraust.',
+        )}
+      </p>
+      <ul className="import-recipients">
+        {recipients.map((recipient, index) => (
+          <li key={index}>
+            <b>{where(recipient)}</b>
+            <span>{what(recipient)}</span>
+          </li>
+        ))}
+      </ul>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        <span>
+          <b>{t('Diese Passwörter übernehmen')}</b>
+          <small>
+            {t(
+              'Ohne Haken kommen nur die Benutzernamen mit, und UwURDP fragt beim Verbinden nach dem Passwort.',
+            )}
+          </small>
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/** The address a password would go to, as the user would type it. */
+function where(recipient: PasswordRecipient): string {
+  if (recipient.address === null) return t('Alle Hosts in „{name}“', { name: recipient.name });
+  const host = recipient.address.includes(':') ? `[${recipient.address}]` : recipient.address;
+  return recipient.port === null ? host : `${host}:${recipient.port}`;
+}
+
+/** Which entry it is, and whose password. */
+function what(recipient: PasswordRecipient): string {
+  const entry =
+    recipient.kind === 'gateway'
+      ? t('Gateway von {name}', { name: recipient.name })
+      : recipient.kind === 'group'
+        ? t('Gruppe {name}', { name: recipient.name })
+        : recipient.name;
+  const origin =
+    recipient.profile === null
+      ? t('Passwort aus der Datei')
+      : t('Passwort aus deinem RDCMan-Profil „{profile}“', { profile: recipient.profile });
+  return `${entry} · ${origin}`;
 }
 
 function Report({ report }: { report: ImportReport }) {

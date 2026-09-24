@@ -448,7 +448,25 @@ export function lockVault(): Promise<void> {
 /** A file RDCMan itself had open, found in its settings. */
 export type RdcManFile = { token: string; name: string; folder: string };
 
-/** What a picked source holds, in counts. Never a host or a secret. */
+/**
+ * Something that would get a password this Windows account opened: sealed in
+ * the file, or the user's own RDCMan profile the file names.
+ */
+export type PasswordRecipient = {
+  kind: 'host' | 'group' | 'gateway';
+  /** The host's name, or the group's path. */
+  name: string;
+  /** Where the password goes; null for a group (every host in it). */
+  address: string | null;
+  port: number | null;
+  /** The RDCMan profile it comes from; null for a password sealed in the file. */
+  profile: string | null;
+};
+
+/**
+ * What a picked source holds, in counts, and where passwords this Windows
+ * account opened would go. Never a secret.
+ */
 export type ImportSummary = {
   /** What was read: a file name, or "3 files". */
   label: string;
@@ -459,6 +477,8 @@ export type ImportSummary = {
   gateways: number;
   /** Writing this import needs an unlocked vault (it has passwords to seal). */
   needsVault: boolean;
+  /** Written only when the user says yes to this list (`runImport`'s `ownPasswords`). */
+  passwordRecipients: PasswordRecipient[];
   skipped: string[];
 };
 
@@ -486,9 +506,13 @@ export function scanRdcmanFile(token: string): Promise<ImportSummary> {
   return invoke<ImportSummary>('scan_rdcman_file', { token });
 }
 
-/** Writes what the last pick or scan found, into `workspace`. */
-export function runImport(workspace: Workspace): Promise<ImportReport> {
-  return invoke<ImportReport>('run_import', { workspace });
+/**
+ * Writes what the last pick or scan found, into `workspace`. `ownPasswords`:
+ * the user confirmed the summary's `passwordRecipients`; without it those
+ * hosts get the username alone.
+ */
+export function runImport(workspace: Workspace, ownPasswords: boolean): Promise<ImportReport> {
+  return invoke<ImportReport>('run_import', { workspace, ownPasswords });
 }
 
 // ── App ─────────────────────────────────────────────────────────────────────

@@ -7,7 +7,8 @@
 
 use uwurdp_import::{
     parse_rdg, parse_rdp_file, Decrypt, ImportedAudio, ImportedCredential, ImportedDisplay,
-    ImportedGateway, NamedCredential, Secret, Source,
+    ImportedGateway, NamedCredential, PasswordOrigin, PasswordRecipient, RecipientKind, Secret,
+    Source,
 };
 
 /// The fake cipher that mirrors how the fixtures were sealed.
@@ -46,6 +47,7 @@ fn local_profiles() -> Vec<NamedCredential> {
             username: Some("administrator".into()),
             domain: Some("CORP".into()),
             password: Some(Secret::new("L0calProf".into())),
+            ..Default::default()
         },
     }]
 }
@@ -303,4 +305,144 @@ fn rdp_utf16le_bom() {
     let cred = &bundle.credentials[host.credential.unwrap()];
     assert_eq!(cred.username.as_deref(), Some("bob@corp.example.com"));
     assert_eq!(pw(cred), Some("Rdp#File1"));
+}
+
+// -- passwords this Windows account opened ------------------------------------
+
+/// Seal `text` the way the fixtures are sealed, as base64 for an `.rdg`.
+fn seal(text: &str) -> String {
+    use base64::Engine;
+    let raw: Vec<u8> = text
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .map(|b| b ^ 0x5A)
+        .collect();
+    base64::engine::general_purpose::STANDARD.encode(raw)
+}
+
+/// A file that names the user's own Local profile "Admin" for one server, has
+/// a group with a sealed password, and a server with a clear-text one.
+fn borrowing_rdg() -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<RDCMan programVersion="2.7" schemaVersion="3">
+  <file>
+    <properties><name>Shared</name></properties>
+    <server>
+      <properties><name>192.0.2.10</name><displayName>borrower</displayName></properties>
+      <logonCredentials inherit="None">
+        <profileName scope="Local">Admin</profileName>
+      </logonCredentials>
+    </server>
+    <server>
+      <properties><name>192.0.2.30</name><displayName>plain</displayName></properties>
+      <logonCredentials inherit="None">
+        <profileName scope="Local">Custom</profileName>
+        <userName>plainuser</userName>
+        <password storeAsClearText="True">in-the-file</password>
+      </logonCredentials>
+    </server>
+    <group>
+      <properties>
+        <name>Sealed</name>
+        <logonCredentials inherit="None">
+          <profileName scope="Local">Custom</profileName>
+          <userName>groupuser</userName>
+          <password>{}</password>
+        </logonCredentials>
+      </properties>
+      <server>
+        <properties><name>192.0.2.20:3390</name><displayName>member</displayName></properties>
+        <logonCredentials inherit="FromParent" />
+      </server>
+    </group>
+  </file>
+</RDCMan>"#,
+        seal("Gr0upSealed")
+    )
+}
+
+fn admin_profile() -> Vec<NamedCredential> {
+    vec![NamedCredential {
+        name: "Admin".into(),
+        credential: ImportedCredential {
+            label: Some("Admin".into()),
+            username: Some("admin".into()),
+            password: Some(Secret::new("MyOwnSecret".into())),
+            ..Default::default()
+        },
+    }]
+}
+
+#[test]
+fn rdg_marks_where_each_password_came_from() {
+    let bundle = parse_rdg(&borrowing_rdg(), &admin_profile(), &XorDecrypt).unwrap();
+    let origin = |name: &str| {
+        let host = bundle.hosts.iter().find(|h| h.name == name).unwrap();
+        bundle.credentials[host.credential.unwrap()].origin
+    };
+    assert_eq!(origin("borrower"), PasswordOrigin::LocalProfile);
+    assert_eq!(origin("plain"), PasswordOrigin::InFile);
+    let group = &bundle.credentials[bundle.groups[0].credential.unwrap()];
+    assert_eq!(group.origin, PasswordOrigin::Unsealed);
+    assert_eq!(pw(group), Some("Gr0upSealed"));
+}
+
+#[test]
+fn rdg_lists_every_address_that_would_get_the_users_passwords() {
+    let bundle = parse_rdg(&borrowing_rdg(), &admin_profile(), &XorDecrypt).unwrap();
+    let recipients = bundle.password_recipients();
+
+    // The host that borrows the user's own profile, by address and profile.
+    assert!(recipients.contains(&PasswordRecipient {
+        kind: RecipientKind::Host,
+        name: "borrower".into(),
+        address: Some("192.0.2.10".into()),
+        port: Some(3389),
+        profile: Some("Admin".into()),
+    }));
+    // The group with a sealed password, and the host that inherits it.
+    assert!(recipients.contains(&PasswordRecipient {
+        kind: RecipientKind::Group,
+        name: "Sealed".into(),
+        address: None,
+        port: None,
+        profile: None,
+    }));
+    assert!(recipients.contains(&PasswordRecipient {
+        kind: RecipientKind::Host,
+        name: "member".into(),
+        address: Some("192.0.2.20".into()),
+        port: Some(3390),
+        profile: None,
+    }));
+    // A clear-text password was the file's own to give.
+    assert!(recipients.iter().all(|r| r.name != "plain"));
+    assert_eq!(recipients.len(), 3);
+}
+
+#[test]
+fn rdg_without_readable_passwords_lists_nobody() {
+    // No profile to borrow and nothing DPAPI opens: usernames only.
+    let bundle = parse_rdg(&borrowing_rdg(), &[], &NoDecrypt).unwrap();
+    assert!(bundle.password_recipients().is_empty());
+}
+
+#[test]
+fn rdp_password_51_is_the_users_own() {
+    let bytes = include_bytes!("fixtures/sample_utf8.rdp");
+    let bundle = parse_rdp_file(bytes, "prod-web", &XorDecrypt).unwrap();
+    assert_eq!(bundle.credentials[0].origin, PasswordOrigin::Unsealed);
+    let recipients = bundle.password_recipients();
+    // The host, and the gateway that would be handed the host's login.
+    assert_eq!(
+        recipients
+            .iter()
+            .map(|r| (r.kind, r.address.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            (RecipientKind::Host, Some("10.0.0.50")),
+            (RecipientKind::Gateway, Some("gw2.example.com")),
+        ]
+    );
 }

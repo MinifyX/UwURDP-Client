@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     split_host_port, Decrypt, ImportBundle, ImportError, ImportedAudio, ImportedCredential,
-    ImportedDisplay, ImportedGateway, ImportedHost, ImportedSettings, Source,
+    ImportedDisplay, ImportedGateway, ImportedHost, ImportedSettings, PasswordOrigin, Source,
 };
 
 const DEFAULT_PORT: u16 = 3389;
@@ -72,6 +72,12 @@ pub fn parse_rdp_file(
         label: None,
         username,
         domain,
+        // `password 51` is only ever a DPAPI blob: one this account opened.
+        origin: if password.is_some() {
+            PasswordOrigin::Unsealed
+        } else {
+            PasswordOrigin::InFile
+        },
         password,
     };
     let credential = bundle.intern_credential(cred);

@@ -4,7 +4,9 @@
 //! them sealed for the Windows account, and here they are opened and sealed
 //! again, for the vault. A file without passwords needs no vault at all.
 //! Reading a file ([`pick_import_files`], [`scan_rdcman_file`]) reports what
-//! it holds, in counts only; [`run_import`] writes it.
+//! it holds, in counts, plus the hosts that would get a password opened for
+//! this Windows account; [`run_import`] writes it, those passwords only when
+//! the user said yes to that list.
 
 use crate::backup::BackupFailure;
 use crate::dialogs::Filter;
@@ -259,8 +261,9 @@ pub(crate) async fn rdcman_files(state: State<'_, AppState>) -> CommandResult<Ve
         .collect())
 }
 
-/// What an import would bring, in counts. Contains no host names, addresses or
-/// secrets, so it is safe to hand to the webview for a preview.
+/// What an import would bring, in counts, and where the passwords this
+/// Windows account opened would go. Contains no secrets, so it is safe to hand
+/// to the webview for a preview.
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ImportSummary {
@@ -272,6 +275,12 @@ pub(crate) struct ImportSummary {
     gateways: usize,
     /// Whether writing this needs the vault: it has passwords to seal.
     needs_vault: bool,
+    /// Every host, gateway and group that would get a password DPAPI opened
+    /// for this user — sealed in the file, or the user's own RDCMan profile
+    /// the file names. A file picks its addresses, so these passwords are
+    /// only written when the user saw this list and said yes
+    /// ([`run_import`]'s `own_passwords`).
+    password_recipients: Vec<uwurdp_import::PasswordRecipient>,
     /// One line per thing that could not be imported, with the reason.
     skipped: Vec<String>,
 }
@@ -397,6 +406,7 @@ fn summarize(bundle: &ImportBundle, label: String) -> ImportSummary {
             .credentials
             .iter()
             .any(|c| c.password.as_ref().is_some_and(|p| !p.is_empty())),
+        password_recipients: bundle.password_recipients(),
         skipped,
     }
 }
@@ -481,11 +491,14 @@ pub(crate) async fn scan_rdcman_file(
     Ok(keep(&state, bundle, label))
 }
 
-/// Write what the last pick or scan read, into `workspace`.
+/// Write what the last pick or scan read, into `workspace`. `own_passwords`:
+/// the user saw the preview's `password_recipients` and wants those passwords
+/// taken too; otherwise their hosts get the username alone.
 #[tauri::command]
 pub(crate) async fn run_import(
     state: State<'_, AppState>,
     workspace: Workspace,
+    own_passwords: bool,
 ) -> Result<ImportReport, BackupFailure> {
     let bundle = state
         .pending_import
@@ -495,8 +508,18 @@ pub(crate) async fn run_import(
         .ok_or_else(|| BackupFailure::Error {
             message: "pick the file again".into(),
         })?;
-    let skipped = summarize(&bundle, String::new()).skipped;
-    let (set, kept) = to_import_set(bundle, workspace);
+    let mut skipped = summarize(&bundle, String::new()).skipped;
+    let left_out = bundle
+        .credentials
+        .iter()
+        .filter(|c| c.password_is_users_own())
+        .count();
+    if !own_passwords && left_out > 0 {
+        skipped.push(format!(
+            "{left_out} password(s) your Windows account opened: not taken, the hosts ask on connect"
+        ));
+    }
+    let (set, kept) = to_import_set(bundle, workspace, own_passwords);
     let store = Arc::clone(&state.store);
     let result = tauri::async_runtime::spawn_blocking(move || store.import(set))
         .await
@@ -574,15 +597,24 @@ fn rdp_settings(settings: &ImportedSettings) -> RdpSettings {
 
 /// The importer's neutral shape, as the store takes it. Returns the set and
 /// the bundle again (minus nothing), so a set refused for a locked vault can
-/// be retried without reading the file again.
-fn to_import_set(bundle: ImportBundle, workspace: Workspace) -> (ImportSet, ImportBundle) {
+/// be retried without reading the file again. Without `own_passwords`, a
+/// password this Windows account opened stays behind and only its username
+/// is written.
+fn to_import_set(
+    bundle: ImportBundle,
+    workspace: Workspace,
+    own_passwords: bool,
+) -> (ImportSet, ImportBundle) {
     let logins = bundle
         .credentials
         .iter()
         .map(|credential| LoginInput {
             username: credential.username.clone().unwrap_or_default(),
             domain: credential.domain.clone().unwrap_or_default(),
-            password: credential.password.clone(),
+            password: credential
+                .password
+                .clone()
+                .filter(|_| own_passwords || !credential.password_is_users_own()),
         })
         .collect();
     let groups = bundle
@@ -640,4 +672,79 @@ fn to_import_set(bundle: ImportBundle, workspace: Workspace) -> (ImportSet, Impo
         },
         bundle,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uwurdp_import::{ImportedCredential, ImportedHost, PasswordOrigin, Secret};
+
+    /// Two hosts: one with a password DPAPI opened for this user, one with a
+    /// password the file carried as clear text.
+    fn bundle() -> ImportBundle {
+        let credential = |user: &str, origin| ImportedCredential {
+            username: Some(user.into()),
+            password: Some(Secret::new(format!("{user}-pw"))),
+            origin,
+            ..Default::default()
+        };
+        let host = |name: &str, address: &str, credential| ImportedHost {
+            name: name.into(),
+            address: address.into(),
+            port: 3389,
+            credential: Some(credential),
+            ..Default::default()
+        };
+        ImportBundle {
+            credentials: vec![
+                credential("admin", PasswordOrigin::LocalProfile),
+                credential("plain", PasswordOrigin::InFile),
+            ],
+            hosts: vec![
+                host("borrower", "192.0.2.10", 0),
+                host("plain", "192.0.2.30", 1),
+            ],
+            ..Default::default()
+        }
+    }
+
+    fn passwords(set: &ImportSet) -> Vec<(&str, Option<&str>)> {
+        set.logins
+            .iter()
+            .map(|l| {
+                (
+                    l.username.as_str(),
+                    l.password.as_deref().map(String::as_str),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_users_own_passwords_stay_behind_unless_confirmed() {
+        let (set, _) = to_import_set(bundle(), Workspace::Private, false);
+        assert_eq!(
+            passwords(&set),
+            [("admin", None), ("plain", Some("plain-pw"))]
+        );
+        assert_eq!(set.hosts[0].login, Some(0), "the username still arrives");
+
+        let (set, _) = to_import_set(bundle(), Workspace::Private, true);
+        assert_eq!(
+            passwords(&set),
+            [("admin", Some("admin-pw")), ("plain", Some("plain-pw"))]
+        );
+    }
+
+    #[test]
+    fn the_preview_names_the_address_before_asking() {
+        let summary = summarize(&bundle(), String::new());
+        assert_eq!(summary.password_recipients.len(), 1);
+        let recipient = &summary.password_recipients[0];
+        assert_eq!(recipient.address.as_deref(), Some("192.0.2.10"));
+        // What the webview gets carries the address and never the password.
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains("192.0.2.10"));
+        assert!(!json.contains("admin-pw"));
+    }
 }

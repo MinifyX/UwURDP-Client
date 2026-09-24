@@ -34,8 +34,8 @@ pub(crate) async fn save(
         .file()
         .set_title(title)
         .set_file_name(file_name);
-    // A filter makes Windows append its extension; a file that has none (an
-    // OpenSSH key) gets no filter, or it would be saved as "id_ed25519.*".
+    // A filter makes Windows append its extension; one without extensions
+    // would be saved as "name.*", so it is left off.
     if !filter.extensions.is_empty() {
         dialog = dialog.add_filter(filter.name, filter.extensions);
     }

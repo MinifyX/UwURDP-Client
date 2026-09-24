@@ -1,10 +1,13 @@
-//! Host keys the user has decided to trust.
+//! Server certificates the user has decided to trust.
 //!
-//! Stored by `(address, port)` with the SHA-256 fingerprint for comparison and
-//! the full OpenSSH public key alongside, so an export to a plain
-//! `known_hosts` file stays possible. Addresses are compared case-insensitively
-//! — `Prox-1.lan` and `prox-1.lan` are the same machine, and treating them as
-//! two would ask the user to trust the same key twice.
+//! Stored by `(address, port)` with the SHA-256 fingerprint of the
+//! certificate's DER for comparison, and the whole certificate (DER, base64)
+//! alongside, so an export can carry it and check it against the fingerprint.
+//! Addresses are compared case-insensitively — `Prox-1.lan` and `prox-1.lan`
+//! are the same machine, and treating them as two would ask the user to trust
+//! the same certificate twice. The names (`host key`) are the ones the shared
+//! schema has; the test data below still uses SSH-shaped keys, which the store
+//! never looks into.
 
 use crate::manifest::HOST_KEY_KINDS;
 use crate::{now_ms, tick, vault_id, Result, Store};
@@ -18,7 +21,7 @@ pub struct KnownHostRecord {
     pub address: String,
     pub port: u16,
     pub algorithm: String,
-    /// `SHA256:…`, as `ssh-keygen -lf` prints it.
+    /// `SHA256:` and the unpadded base64 of the SHA-256 over the certificate's DER.
     pub fingerprint: String,
     pub public_key: String,
     pub first_seen_ms: u64,

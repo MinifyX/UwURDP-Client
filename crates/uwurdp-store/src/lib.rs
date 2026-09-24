@@ -77,7 +77,7 @@ pub enum StoreError {
     UnknownKey(Uuid),
     #[error("the key is still used by {hosts} host(s)")]
     KeyInUse { hosts: usize },
-    #[error("the operating system could not protect the vault key: {0}")]
+    #[error("the operating system could not seal or open a key: {0}")]
     Device(String),
     #[error("this export is protected by a password")]
     ExportPasswordRequired,

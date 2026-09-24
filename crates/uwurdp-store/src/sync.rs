@@ -20,6 +20,7 @@
 //!    last connected, and what system it found. They mean nothing anywhere
 //!    else.
 
+use crate::device::never_opens;
 use crate::vault::truncate_wal;
 use crate::{now_ms, Result, Store, StoreError};
 use rusqlite::{params, OptionalExtension, Transaction};
@@ -260,7 +261,10 @@ impl Store {
     /// The keys a paired device signs and unlocks with. `Ok(None)` when this
     /// device is not paired, or when what was kept can no longer be unsealed —
     /// another Windows account, a restored database — in which case the
-    /// pairing is dropped rather than left half-broken.
+    /// pairing is dropped rather than left half-broken. An error, with
+    /// everything kept, when the operating system can't tell right now: a
+    /// keychain that is locked, slow or asked and refused may answer next time,
+    /// and the account key may exist nowhere else.
     pub fn enrolment_keys(
         &self,
         unprotect: impl Fn(&[u8]) -> std::io::Result<Zeroizing<Vec<u8>>>,
@@ -280,24 +284,35 @@ impl Store {
             return Ok(None);
         };
 
-        let opened = (|| {
-            let device_key: [u8; 32] = unprotect(&device).ok()?.as_slice().try_into().ok()?;
+        // `Ok(None)`: it opened, and is not what was kept.
+        let opened = (|| -> std::io::Result<Option<EnrolmentKeys>> {
+            let Ok(device_key) = <[u8; 32]>::try_from(unprotect(&device)?.as_slice()) else {
+                return Ok(None);
+            };
             let account_key = match account {
                 Some(account) => {
-                    let bytes: [u8; 16] = unprotect(&account).ok()?.as_slice().try_into().ok()?;
+                    let Ok(bytes) = <[u8; 16]>::try_from(unprotect(&account)?.as_slice()) else {
+                        return Ok(None);
+                    };
                     Some(uwurdp_vault::AccountKey::from_bytes(bytes))
                 }
                 None => None,
             };
-            Some(EnrolmentKeys {
+            Ok(Some(EnrolmentKeys {
                 device_key: Zeroizing::new(device_key),
                 account_key,
-            })
+            }))
         })();
 
         match opened {
-            Some(keys) => Ok(Some(keys)),
-            None => {
+            Ok(Some(keys)) => Ok(Some(keys)),
+            // The keychain locked, slow or asked and refused: that may pass,
+            // and forgetting would cost the account key for good.
+            Err(error) if !never_opens(&error) => {
+                tracing::warn!(%error, "what this device kept from its pairing does not open now");
+                Err(StoreError::Device(error.to_string()))
+            }
+            _ => {
                 tracing::warn!("what this device kept from its pairing no longer opens");
                 self.forget_enrolment()?;
                 Ok(None)
@@ -1506,12 +1521,28 @@ mod tests {
             .unwrap();
         assert_ne!(stored, [7u8; 32].to_vec());
 
-        // What the operating system refuses to unseal — another Windows
+        // A keychain that is locked, slow or asked and refused is an error
+        // for now, and the pairing stays: the account key may exist nowhere
+        // else.
+        let locked = |_: &[u8]| Err(std::io::Error::other("the keychain is locked"));
+        assert!(matches!(
+            store.enrolment_keys(locked),
+            Err(StoreError::Device(_))
+        ));
+        assert!(store.sync_state().unwrap().paired());
+        assert!(store.enrolment_keys(unprotect).unwrap().is_some());
+
+        // What the operating system says will never open — another Windows
         // account, a database carried to another machine — drops the pairing
         // rather than leaving it half-broken. (DPAPI answers with an error
         // there rather than with the wrong bytes, which is why that is the
         // case being tested.)
-        let refused = |_: &[u8]| Err(std::io::Error::other("another user"));
+        let refused = |_: &[u8]| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "another user",
+            ))
+        };
         assert!(store.enrolment_keys(refused).unwrap().is_none());
         assert!(!store.sync_state().unwrap().paired());
 

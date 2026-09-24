@@ -36,6 +36,24 @@ pub enum Source {
 /// serializable, so it cannot end up in the preview that goes to the webview.
 pub type Secret = zeroize::Zeroizing<String>;
 
+/// Where a credential's password came from.
+///
+/// A file names whatever addresses it likes. A password written in it as
+/// clear text is the file author's to give away; one that only this Windows
+/// account could open — a DPAPI blob in the file, or the user's own RDCMan
+/// profile the file refers to by name — is the user's, and goes to the file's
+/// addresses only when the user saw them and said yes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PasswordOrigin {
+    /// Clear text in the file (or no password at all).
+    #[default]
+    InFile,
+    /// A DPAPI blob in the file that this Windows account decrypted.
+    Unsealed,
+    /// One of the user's own Local-scope profiles from `RDCMan.settings`.
+    LocalProfile,
+}
+
 /// A username/domain/password triple as a source recorded it.
 ///
 /// Not [`Serialize`], because of the password. Credentials are deduplicated
@@ -48,6 +66,7 @@ pub struct ImportedCredential {
     pub username: Option<String>,
     pub domain: Option<String>,
     pub password: Option<Secret>,
+    pub origin: PasswordOrigin,
 }
 
 impl ImportedCredential {
@@ -56,17 +75,34 @@ impl ImportedCredential {
         self.username.is_none() && self.domain.is_none() && self.password.is_none()
     }
 
+    /// Whether the password is one this Windows account opened, rather than
+    /// one the file carried readable: see [`PasswordOrigin`].
+    pub fn password_is_users_own(&self) -> bool {
+        self.password.as_ref().is_some_and(|p| !p.is_empty())
+            && self.origin != PasswordOrigin::InFile
+    }
+
     /// Identity for deduplication. The password derefs to `&str`, so two
     /// entries that differ only in a wiped-on-drop wrapper still compare equal.
-    fn dedupe_key(&self) -> (Option<&str>, Option<&str>, Option<&str>, Option<&str>) {
+    /// The origin counts: a clear-text copy must not stand in for a sealed one.
+    fn dedupe_key(&self) -> DedupeKey<'_> {
         (
             self.label.as_deref(),
             self.username.as_deref(),
             self.domain.as_deref(),
             self.password.as_deref().map(|s| s.as_str()),
+            self.origin,
         )
     }
 }
+
+type DedupeKey<'a> = (
+    Option<&'a str>,
+    Option<&'a str>,
+    Option<&'a str>,
+    Option<&'a str>,
+    PasswordOrigin,
+);
 
 /// A group in the source's tree.
 ///
@@ -147,6 +183,31 @@ pub struct ImportedHost {
     pub extras: Vec<(String, String)>,
 }
 
+/// Something that would get a password the user's own Windows account opened,
+/// as the preview lists it before asking whether to take those passwords.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasswordRecipient {
+    pub kind: RecipientKind,
+    /// The host's name, or the group's path.
+    pub name: String,
+    /// Where the password goes: the host's or the gateway's address. `None`
+    /// for a group, which hands its login to every host in it.
+    pub address: Option<String>,
+    pub port: Option<u16>,
+    /// The RDCMan profile the password comes from, when it is one of the
+    /// user's own; `None` for a sealed password in the file itself.
+    pub profile: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecipientKind {
+    Host,
+    Group,
+    Gateway,
+}
+
 /// Everything one source had.
 #[derive(Debug, Default)]
 pub struct ImportBundle {
@@ -176,6 +237,70 @@ impl ImportBundle {
         }
         self.credentials.push(cred);
         Some(self.credentials.len() - 1)
+    }
+
+    /// Every host, gateway and group that would get a password this Windows
+    /// account opened ([`ImportedCredential::password_is_users_own`]), with
+    /// the address it would go to — hosts that take it from their group at
+    /// connect time included.
+    pub fn password_recipients(&self) -> Vec<PasswordRecipient> {
+        let own = |index: Option<usize>| {
+            index
+                .and_then(|i| self.credentials.get(i))
+                .filter(|c| c.password_is_users_own())
+        };
+        let profile = |c: &ImportedCredential| match c.origin {
+            PasswordOrigin::LocalProfile => c.label.clone(),
+            _ => None,
+        };
+        let mut out = Vec::new();
+        for group in &self.groups {
+            if let Some(cred) = own(group.credential) {
+                out.push(PasswordRecipient {
+                    kind: RecipientKind::Group,
+                    name: group.path.clone(),
+                    address: None,
+                    port: None,
+                    profile: profile(cred),
+                });
+            }
+        }
+        for host in &self.hosts {
+            // A host without a login of its own uses its group's.
+            let login = host.credential.or_else(|| {
+                let path = host.group_path.as_deref()?;
+                self.groups.iter().find(|g| g.path == path)?.credential
+            });
+            if let Some(cred) = own(login) {
+                out.push(PasswordRecipient {
+                    kind: RecipientKind::Host,
+                    name: host.name.clone(),
+                    address: Some(host.address.clone()),
+                    port: Some(host.port),
+                    profile: profile(cred),
+                });
+            }
+            if let Some(gateway) = &host.settings.gateway {
+                // The rule the app stores it by: without a login of its own,
+                // or told to share, the gateway gets the host's.
+                let gateway_login = if gateway.use_host_credentials || gateway.credential.is_none()
+                {
+                    login
+                } else {
+                    gateway.credential
+                };
+                if let Some(cred) = own(gateway_login) {
+                    out.push(PasswordRecipient {
+                        kind: RecipientKind::Gateway,
+                        name: host.name.clone(),
+                        address: Some(gateway.address.clone()),
+                        port: gateway.port,
+                        profile: profile(cred),
+                    });
+                }
+            }
+        }
+        out
     }
 }
 
@@ -214,6 +339,19 @@ pub(crate) fn decode_dpapi_plaintext(raw: &[u8]) -> Secret {
         units.push(unit);
     }
     Secret::new(String::from_utf16_lossy(&units))
+}
+
+/// Split `"host:3389"` into `("host", Some(3389))`, leaving IPv6/other text as
+/// an address with no port.
+pub(crate) fn split_host_port(raw: &str) -> (String, Option<u16>) {
+    if let Some((host, port)) = raw.rsplit_once(':') {
+        if let Ok(p) = port.trim().parse::<u16>() {
+            if !host.is_empty() && !host.contains(':') {
+                return (host.trim().to_string(), Some(p));
+            }
+        }
+    }
+    (raw.trim().to_string(), None)
 }
 
 /// A named credential the app already has, used to resolve `scope="Local"`

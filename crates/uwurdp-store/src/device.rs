@@ -35,6 +35,15 @@ fn check_id(vault_id: Uuid) -> Uuid {
     Uuid::from_u128(vault_id.as_u128() ^ 0x7577_7573_7368_2d64_6576_6963_652d_636b)
 }
 
+/// Whether what the operating system said about a sealed blob means it will
+/// never open here: `InvalidData`, the seal failing its check — another user,
+/// another machine, a key that is gone. Only then is what was kept forgotten.
+/// Anything else, such as a keychain that is locked, slow or asked and refused,
+/// may pass, and forgetting on it would throw away the only copy.
+pub(crate) fn never_opens(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::InvalidData
+}
+
 impl Store {
     /// Keep the unlocked vault's key on this device, sealed by `protect`.
     pub fn remember_vault(
@@ -88,6 +97,10 @@ impl Store {
     /// Unlock with the key kept on this device. `Ok(false)` when nothing is
     /// kept — or when what is kept no longer fits this vault or this user, in
     /// which case it is removed, and the master password is the way in again.
+    ///
+    /// An error, and the key kept, when the operating system could not tell:
+    /// a keychain that is locked, slow or asked and refused may answer next
+    /// time (see [`never_opens`]).
     pub fn unlock_remembered_vault(
         &self,
         unprotect: impl FnOnce(&[u8]) -> std::io::Result<Zeroizing<Vec<u8>>>,
@@ -106,31 +119,39 @@ impl Store {
         };
 
         let header = self.load_header()?;
-        let opened = (|| {
-            let vault_id = Uuid::parse_str(&vault_id).ok()?;
-            if header.as_ref()?.vault_id != vault_id {
-                return None;
+        // `Ok(None)`: what is kept does not fit this vault.
+        let opened = (|| -> std::io::Result<Option<UnlockedVault>> {
+            let Ok(vault_id) = Uuid::parse_str(&vault_id) else {
+                return Ok(None);
+            };
+            if header.as_ref().map(|header| header.vault_id) != Some(vault_id) {
+                return Ok(None);
             }
-            let bytes = unprotect(&protected).ok()?;
-            let key: [u8; 32] = bytes.as_slice().try_into().ok()?;
+            let Ok(key) = <[u8; 32]>::try_from(unprotect(&protected)?.as_slice()) else {
+                return Ok(None);
+            };
             let vault = UnlockedVault::from_key(vault_id, Zeroizing::new(key));
-            let check = vault
-                .open(
-                    check_id(vault_id),
-                    EntityKind::Secret,
-                    &Sealed { nonce, blob },
-                )
-                .ok()?;
-            (check.as_slice() == CHECK).then_some(vault)
+            let check = vault.open(
+                check_id(vault_id),
+                EntityKind::Secret,
+                &Sealed { nonce, blob },
+            );
+            Ok(check
+                .is_ok_and(|check| check.as_slice() == CHECK)
+                .then_some(vault))
         })();
 
         match opened {
-            Some(vault) => {
+            Ok(Some(vault)) => {
                 *self.vault.lock() = Some(vault);
                 tracing::info!("vault unlocked with this device's key");
                 Ok(true)
             }
-            None => {
+            Err(error) if !never_opens(&error) => {
+                tracing::warn!(%error, "the key kept on this device does not open now");
+                Err(StoreError::Device(error.to_string()))
+            }
+            _ => {
                 tracing::warn!("the key kept on this device no longer opens the vault");
                 self.forget_remembered_vault()?;
                 Ok(false)
@@ -196,6 +217,31 @@ mod tests {
         );
         // The master password still works.
         store.unlock_vault(b"master").unwrap();
+    }
+
+    #[test]
+    fn a_keychain_that_does_not_answer_costs_nothing_kept() {
+        let store = unlocked();
+        store.remember_vault(protect_as(7)).unwrap();
+        store.lock_vault();
+        let locked = |_: &[u8]| Err(std::io::Error::other("the keychain is locked"));
+        assert!(matches!(
+            store.unlock_remembered_vault(locked),
+            Err(StoreError::Device(_))
+        ));
+        assert!(store.vault_is_remembered().unwrap(), "still kept");
+        assert!(store.unlock_remembered_vault(unprotect_as(7)).unwrap());
+
+        // One that says the blob will never open lets it go.
+        store.lock_vault();
+        let never = |_: &[u8]| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "does not open for this user",
+            ))
+        };
+        assert!(!store.unlock_remembered_vault(never).unwrap());
+        assert!(!store.vault_is_remembered().unwrap());
     }
 
     #[test]

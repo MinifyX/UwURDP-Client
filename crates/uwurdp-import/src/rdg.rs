@@ -18,8 +18,9 @@ use base64::Engine;
 use roxmltree::{Document, Node};
 
 use crate::{
-    Decrypt, ImportBundle, ImportError, ImportedAudio, ImportedCredential, ImportedDisplay,
-    ImportedGateway, ImportedGroup, ImportedHost, ImportedSettings, NamedCredential, Source,
+    split_host_port, Decrypt, ImportBundle, ImportError, ImportedAudio, ImportedCredential,
+    ImportedDisplay, ImportedGateway, ImportedGroup, ImportedHost, ImportedSettings,
+    NamedCredential, PasswordOrigin, Source,
 };
 
 /// The default RDP port, used when neither the address nor the connection
@@ -165,7 +166,10 @@ impl<'a> Ctx<'a> {
     ) -> Option<usize> {
         if local {
             if let Some(p) = self.local_profiles.iter().find(|p| p.name == name) {
-                let cred = clone_cred(&p.credential);
+                // The user's own profile, which the file only names: its
+                // password is the user's, not the file's.
+                let mut cred = clone_cred(&p.credential);
+                cred.origin = PasswordOrigin::LocalProfile;
                 return self.bundle.intern_credential(cred);
             }
         } else if let Some((_, cred, failed)) = file_profiles.iter().find(|(n, _, _)| n == name) {
@@ -214,39 +218,22 @@ impl<'a> Ctx<'a> {
 
     /// Read user/domain/password directly off a credentials element.
     fn parse_inline(&self, node: Node, label: Option<String>) -> (ImportedCredential, bool) {
-        let (password, failed) = self.read_password(node);
+        let (password, origin, failed) = self.read_password(node);
         let cred = ImportedCredential {
             label,
             username: find_text(node, "userName"),
             domain: find_text(node, "domain"),
             password,
+            origin,
         };
         (cred, failed)
     }
 
     /// Decode a `<password>` child. Clear-text passwords come through as-is; a
-    /// base64 DPAPI blob goes through [`Decrypt`]. Returns whether a password
-    /// was present but could not be recovered.
-    fn read_password(&self, node: Node) -> (Option<crate::Secret>, bool) {
-        let Some(pw) = find_child(node, "password") else {
-            return (None, false);
-        };
-        let Some(text) = pw.text().map(str::trim).filter(|t| !t.is_empty()) else {
-            return (None, false);
-        };
-        if pw.attribute("storeAsClearText") == Some("True") {
-            return (Some(crate::Secret::new(text.to_string())), false);
-        }
-        if self.cert_encrypted {
-            return (None, true);
-        }
-        match base64::engine::general_purpose::STANDARD.decode(text) {
-            Ok(blob) => match self.decrypt.decrypt(&blob) {
-                Some(secret) => (Some(secret), false),
-                None => (None, true),
-            },
-            Err(_) => (None, true),
-        }
+    /// base64 DPAPI blob goes through [`Decrypt`]. Returns where the password
+    /// came from, and whether one was present but could not be recovered.
+    fn read_password(&self, node: Node) -> (Option<crate::Secret>, PasswordOrigin, bool) {
+        read_password_static(node, self.decrypt, self.cert_encrypted)
     }
 }
 
@@ -491,15 +478,16 @@ pub(crate) fn parse_credentials_node(
     decrypt: &dyn Decrypt,
     cert_encrypted: bool,
 ) -> (ImportedCredential, bool) {
-    let ctx_pw = read_password_static(node, decrypt, cert_encrypted);
+    let (password, origin, failed) = read_password_static(node, decrypt, cert_encrypted);
     let label = find_text(node, "profileName").filter(|n| n != "Custom");
     let cred = ImportedCredential {
         label,
         username: find_text(node, "userName"),
         domain: find_text(node, "domain"),
-        password: ctx_pw.0,
+        password,
+        origin,
     };
-    (cred, ctx_pw.1)
+    (cred, failed)
 }
 
 /// Password decode without a [`Ctx`], for [`parse_credentials_node`].
@@ -507,25 +495,29 @@ fn read_password_static(
     node: Node,
     decrypt: &dyn Decrypt,
     cert_encrypted: bool,
-) -> (Option<crate::Secret>, bool) {
+) -> (Option<crate::Secret>, PasswordOrigin, bool) {
     let Some(pw) = find_child(node, "password") else {
-        return (None, false);
+        return (None, PasswordOrigin::InFile, false);
     };
     let Some(text) = pw.text().map(str::trim).filter(|t| !t.is_empty()) else {
-        return (None, false);
+        return (None, PasswordOrigin::InFile, false);
     };
     if pw.attribute("storeAsClearText") == Some("True") {
-        return (Some(crate::Secret::new(text.to_string())), false);
+        return (
+            Some(crate::Secret::new(text.to_string())),
+            PasswordOrigin::InFile,
+            false,
+        );
     }
     if cert_encrypted {
-        return (None, true);
+        return (None, PasswordOrigin::InFile, true);
     }
     match base64::engine::general_purpose::STANDARD.decode(text) {
         Ok(blob) => match decrypt.decrypt(&blob) {
-            Some(secret) => (Some(secret), false),
-            None => (None, true),
+            Some(secret) => (Some(secret), PasswordOrigin::Unsealed, false),
+            None => (None, PasswordOrigin::InFile, true),
         },
-        Err(_) => (None, true),
+        Err(_) => (None, PasswordOrigin::InFile, true),
     }
 }
 
@@ -572,19 +564,6 @@ fn profile_is_local(node: Node) -> bool {
     find_child(node, "profileName").and_then(|p| p.attribute("scope")) == Some("Local")
 }
 
-/// Split `"host:3389"` into `("host", Some(3389))`, leaving IPv6/other text as
-/// an address with no port.
-fn split_host_port(raw: &str) -> (String, Option<u16>) {
-    if let Some((host, port)) = raw.rsplit_once(':') {
-        if let Ok(p) = port.trim().parse::<u16>() {
-            if !host.is_empty() && !host.contains(':') {
-                return (host.trim().to_string(), Some(p));
-            }
-        }
-    }
-    (raw.trim().to_string(), None)
-}
-
 /// Push every child element not in `mapped` into `extras`, so a recognised but
 /// unmapped setting stays visible in the preview.
 fn dump_extras(node: Node, mapped: &[&str], extras: &mut Vec<(String, String)>) {
@@ -606,5 +585,6 @@ fn clone_cred(cred: &ImportedCredential) -> ImportedCredential {
         username: cred.username.clone(),
         domain: cred.domain.clone(),
         password: cred.password.clone(),
+        origin: cred.origin,
     }
 }

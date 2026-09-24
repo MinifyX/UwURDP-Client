@@ -105,11 +105,32 @@ pub fn stop_processes_under(dir: &Path, name: &str) -> Result<(), String> {
     }
 }
 
+/// What UwURDP tells an update setup the `TMPDIR` from before was — empty
+/// when there was none. The same name as in the app's `updates.rs`.
+const TMPDIR_BEFORE: &str = "UWURDP_TMPDIR_BEFORE";
+
+/// UwURDP starts an update with `TMPDIR` pointing at a folder of its own, for
+/// the AppImage to unpack in instead of the shared `/tmp`. What the setup
+/// starts gets the `TMPDIR` from before back.
+fn restore_tmpdir(command: &mut std::process::Command, before: Option<std::ffi::OsString>) {
+    let Some(before) = before else {
+        return;
+    };
+    command.env_remove(TMPDIR_BEFORE);
+    if before.is_empty() {
+        command.env_remove("TMPDIR");
+    } else {
+        command.env("TMPDIR", before);
+    }
+}
+
 /// Starts a program in a process group of its own, so it outlives the setup.
 pub fn spawn_detached(program: &Path, args: &[&str]) -> Result<(), String> {
     use std::os::unix::process::CommandExt;
     use std::process::Stdio;
-    std::process::Command::new(program)
+    let mut command = std::process::Command::new(program);
+    restore_tmpdir(&mut command, std::env::var_os(TMPDIR_BEFORE));
+    command
         .args(args)
         .current_dir(program.parent().unwrap_or(Path::new("/")))
         .stdin(Stdio::null())
@@ -179,4 +200,37 @@ pub fn writable(dir: &Path) -> bool {
     };
     // SAFETY: a NUL-terminated path that lives for the call.
     unsafe { libc::access(path.as_ptr(), libc::W_OK) == 0 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env(command: &std::process::Command, name: &str) -> Option<Option<String>> {
+        command
+            .get_envs()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()))
+    }
+
+    #[test]
+    fn what_an_update_starts_gets_the_tmpdir_from_before_back() {
+        let mut command = std::process::Command::new("UwURDP");
+        restore_tmpdir(&mut command, Some("/run/user/1000/tmp".into()));
+        assert_eq!(
+            env(&command, "TMPDIR"),
+            Some(Some("/run/user/1000/tmp".into()))
+        );
+        assert_eq!(env(&command, TMPDIR_BEFORE), Some(None), "not passed on");
+
+        // There was none: there is none.
+        let mut command = std::process::Command::new("UwURDP");
+        restore_tmpdir(&mut command, Some("".into()));
+        assert_eq!(env(&command, "TMPDIR"), Some(None));
+
+        // Not started by an update: left alone.
+        let mut command = std::process::Command::new("UwURDP");
+        restore_tmpdir(&mut command, None);
+        assert_eq!(command.get_envs().count(), 0);
+    }
 }

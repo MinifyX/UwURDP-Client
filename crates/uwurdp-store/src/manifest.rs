@@ -18,6 +18,11 @@
 //!   found anything about host keys, a host key that came from another device
 //!   is not trusted: `known_host` answers as if the host were new, so the next
 //!   connection asks. One the user trusted on this device stays trusted.
+//! - **What a check that never comes means.** A server can keep every pull
+//!   from reaching the end, so no check ever runs. A pull that stops short is
+//!   written down as something kept back, and a device that was added with a
+//!   manifest to wait for does not trust host keys from other devices until a
+//!   check has found it.
 
 use crate::sync::{clock_of, parse_uuid, table_of, SYNCED_KINDS};
 use crate::{tick, Result, Store};
@@ -73,6 +78,13 @@ pub enum Problem {
     Missing,
     /// Here, but only in a version older than the one listed.
     Older,
+    /// Expected and not checked yet: the manifest the pairing promised, until
+    /// a pull first reaches the end. It keeps host keys from other devices
+    /// untrusted, and raises no alarm — nothing is known to be missing.
+    Unchecked,
+    /// A pull that never reached the end: the server kept saying there was
+    /// more. Anything could be among what it did not hand over.
+    Incomplete,
 }
 
 impl Problem {
@@ -80,12 +92,16 @@ impl Problem {
         match self {
             Self::Missing => "missing",
             Self::Older => "older",
+            Self::Unchecked => "unchecked",
+            Self::Incomplete => "incomplete",
         }
     }
 
     fn parse(text: &str) -> Self {
         match text {
             "older" => Self::Older,
+            "unchecked" => Self::Unchecked,
+            "incomplete" => Self::Incomplete,
             _ => Self::Missing,
         }
     }
@@ -283,8 +299,15 @@ impl Store {
     }
 
     /// Remember the manifest the device that added this one had published.
+    ///
+    /// Until a pull reaches the end and the check finds it, that manifest
+    /// counts as not checked yet, so host keys from other devices are not
+    /// trusted in the meantime: a server that never lets a pull finish would
+    /// otherwise never have what it keeps back held against it.
     pub fn set_manifest_floor(&self, floor: Option<ManifestFloor>) -> Result<()> {
-        self.conn.lock().execute(
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE sync_state
                 SET floor_manifest_id = ?1, floor_wall_ms = ?2,
                     floor_counter = ?3, floor_device = ?4
@@ -296,7 +319,36 @@ impl Store {
                 floor.map(|f| f.clock.device),
             ],
         )?;
+        if let Some(floor) = floor {
+            tx.execute(
+                "INSERT OR IGNORE INTO manifest_violations (kind, id, problem)
+                 VALUES (?1, ?2, ?3)",
+                params![
+                    EntityKind::Manifest as u8,
+                    floor.id.to_string(),
+                    Problem::Unchecked.as_str()
+                ],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
+    }
+
+    /// Write down that a pull did not reach the end. Until one does and the
+    /// check runs, this counts as something kept back — with host keys among
+    /// it, since there is no telling what was.
+    pub fn note_incomplete_pull(&self) -> Result<Withheld> {
+        self.conn.lock().execute(
+            "INSERT OR REPLACE INTO manifest_violations (kind, id, problem)
+             VALUES (?1, ?2, ?3)",
+            params![
+                EntityKind::Manifest as u8,
+                Uuid::nil().to_string(),
+                Problem::Incomplete.as_str()
+            ],
+        )?;
+        tracing::warn!("the server never let the pull reach the end");
+        self.withheld()
     }
 
     /// The manifest this device was told to wait for when it joined.
@@ -401,14 +453,16 @@ impl Store {
         Ok(withheld)
     }
 
-    /// What the last check found.
+    /// What the last check found. A manifest not checked yet counts only
+    /// against host keys, not as a record kept back.
     pub fn withheld(&self) -> Result<Withheld> {
         let (records, host_keys): (i64, i64) = self.conn.lock().query_row(
             &format!(
-                "SELECT count(*), coalesce(max(kind IN {HOST_KEY_KINDS}), 0)
+                "SELECT count(*) FILTER (WHERE problem <> ?1),
+                        coalesce(max(kind IN {HOST_KEY_KINDS}), 0)
                    FROM manifest_violations"
             ),
-            [],
+            [Problem::Unchecked.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
         Ok(Withheld {
@@ -764,6 +818,14 @@ mod tests {
 
         store.set_manifest_floor(Some(floor(5_000))).unwrap();
         assert_eq!(store.manifest_floor().unwrap(), Some(floor(5_000)));
+        assert_eq!(
+            store.withheld().unwrap(),
+            Withheld {
+                records: 0,
+                host_keys: true
+            },
+            "not checked yet: no alarm, and no trust in host keys from elsewhere"
+        );
         let missing = store.check_manifests().unwrap();
         assert!(missing.host_keys, "any host key could be the withheld one");
         assert_eq!(

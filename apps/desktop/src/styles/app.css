@@ -948,6 +948,41 @@ dd {
   color: var(--uwu-muted);
 }
 
+.import-own-passwords {
+  display: grid;
+  gap: 8px;
+}
+
+.import-recipients {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.import-recipients li {
+  display: grid;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: var(--uwu-radius-control);
+  border: 1px solid var(--uwu-hairline);
+  background: var(--uwu-elevated);
+}
+
+.import-recipients b {
+  font-family: var(--uwu-mono);
+  overflow-wrap: anywhere;
+}
+
+.import-recipients span {
+  color: var(--uwu-muted);
+  overflow-wrap: anywhere;
+}
+
 .import-sources {
   display: grid;
   gap: 8px;

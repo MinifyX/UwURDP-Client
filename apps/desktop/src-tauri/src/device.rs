@@ -98,9 +98,27 @@ mod os {
             )
         };
         if ok == 0 {
-            return Err(std::io::Error::last_os_error());
+            return Err(never_opens(std::io::Error::last_os_error()));
         }
         Ok(take(output))
+    }
+
+    /// DPAPI's answer for a blob that can never open for this account —
+    /// tampered, sealed for another purpose or by another account — as
+    /// `InvalidData`, which is what lets a caller forget it. Anything else,
+    /// such as the service not answering yet, may pass, and keeps its kind.
+    fn never_opens(error: std::io::Error) -> std::io::Error {
+        use windows_sys::Win32::Foundation::{ERROR_INVALID_DATA, NTE_BAD_DATA, NTE_BAD_KEY_STATE};
+        match error.raw_os_error() {
+            Some(code)
+                if code == ERROR_INVALID_DATA as i32
+                    || code == NTE_BAD_DATA
+                    || code == NTE_BAD_KEY_STATE =>
+            {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, error)
+            }
+            _ => error,
+        }
     }
 
     fn blob(bytes: &[u8]) -> CRYPT_INTEGER_BLOB {
@@ -171,22 +189,61 @@ mod os {
             return Err(Error::new(ErrorKind::InvalidData, "too short"));
         }
         let (nonce, sealed) = rest.split_at(24);
-        let key = seal_key()?;
-        let cipher = XChaCha20Poly1305::new(key.as_slice().into());
-        cipher
-            .decrypt(
-                XNonce::from_slice(nonce),
-                Payload {
-                    msg: sealed,
-                    aad: label,
-                },
-            )
-            .map(Zeroizing::new)
-            .map_err(|_| Error::new(ErrorKind::InvalidData, "does not open for this user"))
+        opened_with(nonce, sealed, label, keychain_read(), existing_file_key())
     }
 
-    /// UwURDP's own key for this user: from the Keychain or the Secret Service,
-    /// made on first use; from a private file where neither answers.
+    /// Open a blob with the keys there are: the keychain's, then the file's —
+    /// a blob sealed while the keychain did not answer is under the file's.
+    /// Never with a new one, which opens nothing.
+    ///
+    /// Only when every place that could hold the key answered and none opens
+    /// the blob is that `InvalidData`, which lets the caller forget it. A
+    /// keychain that is locked, slow or said no, or a key file that can't be
+    /// read, may be different next time, and costs the caller nothing it kept.
+    pub(super) fn opened_with(
+        nonce: &[u8],
+        sealed: &[u8],
+        label: &[u8],
+        keychain: Result<Option<Zeroizing<Vec<u8>>>, keyring::Error>,
+        file: std::io::Result<Option<Zeroizing<Vec<u8>>>>,
+    ) -> std::io::Result<Zeroizing<Vec<u8>>> {
+        let open = |key: &Zeroizing<Vec<u8>>| {
+            XChaCha20Poly1305::new(key.as_slice().into())
+                .decrypt(
+                    XNonce::from_slice(nonce),
+                    Payload {
+                        msg: sealed,
+                        aad: label,
+                    },
+                )
+                .ok()
+                .map(Zeroizing::new)
+        };
+        if let Ok(Some(key)) = &keychain {
+            if let Some(opened) = open(key) {
+                return Ok(opened);
+            }
+        }
+        if let Ok(Some(key)) = &file {
+            if let Some(opened) = open(key) {
+                return Ok(opened);
+            }
+        }
+        match (keychain, file) {
+            (Err(error), _) => Err(Error::other(format!(
+                "the keychain did not answer: {error}"
+            ))),
+            (_, Err(error)) => Err(Error::other(format!("the seal key file: {error}"))),
+            (Ok(_), Ok(_)) => Err(Error::new(
+                ErrorKind::InvalidData,
+                "does not open for this user",
+            )),
+        }
+    }
+
+    /// UwURDP's own key for this user, for sealing: from the Keychain or the
+    /// Secret Service, made on first use; from a private file where neither
+    /// answers.
     fn seal_key() -> std::io::Result<Zeroizing<Vec<u8>>> {
         match keychain_key() {
             Ok(key) => Ok(key),
@@ -198,21 +255,40 @@ mod os {
     }
 
     fn keychain_key() -> Result<Zeroizing<Vec<u8>>, keyring::Error> {
+        if let Some(key) = keychain_read()? {
+            return Ok(key);
+        }
+        let entry = keyring::Entry::new(SERVICE, ACCOUNT)?;
+        let key = fresh_key();
+        entry.set_secret(&key)?;
+        // Read back, so a keychain that silently drops writes is not
+        // mistaken for one that keeps them.
+        let stored = Zeroizing::new(entry.get_secret()?);
+        if stored.as_slice() == key.as_slice() {
+            Ok(key)
+        } else {
+            Err(keyring::Error::NoEntry)
+        }
+    }
+
+    /// The key in the Keychain or the Secret Service; `None` when it answers
+    /// that there is none. An entry that is not a key is an error, never
+    /// overwritten: what it was is not known here.
+    fn keychain_read() -> Result<Option<Zeroizing<Vec<u8>>>, keyring::Error> {
         let entry = keyring::Entry::new(SERVICE, ACCOUNT)?;
         match entry.get_secret() {
-            Ok(secret) if secret.len() == 32 => Ok(Zeroizing::new(secret)),
-            Ok(_) | Err(keyring::Error::NoEntry) => {
-                let key = fresh_key();
-                entry.set_secret(&key)?;
-                // Read back, so a keychain that silently drops writes is not
-                // mistaken for one that keeps them.
-                let stored = Zeroizing::new(entry.get_secret()?);
-                if stored.as_slice() == key.as_slice() {
-                    Ok(key)
+            Ok(secret) => {
+                let secret = Zeroizing::new(secret);
+                if secret.len() == 32 {
+                    Ok(Some(secret))
                 } else {
-                    Err(keyring::Error::NoEntry)
+                    Err(keyring::Error::Invalid(
+                        ACCOUNT.into(),
+                        format!("{} bytes where a key has 32", secret.len()),
+                    ))
                 }
             }
+            Err(keyring::Error::NoEntry) => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -239,25 +315,34 @@ mod os {
         Ok(base.join(SERVICE).join("device-seal.key"))
     }
 
+    /// The key in the private file; `None` when there is no file.
+    fn existing_file_key() -> std::io::Result<Option<Zeroizing<Vec<u8>>>> {
+        use std::os::unix::fs::PermissionsExt;
+        let path = fallback_path()?;
+        let meta = match std::fs::symlink_metadata(&path) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        // Only a plain file of ours, readable by nobody else, counts.
+        if !meta.is_file() || meta.permissions().mode() & 0o077 != 0 {
+            return Err(Error::other("the seal key file is not private"));
+        }
+        let key = Zeroizing::new(std::fs::read(&path)?);
+        if key.len() == 32 {
+            Ok(Some(key))
+        } else {
+            Err(Error::other("the seal key file is damaged"))
+        }
+    }
+
     fn file_key() -> std::io::Result<Zeroizing<Vec<u8>>> {
         use std::io::Write;
         use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        let path = fallback_path()?;
-        if let Ok(meta) = std::fs::symlink_metadata(&path) {
-            // Only a plain file of ours, readable by nobody else, counts.
-            if !meta.is_file() || meta.permissions().mode() & 0o077 != 0 {
-                return Err(Error::other("the seal key file is not private"));
-            }
-            let key = Zeroizing::new(std::fs::read(&path)?);
-            return if key.len() == 32 {
-                Ok(key)
-            } else {
-                Err(Error::new(
-                    ErrorKind::InvalidData,
-                    "the seal key file is damaged",
-                ))
-            };
+        if let Some(key) = existing_file_key()? {
+            return Ok(key);
         }
+        let path = fallback_path()?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
             let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
@@ -291,15 +376,85 @@ mod tests {
         let mut sealed = protect(&[1u8; 32]).unwrap();
         let middle = sealed.len() / 2;
         sealed[middle] ^= 0xff;
-        assert!(unprotect(&sealed).is_err());
+        // As one that can never open, which is what lets a caller forget it.
+        let error = unprotect(&sealed).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData, "{error}");
     }
 
     #[test]
     fn a_blob_for_one_purpose_does_not_open_as_another() {
         let sealed = protect(&[3u8; 32]).unwrap();
-        assert!(unprotect_sync(&sealed).is_err());
+        let error = unprotect_sync(&sealed).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData, "{error}");
         let sealed = protect_sync(&[4u8; 32]).unwrap();
         assert!(unprotect(&sealed).is_err());
         assert_eq!(unprotect_sync(&sealed).unwrap().as_slice(), &[4u8; 32]);
+    }
+}
+
+#[cfg(all(test, not(windows)))]
+mod tests {
+    use super::os::opened_with;
+    use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+    use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+    use std::io::ErrorKind;
+    use zeroize::Zeroizing;
+
+    const LABEL: &[u8] = b"uwurdp/test/device/v1";
+    const NONCE: [u8; 24] = [9; 24];
+
+    fn key(byte: u8) -> Zeroizing<Vec<u8>> {
+        Zeroizing::new(vec![byte; 32])
+    }
+
+    fn sealed_with(key: &[u8]) -> Vec<u8> {
+        XChaCha20Poly1305::new(key.into())
+            .encrypt(
+                XNonce::from_slice(&NONCE),
+                Payload {
+                    msg: b"the vault key",
+                    aad: LABEL,
+                },
+            )
+            .unwrap()
+    }
+
+    fn open(
+        sealed: &[u8],
+        keychain: Result<Option<Zeroizing<Vec<u8>>>, keyring::Error>,
+        file: std::io::Result<Option<Zeroizing<Vec<u8>>>>,
+    ) -> std::io::Result<Zeroizing<Vec<u8>>> {
+        opened_with(&NONCE, sealed, LABEL, keychain, file)
+    }
+
+    #[test]
+    fn a_blob_opens_with_whichever_key_sealed_it() {
+        let by_keychain = sealed_with(&key(1));
+        let by_file = sealed_with(&key(2));
+        for sealed in [&by_keychain, &by_file] {
+            let opened = open(sealed, Ok(Some(key(1))), Ok(Some(key(2)))).unwrap();
+            assert_eq!(opened.as_slice(), b"the vault key");
+        }
+        // The file's key still opens its blobs while the keychain is away.
+        let locked = || Err(keyring::Error::NoStorageAccess("locked".into()));
+        assert!(open(&by_file, locked(), Ok(Some(key(2)))).is_ok());
+    }
+
+    #[test]
+    fn only_a_blob_no_key_there_is_opens_counts_as_one_to_forget() {
+        let sealed = sealed_with(&key(1));
+        let never = open(&sealed, Ok(Some(key(3))), Ok(None)).unwrap_err();
+        assert_eq!(never.kind(), ErrorKind::InvalidData);
+        let never = open(&sealed, Ok(None), Ok(Some(key(3)))).unwrap_err();
+        assert_eq!(never.kind(), ErrorKind::InvalidData);
+
+        // A keychain that is locked, slow or said no, and a key file that
+        // can't be read, may answer next time: nothing to forget.
+        let locked = Err(keyring::Error::NoStorageAccess("locked".into()));
+        let maybe = open(&sealed, locked, Ok(None)).unwrap_err();
+        assert_ne!(maybe.kind(), ErrorKind::InvalidData);
+        let unreadable = Err(std::io::Error::other("the seal key file is not private"));
+        let maybe = open(&sealed, Ok(Some(key(3))), unreadable).unwrap_err();
+        assert_ne!(maybe.kind(), ErrorKind::InvalidData);
     }
 }

@@ -10,8 +10,8 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    Decrypt, ImportBundle, ImportError, ImportedAudio, ImportedCredential, ImportedDisplay,
-    ImportedGateway, ImportedHost, ImportedSettings, Source,
+    split_host_port, Decrypt, ImportBundle, ImportError, ImportedAudio, ImportedCredential,
+    ImportedDisplay, ImportedGateway, ImportedHost, ImportedSettings, PasswordOrigin, Source,
 };
 
 const DEFAULT_PORT: u16 = 3389;
@@ -72,6 +72,12 @@ pub fn parse_rdp_file(
         label: None,
         username,
         domain,
+        // `password 51` is only ever a DPAPI blob: one this account opened.
+        origin: if password.is_some() {
+            PasswordOrigin::Unsealed
+        } else {
+            PasswordOrigin::InFile
+        },
         password,
     };
     let credential = bundle.intern_credential(cred);
@@ -231,17 +237,6 @@ fn split_username(
         }
     });
     (username, domain)
-}
-
-fn split_host_port(raw: &str) -> (String, Option<u16>) {
-    if let Some((host, port)) = raw.rsplit_once(':') {
-        if let Ok(p) = port.trim().parse::<u16>() {
-            if !host.is_empty() && !host.contains(':') {
-                return (host.trim().to_string(), Some(p));
-            }
-        }
-    }
-    (raw.trim().to_string(), None)
 }
 
 /// Decode a hex string (as `password 51` stores the DPAPI blob) into bytes.

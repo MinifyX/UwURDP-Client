@@ -44,13 +44,14 @@ own file ticks one box more.
 ## Shared with UwUSSH
 
 Three Medium findings of UwUSSH's round apply here unchanged, because the code
-is the same:
+is the same. Their fixes are ported with their tests, same logic, UwURDP's
+names:
 
-| Severity | Where                | What                                                                                                            | Status                                   |
-| -------- | -------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| Medium   | Sync engine          | A server that never lets a pull complete keeps the manifest (withholding and rollback) check from ever running. | Ported from UwUSSH's fix in a follow-up. |
-| Medium   | Updater, Linux       | The AppImage update is extracted into a folder in `/tmp` with a predictable name another local user can create. | Ported from UwUSSH's fix in a follow-up. |
-| Medium   | Device seal, pairing | A passing keychain, Secret Service or DPAPI failure wipes the pairing and the remembered vault key for good.    | Ported from UwUSSH's fix in a follow-up. |
+| Severity | Where       | What                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Medium   | Sync engine | The manifest check only ran after a pull that reached the end; a server that always said "there is more" kept it from ever running, and certificates trusted on other devices stayed trusted. An incomplete pull is now written down as something kept back until a complete one clears it, a paired device distrusts other devices' certificates until the pairing's manifest was checked, and the report says whether the pass was complete. (`41da1d2`) |
+| Medium   | Updater     | The Linux setup, an AppImage run with `APPIMAGE_EXTRACT_AND_RUN`, unpacked into a folder in `/tmp` whose name anyone can work out from the public release, and ran what it found there. It now unpacks into a fresh 0700 folder in UwURDP's local data folder and hands the `TMPDIR` from before back to the UwURDP it starts again. Protects updates applied by this version on. (`c60de51`)                                                              |
+| Medium   | Device seal | A keychain, Secret Service or DPAPI that did not answer counted as "this no longer opens": the pairing's account key and the remembered vault key were deleted for good, and on macOS and Linux a new seal key was made on the way. Only a blob that fails its seal against every key there is (`InvalidData`) is forgotten now; anything else is an error and everything stays. (`9e738f8`)                                                               |
 
 ## Not fixed: Low and Info
 

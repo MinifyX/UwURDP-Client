@@ -1,6 +1,7 @@
 /**
  * Settings → Sync, the page's side: connecting a UwUSync server, pairing
- * devices, the device list.
+ * devices, the device list — or signing in to UwULock instead, and the move
+ * from one to the other.
  *
  * Every secret the page types — the master password, the codes — goes
  * straight into one command and is not kept. What comes back holds no secret
@@ -41,7 +42,58 @@ export type SyncStatus = {
   deviceName: string;
   offering: boolean;
   withheld: Withheld;
+  backend: Backend;
+  lock: LockStatus;
 };
+
+/** Where this device syncs, if anywhere. */
+export type Backend = 'none' | 'uwusync' | 'uwulock';
+
+export type LockStatus = {
+  serverUrl: string | null;
+  email: string | null;
+  /** The session ended: the master password is needed to go on syncing. */
+  needsSignIn: boolean;
+  /** UwULock's realtime channel is open. */
+  live: boolean;
+  liveRefused: boolean;
+  signedInMs: number | null;
+  /** A move from UwUSync began and did not finish. */
+  moveStartedMs: number | null;
+  /** Moved, and this device may still be removed from UwUSync. */
+  leftBehind: boolean;
+};
+
+/** One way of two-step login the UwULock account has set up. */
+export type TwoFactorMethod = {
+  provider: number;
+  kind: 'authenticator' | 'email' | 'yubikey' | 'duo' | 'u2f' | 'webauthn' | 'other';
+  supported: boolean;
+  /** For email codes: the masked address the code goes to. */
+  hint: string | null;
+};
+
+export type TwoFactorInput = { provider: number; code: string; remember: boolean };
+
+export type MoveReport = {
+  read: number;
+  copied: number;
+  alreadyThere: number;
+  newerThere: number;
+  unreadable: number;
+};
+
+export type Difference = { id: string; kind: string; problem: 'missing' | 'older' };
+
+export type LockOutcome =
+  | { kind: 'signed-in'; madeSpace: boolean }
+  | { kind: 'moved'; report: MoveReport; lastDevice: boolean }
+  | { kind: 'two-factor'; methods: TwoFactorMethod[]; message: string | null }
+  /** Not the space this device used on the account; `now` null: there is none. */
+  | { kind: 'space-changed'; was: string; now: string | null };
+
+/** Take the account's space after all: its id, or null to make a new one. */
+export type AcceptSpace = { id: string | null };
 
 export type SyncFailure =
   | { kind: 'vault-locked' }
@@ -50,6 +102,13 @@ export type SyncFailure =
   | { kind: 'unreachable'; message: string }
   | { kind: 'refused'; message: string }
   | { kind: 'pairing-failed'; message: string }
+  | { kind: 'sign-in' }
+  | { kind: 'login-refused'; message: string }
+  | { kind: 'keys-lost' }
+  | { kind: 'no-key-pair' }
+  | { kind: 'weaker-kdf'; message: string }
+  | { kind: 'space-left' }
+  | { kind: 'move-check'; differences: Difference[] }
   | { kind: 'error'; message: string };
 
 export function asSyncFailure(error: unknown): SyncFailure {
@@ -106,6 +165,35 @@ export const syncDisconnect = (password: string) => invoke<void>('sync_disconnec
 /** The recovery kit again, on a paired device that kept the account key. */
 export const syncRecoveryCode = (password: string) =>
   invoke<Connected>('sync_recovery_code', { password });
+
+/**
+ * Sign in to UwULock and sync through it. `twoFactor` once the server asked
+ * for a code, `acceptSpace` once the person agreed to another space.
+ */
+export const lockSignIn = (
+  serverUrl: string,
+  email: string,
+  password: string,
+  twoFactor: TwoFactorInput | null,
+  acceptSpace: AcceptSpace | null,
+) => invoke<LockOutcome>('lock_sign_in', { serverUrl, email, password, twoFactor, acceptSpace });
+
+export const lockSendEmailCode = (serverUrl: string, email: string, password: string) =>
+  invoke<void>('lock_send_email_code', { serverUrl, email, password });
+
+/** The one-click move from UwUSync to UwULock. */
+export const lockMove = (
+  serverUrl: string,
+  email: string,
+  password: string,
+  twoFactor: TwoFactorInput | null,
+  acceptSpace: AcceptSpace | null,
+) => invoke<LockOutcome>('lock_move', { serverUrl, email, password, twoFactor, acceptSpace });
+
+/** After the move: remove this device from UwUSync, or leave it listed there. */
+export const lockLeaveUwusync = (revoke: boolean) => invoke<void>('lock_leave_uwusync', { revoke });
+export const lockForgetMove = () => invoke<void>('lock_forget_move');
+export const lockSignOut = (password: string) => invoke<void>('lock_sign_out', { password });
 
 /** A pasted setup code, from `uwusync-server invite`. */
 export const isSetupCode = (text: string) => text.trim().startsWith('uwu1_');

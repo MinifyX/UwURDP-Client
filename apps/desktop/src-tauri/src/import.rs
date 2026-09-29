@@ -49,17 +49,22 @@ pub(crate) struct VaultState {
     /// device remembered opens the vault, and then a new master password
     /// sets it free (see [`repair_vault`]).
     stranded: bool,
+    /// Syncing through UwULock: the account's master password opens this
+    /// vault, and this is its email.
+    lock_email: Option<String>,
 }
 
 #[tauri::command]
 pub(crate) fn vault_state(state: State<'_, AppState>) -> CommandResult<VaultState> {
     let needs_account_key = state.store.vault_needs_account_key().map_err(err)?;
+    let lock = state.store.lock_state().map_err(err)?;
     Ok(VaultState {
         status: state.store.vault_status().map_err(err)?,
         remembered: state.store.vault_is_remembered().map_err(err)?,
         needs_recovery_code: needs_account_key
             && crate::sync::kept_account_key(&state.store).is_none(),
         stranded: is_stranded(&state.store).map_err(err)?,
+        lock_email: lock.email.filter(|_| lock.active),
     })
 }
 

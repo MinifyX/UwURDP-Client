@@ -709,6 +709,20 @@ export function App() {
     return () => void stop.then((unlisten) => unlisten());
   }, []);
 
+  // UwULock ended this device's session: the vault was locked with it.
+  useEffect(() => {
+    const stop = listen<string>('sync:logout', () =>
+      setAppNotice({
+        tone: 'error',
+        text: t(
+          'UwULock hat die Sitzung dieses Geräts beendet, der Tresor ist wieder gesperrt. Melde dich unter Einstellungen → Sync neu an, damit UwURDP weiter synchronisiert.',
+        ),
+        action: { label: t('Sync-Einstellungen'), run: () => setSettingsOpen('sync') },
+      }),
+    );
+    return () => void stop.then((unlisten) => unlisten());
+  }, []);
+
   // Dev builds only: lets end-to-end tests reach the active desktop. Stripped
   // from release.
   useEffect(() => {

@@ -7,7 +7,7 @@ use crate::{Result, StoreError};
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 /// The sync header (`id`, `vault_id`, clock, `rev`, `deleted`) is on every
 /// syncable table from the start; see the crate docs for why.
@@ -333,6 +333,44 @@ ALTER TABLE hosts ADD COLUMN gateway_identity_id TEXT REFERENCES identities (id)
 ALTER TABLE host_groups ADD COLUMN identity_id TEXT REFERENCES identities (id);
 "#;
 
+/// UwULock Server as the other way to sync (see `crate::lock`).
+const V8: &str = r#"
+-- Where this device syncs when it syncs through UwULock rather than UwUSync.
+-- One row. The refresh token is sealed by the operating system for this
+-- user, like the UwUSync pairing's secrets. `device_identifier` is made once
+-- per install and kept when signing out: it is how the server knows this
+-- device again.
+CREATE TABLE lock_state (
+    id                          INTEGER PRIMARY KEY CHECK (id = 1),
+    device_identifier           TEXT    NOT NULL,
+    active                      INTEGER NOT NULL DEFAULT 0,
+    server_url                  TEXT,
+    email                       TEXT,
+    space_id                    TEXT,
+    protected_refresh_token     BLOB,
+    signed_in_ms                INTEGER,
+    move_started_ms             INTEGER
+);
+
+-- What this device keeps of each UwULock account it signed in to, by the
+-- server's address (normalized) and the email (lower case). The "remember
+-- this device" token of two-step login, sealed like the refresh token, goes
+-- to the server and account that issued it and to no other. `kdf` is the key
+-- derivation (JSON) the last sign-in used: a server asking for a weaker one
+-- is refused. `space_id` is the space this device used on the account, and
+-- `left_spaces` (a JSON array) the ones it used before and moved on from: a
+-- different space is only taken when the person agrees, a left one never.
+CREATE TABLE lock_accounts (
+    server_url                  TEXT    NOT NULL,
+    email                       TEXT    NOT NULL,
+    protected_remember_token    BLOB,
+    kdf                         TEXT,
+    space_id                    TEXT,
+    left_spaces                 TEXT    NOT NULL DEFAULT '[]',
+    PRIMARY KEY (server_url, email)
+);
+"#;
+
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
 
@@ -509,6 +547,18 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
         tx.pragma_update(None, "user_version", 7)?;
         tx.commit()?;
         tracing::info!("store migrated to schema 7");
+    }
+
+    if version < 8 {
+        let tx = conn.transaction()?;
+        tx.execute_batch(V8)?;
+        tx.execute(
+            "INSERT INTO lock_state (id, device_identifier) VALUES (1, ?1)",
+            [Uuid::new_v4().to_string()],
+        )?;
+        tx.pragma_update(None, "user_version", 8)?;
+        tx.commit()?;
+        tracing::info!("store migrated to schema 8");
     }
 
     Ok(())
@@ -801,6 +851,32 @@ mod tests {
             r.get::<_, i64>(0)
         })
         .unwrap();
+    }
+
+    #[test]
+    fn a_v7_database_upgrades_to_v8_on_uwusync_as_before_with_an_install_of_its_own() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for batch in [V1, V2, V3, V4, V4_DROP_GROUP_PATH, V5, V6, V7] {
+            conn.execute_batch(batch).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO meta (id, device_id, vault_id) VALUES (1, 1, 'v')",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 7).unwrap();
+        migrate(&mut conn).unwrap();
+
+        let (active, identifier, url): (i64, String, Option<String>) = conn
+            .query_row(
+                "SELECT active, device_identifier, server_url FROM lock_state WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(active, 0, "nothing switches to UwULock by itself");
+        assert_eq!(url, None);
+        assert!(Uuid::parse_str(&identifier).is_ok());
     }
 
     #[test]

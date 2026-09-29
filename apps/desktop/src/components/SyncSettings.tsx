@@ -1,6 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { locale, t, useLanguage } from '../lib/i18n';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { t, useLanguage } from '../lib/i18n';
 import {
   asSyncFailure,
   isPasteablePairing,
@@ -15,67 +15,34 @@ import {
   syncRevoke,
   syncStatus,
   syncWaitForDevice,
+  lockForgetMove,
   type Connected,
   type Device,
+  type LockOutcome,
   type Offer,
-  type SyncFailure,
   type SyncStatus,
 } from '../lib/sync';
 import { Icon } from './Icon';
+import { LockOverview, LockSignInForm, MoveDone } from './LockSync';
 import { Modal } from './Modal';
 import { NyuScene } from './nyu/scenes';
+import { ago, copy, failureText, PassDetails, PasswordConfirm, syncDot } from './SyncParts';
 import { VaultDialog } from './VaultDialog';
 
-/** A failure in words the person can act on. */
-function failureText(failure: SyncFailure): string {
-  switch (failure.kind) {
-    case 'vault-locked':
-      return t('Der Tresor ist gesperrt.');
-    case 'password-wrong':
-      return t('Das Master-Passwort war falsch.');
-    case 'bad-code':
-      return t('Das ist kein gültiger Code. Kopiere ihn am besten vollständig.');
-    case 'unreachable':
-      return t('Der Server ist nicht erreichbar: {reason}', { reason: failure.message });
-    case 'refused':
-      return t('Der Server hat abgelehnt: {reason}', { reason: failure.message });
-    case 'pairing-failed':
-      return t('Die Kopplung hat nicht geklappt: {reason}', { reason: failure.message });
-    default:
-      return failure.message;
-  }
-}
-
-/** "vor 3 Minuten", in the app's language. */
-function ago(ms: number): string {
-  const seconds = Math.round((ms - Date.now()) / 1000);
-  const format = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' });
-  const abs = Math.abs(seconds);
-  if (abs < 45) return t('gerade eben');
-  if (abs < 3600) return format.format(Math.round(seconds / 60), 'minute');
-  if (abs < 86_400) return format.format(Math.round(seconds / 3600), 'hour');
-  return format.format(Math.round(seconds / 86_400), 'day');
-}
-
-async function copy(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // The page's clipboard can be off; the code is on screen to type.
-  }
-}
-
 /**
- * Settings → Sync. Not paired: connect a server (first device) or join from
- * another one. Paired: what the last pass did, adding a device, the device
- * list with revoking, and leaving.
+ * Settings → Sync. Syncing nowhere yet: pick UwULock (sign in) or UwUSync
+ * (connect a server as the first device, or join from another one). On
+ * UwUSync: what the last pass did, adding a device, the device list with
+ * revoking, the move to UwULock, and leaving. On UwULock: see `LockSync`.
  */
 export function SyncSettings() {
   useLanguage();
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'overview' | 'connect' | 'join'>('overview');
+  const [mode, setMode] = useState<'overview' | 'connect' | 'join' | 'lock'>('overview');
+  const [backend, setBackend] = useState<'uwulock' | 'uwusync'>('uwulock');
   const [kit, setKit] = useState<Connected | null>(null);
+  const [moved, setMoved] = useState<Extract<LockOutcome, { kind: 'moved' }> | null>(null);
 
   const refresh = useCallback(() => {
     void syncStatus()
@@ -111,7 +78,37 @@ export function SyncSettings() {
     );
   }
 
+  if (moved) {
+    return (
+      <MoveDone
+        outcome={moved}
+        leftBehind={status.lock.leftBehind}
+        onDone={() => {
+          setMoved(null);
+          refresh();
+        }}
+      />
+    );
+  }
+
+  if (status.backend === 'uwulock') {
+    return <LockOverview status={status} onChanged={refresh} />;
+  }
+
   if (!status.paired) {
+    if (mode === 'lock') {
+      return (
+        <LockSignInForm
+          mode="sign-in"
+          status={status}
+          onBack={() => setMode('overview')}
+          onDone={() => {
+            setMode('overview');
+            refresh();
+          }}
+        />
+      );
+    }
     if (mode === 'connect') {
       return (
         <ConnectForm
@@ -136,45 +133,102 @@ export function SyncSettings() {
     return (
       <div className="sync-intro">
         <NyuScene name="welcome" className="sync-scene" />
-        <p className="dialog-lead">
-          {t(
-            'Mit einem eigenen UwUSync-Server bleiben Hosts, Gruppen, Keys und Passwörter auf allen deinen Geräten gleich. Der Server sieht davon nur verschlüsselte Blöcke.',
-          )}
-        </p>
-        <div className="sync-choices">
-          <button className="sync-choice" onClick={() => setMode('connect')}>
-            <Icon name="network" size={20} />
-            <span>
-              <b>{t('Server verbinden')}</b>
-              <small>
-                {t(
-                  'Das erste Gerät: mit dem Einrichtungscode, den der Server beim ersten Start zeigt.',
-                )}
-              </small>
-            </span>
-          </button>
-          <button className="sync-choice" onClick={() => setMode('join')}>
-            <Icon name="plus" size={20} />
-            <span>
-              <b>{t('Mit einem Gerät koppeln')}</b>
-              <small>
-                {t(
-                  'Ein weiteres Gerät: mit dem Code, den ein schon verbundenes Gerät unter „Gerät hinzufügen“ zeigt.',
-                )}
-              </small>
-            </span>
-          </button>
+        <div className="segmented" role="radiogroup" aria-label={t('Synchronisieren über')}>
+          {(
+            [
+              ['uwulock', 'UwULock'],
+              ['uwusync', 'UwUSync'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={backend === value}
+              onClick={() => setBackend(value)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <p className="setting-description">
-          {t(
-            'Einen Server aufsetzen: siehe github.com/MinifyX/UwUSync-Server – ein Befehl, Docker, fertig.',
-          )}
-        </p>
+        {backend === 'uwulock' ? (
+          <>
+            <p className="dialog-lead">
+              {t(
+                'Mit deinem UwULock-Konto bleiben Hosts, Gruppen und Passwörter auf allen deinen Geräten gleich – im selben Konto wie deine Passwörter, Ende-zu-Ende-verschlüsselt. Der Server sieht davon nur verschlüsselte Blöcke.',
+              )}
+            </p>
+            <div className="sync-choices">
+              <button className="sync-choice" onClick={() => setMode('lock')}>
+                <Icon name="lock" size={20} />
+                <span>
+                  <b>{t('Mit UwULock anmelden')}</b>
+                  <small>
+                    {t(
+                      'Jedes Gerät gleich: Server-Adresse, E-Mail und Master-Passwort deines UwULock-Kontos, dazu die Zwei-Faktor-Anmeldung, falls eingerichtet.',
+                    )}
+                  </small>
+                </span>
+              </button>
+            </div>
+            <p className="setting-description">
+              {t(
+                'Einen Server aufsetzen: siehe github.com/MinifyX/UwULock-Server. Schon auf UwUSync? Dann dort verbinden und unter Sync → Zu UwULock umziehen.',
+              )}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="dialog-lead">
+              {t(
+                'Mit einem eigenen UwUSync-Server bleiben Hosts, Gruppen, Keys und Passwörter auf allen deinen Geräten gleich. Der Server sieht davon nur verschlüsselte Blöcke.',
+              )}
+            </p>
+            <div className="sync-choices">
+              <button className="sync-choice" onClick={() => setMode('connect')}>
+                <Icon name="network" size={20} />
+                <span>
+                  <b>{t('Server verbinden')}</b>
+                  <small>
+                    {t(
+                      'Das erste Gerät: mit dem Einrichtungscode, den der Server beim ersten Start zeigt.',
+                    )}
+                  </small>
+                </span>
+              </button>
+              <button className="sync-choice" onClick={() => setMode('join')}>
+                <Icon name="plus" size={20} />
+                <span>
+                  <b>{t('Mit einem Gerät koppeln')}</b>
+                  <small>
+                    {t(
+                      'Ein weiteres Gerät: mit dem Code, den ein schon verbundenes Gerät unter „Gerät hinzufügen“ zeigt.',
+                    )}
+                  </small>
+                </span>
+              </button>
+            </div>
+            <p className="setting-description">
+              {t(
+                'Einen Server aufsetzen: siehe github.com/MinifyX/UwUSync-Server – ein Befehl, Docker, fertig.',
+              )}
+            </p>
+          </>
+        )}
       </div>
     );
   }
 
-  return <Paired status={status} onChanged={refresh} />;
+  return (
+    <Paired
+      status={status}
+      onChanged={refresh}
+      onMoved={(outcome) => {
+        if (outcome.kind === 'moved') setMoved(outcome);
+        refresh();
+      }}
+    />
+  );
 }
 
 // ── First device ──────────────────────────────────────────────────────────
@@ -542,8 +596,18 @@ function JoinForm({
 
 // ── Paired ────────────────────────────────────────────────────────────────
 
-function Paired({ status, onChanged }: { status: SyncStatus; onChanged: () => void }) {
+function Paired({
+  status,
+  onChanged,
+  onMoved,
+}: {
+  status: SyncStatus;
+  onChanged: () => void;
+  onMoved: (outcome: LockOutcome) => void;
+}) {
   useLanguage();
+  const [moving, setMoving] = useState(false);
+  const [forgettingMove, setForgettingMove] = useState(false);
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -569,36 +633,21 @@ function Paired({ status, onChanged }: { status: SyncStatus; onChanged: () => vo
     if (status.vault === 'unlocked') loadDevices();
   }, [loadDevices, status.vault]);
 
-  const last = status.last;
-  const report = last?.report;
   const locked = status.vault !== 'unlocked';
 
   if (kit) return <RecoveryKit kit={kit} again onDone={() => setKit(null)} />;
-
-  let line: ReactNode;
-  if (locked) {
-    line = t('Pausiert, bis der Tresor offen ist.');
-  } else if (status.running) {
-    line = t('Synchronisiert gerade…');
-  } else if (last?.error) {
-    line = (
-      <span className="field-error">
-        {t('Letzter Versuch {when} fehlgeschlagen: {reason}', {
-          when: ago(last.atMs),
-          reason: last.error,
-        })}
-      </span>
+  if (moving) {
+    return (
+      <LockSignInForm
+        mode="move"
+        status={status}
+        onBack={() => setMoving(false)}
+        onDone={(outcome) => {
+          setMoving(false);
+          onMoved(outcome);
+        }}
+      />
     );
-  } else if (report && last) {
-    line = t('Zuletzt {when}: {pulled} geholt, {pushed} gesendet.', {
-      when: ago(last.atMs),
-      pulled: report.pulled,
-      pushed: report.pushed,
-    });
-  } else if (status.lastSyncMs) {
-    line = t('Zuletzt {when}.', { when: ago(status.lastSyncMs) });
-  } else {
-    line = t('Noch nicht synchronisiert.');
   }
 
   return (
@@ -606,46 +655,10 @@ function Paired({ status, onChanged }: { status: SyncStatus; onChanged: () => vo
       <div className="setting-row">
         <div className="setting-text">
           <p className="setting-label">
-            <span
-              className="sync-dot"
-              data-state={
-                locked ? 'paused' : last?.error || status.withheld.records > 0 ? 'error' : 'ok'
-              }
-            />
+            <span className="sync-dot" data-state={syncDot(status)} />
             {t('Verbunden mit {server}', { server: status.serverUrl ?? '' })}
           </p>
-          <p className="setting-description">{line}</p>
-          {status.withheld.records > 0 && (
-            <p className="setting-description field-error" role="alert">
-              {t(
-                'Der Server liefert nicht den neuesten Stand – er hält Daten zurück oder spielt alte Versionen ein.',
-              )}{' '}
-              {status.withheld.records === 1
-                ? t('1 Eintrag, den ein anderes Gerät hat, fehlt hier oder ist veraltet.')
-                : t('{n} Einträge, die andere Geräte haben, fehlen hier oder sind veraltet.', {
-                    n: status.withheld.records,
-                  })}{' '}
-              {status.withheld.hostKeys &&
-                t(
-                  'Host-Schlüsseln aus dem Sync wird bis dahin nicht vertraut – beim nächsten Verbinden fragt UwURDP wieder nach.',
-                )}
-            </p>
-          )}
-          {status.pending > 0 && !locked && (
-            <p className="setting-description">
-              {status.pending === 1
-                ? t('1 Änderung wartet auf den Server.')
-                : t('{n} Änderungen warten auf den Server.', { n: status.pending })}
-            </p>
-          )}
-          {report && report.apply.rejected > 0 && (
-            <p className="setting-description field-error">
-              {t(
-                '{n} Einträge vom Server ließen sich nicht öffnen und wurden verworfen. Das sollte nie passieren – prüfe den Server.',
-                { n: report.apply.rejected },
-              )}
-            </p>
-          )}
+          <PassDetails status={status} />
           {status.tlsFingerprint && (
             <p className="setting-description">
               {t('Gepinnt:')} <code className="sync-fingerprint">{status.tlsFingerprint}</code>
@@ -757,6 +770,43 @@ function Paired({ status, onChanged }: { status: SyncStatus; onChanged: () => vo
           <button onClick={() => setAskingKit(true)}>
             <Icon name="key" size={15} />
             {t('Anzeigen…')}
+          </button>
+        </div>
+      </div>
+
+      <div className="setting-row">
+        <div className="setting-text">
+          <p className="setting-label">{t('Zu UwULock umziehen')}</p>
+          <p className="setting-description">
+            {status.lock.moveStartedMs
+              ? t(
+                  'Ein Umzug hat {when} begonnen und ist nicht fertig geworden. Bis er fertig ist, synchronisiert dieses Gerät weiter über UwUSync.',
+                  { when: ago(status.lock.moveStartedMs) },
+                )
+              : t(
+                  'Hosts und Passwörter ziehen mit einem Klick auf einen UwULock-Server um. UwURDP prüft die Kopie, bevor es wechselt – auf UwUSync bleibt alles, wie es ist.',
+                )}
+          </p>
+        </div>
+        <div className="setting-control">
+          {status.lock.moveStartedMs && (
+            <button
+              className="quiet"
+              disabled={forgettingMove}
+              onClick={() => {
+                setForgettingMove(true);
+                void lockForgetMove().finally(() => {
+                  setForgettingMove(false);
+                  onChanged();
+                });
+              }}
+            >
+              {t('Verwerfen')}
+            </button>
+          )}
+          <button onClick={() => setMoving(true)} disabled={locked}>
+            <Icon name="export" size={15} />
+            {status.lock.moveStartedMs ? t('Fortsetzen…') : t('Umziehen…')}
           </button>
         </div>
       </div>
@@ -957,94 +1007,6 @@ function AddDevice({ offer, onClose }: { offer: Offer; onClose: (joined: string 
           {error}
         </p>
       )}
-    </Modal>
-  );
-}
-
-/** A question that needs the master password to go ahead. */
-function PasswordConfirm({
-  title,
-  lead,
-  action,
-  tone = 'danger',
-  run,
-  onCancel,
-  onDone,
-}: {
-  title: string;
-  lead: string;
-  action: string;
-  /** `normal` for a question that changes nothing, only shows something. */
-  tone?: 'danger' | 'normal';
-  run: (password: string) => Promise<void>;
-  onCancel: () => void;
-  onDone: () => void;
-}) {
-  useLanguage();
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const submit = async () => {
-    if (!password || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await run(password);
-      setPassword('');
-      onDone();
-    } catch (e) {
-      setError(failureText(asSyncFailure(e)));
-      setPassword('');
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Modal
-      title={title}
-      tone={tone === 'danger' ? 'warning' : 'default'}
-      onCancel={onCancel}
-      footer={
-        <>
-          <span className="spacer" />
-          <button data-autofocus onClick={onCancel} disabled={busy}>
-            {t('Abbrechen')}
-          </button>
-          <button
-            className={tone === 'danger' ? 'danger' : 'primary'}
-            data-secondary
-            disabled={!password || busy}
-            onClick={() => void submit()}
-          >
-            {busy ? t('Einen Moment…') : action}
-          </button>
-        </>
-      }
-    >
-      <form
-        className="form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        <p className="dialog-lead">{lead}</p>
-        <label className="field">
-          <span>{t('Master-Passwort')}</span>
-          <input
-            type="password"
-            value={password}
-            autoComplete="current-password"
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        {error && (
-          <p className="field-error" role="alert">
-            {error}
-          </p>
-        )}
-        <button type="submit" hidden />
-      </form>
     </Modal>
   );
 }

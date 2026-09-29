@@ -1,5 +1,7 @@
 //! Settings → Sync: connecting a UwUSync server, adding and removing devices,
-//! and the thread that keeps this device in step.
+//! and the thread that keeps this device in step — through UwUSync, or
+//! through UwULock (see [`crate::lock`], which adds signing in, the realtime
+//! channel and the move from one to the other).
 //!
 //! Every step the person takes is one command here, and every command is a
 //! thin wrapper around `uwurdp_sync::flow`, which puts the pieces in the right
@@ -22,6 +24,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 use uwurdp_store::{Store, StoreError, VaultStatus, Withheld};
 use uwurdp_sync::flow::{self, FlowError, PairingOffer};
+use uwurdp_sync::lock::{Difference, Lock, LockError};
 use uwurdp_sync::{pairing, Server, SyncError, SyncReport, TransportError};
 use zeroize::Zeroizing;
 
@@ -31,6 +34,10 @@ const TICK: Duration = Duration::from_secs(5);
 const PULL_EVERY: Duration = Duration::from_secs(60);
 /// After a failed pass, how long before the next try.
 const BACKOFF: Duration = Duration::from_secs(30);
+/// With UwULock's realtime channel open, how much longer a pull waits: the
+/// channel says when something changed, and this only covers a message that
+/// got lost.
+const QUIET_PULL: Duration = Duration::from_secs(14 * 60);
 
 /// What the page is told when something went wrong. `kind` is what it acts
 /// on; `message` is for showing.
@@ -58,10 +65,35 @@ pub(crate) enum SyncFailure {
     Error {
         message: String,
     },
+    /// UwULock: the session ended, and only the master password brings it
+    /// back.
+    SignIn,
+    /// UwULock refused the email, the master password or the code, in its
+    /// own words.
+    LoginRefused {
+        message: String,
+    },
+    /// UwULock: the account's key for UwU apps no longer opens (an official
+    /// client replaced the key pair). Starting over is the web vault's.
+    KeysLost,
+    /// UwULock: the account never finished registration.
+    NoKeyPair,
+    /// UwULock asks for a cheaper key derivation than this account's last
+    /// sign-in used. Nothing was sent.
+    WeakerKdf {
+        message: String,
+    },
+    /// UwULock lists a space this device left for a newer one, as a server
+    /// rolling a rekey back would. Nothing was taken.
+    SpaceLeft,
+    /// The copy on UwULock is not what UwUSync holds. Nothing switched.
+    MoveCheck {
+        differences: Vec<Difference>,
+    },
 }
 
 impl SyncFailure {
-    fn error(message: impl std::fmt::Display) -> Self {
+    pub(crate) fn error(message: impl std::fmt::Display) -> Self {
         Self::Error {
             message: message.to_string(),
         }
@@ -83,6 +115,24 @@ impl From<TransportError> for SyncFailure {
         match error {
             TransportError::Unreachable(message) => Self::Unreachable { message },
             TransportError::Refused(message) => Self::Refused { message },
+            TransportError::SignIn(_) => Self::SignIn,
+        }
+    }
+}
+
+impl From<LockError> for SyncFailure {
+    fn from(error: LockError) -> Self {
+        match error {
+            LockError::Transport(error) => error.into(),
+            LockError::WrongPassword(message) => Self::LoginRefused { message },
+            LockError::KeysLost => Self::KeysLost,
+            LockError::NoKeyPair => Self::NoKeyPair,
+            LockError::Store(error) => error.into(),
+            LockError::VaultLocked => Self::VaultLocked,
+            LockError::MoveCheck(differences) => Self::MoveCheck { differences },
+            LockError::Crypto(message) => Self::Error { message },
+            LockError::WeakerKdf(message) => Self::WeakerKdf { message },
+            LockError::SpaceLeft(_) => Self::SpaceLeft,
         }
     }
 }
@@ -130,9 +180,19 @@ pub(crate) struct LastPass {
 pub(crate) struct Sync {
     /// A signed-in server, kept between passes. Dropped on any failure, so the
     /// next pass connects afresh.
-    server: Mutex<Option<Arc<Server>>>,
-    last: Mutex<Option<LastPass>>,
-    running: AtomicBool,
+    pub(crate) server: Mutex<Option<Arc<Server>>>,
+    /// The same for UwULock. Kept on failures other than a session that
+    /// ended: its refresh token must not be used twice.
+    pub(crate) lock: Mutex<Option<Arc<Lock>>>,
+    /// The realtime channel to UwULock is open.
+    pub(crate) live: AtomicBool,
+    /// UwULock refused the realtime channel; polling until the next sign-in.
+    pub(crate) live_refused: AtomicBool,
+    /// The UwUSync server this device just moved away from, and its id
+    /// there: to remove it there, if the person wants.
+    pub(crate) left_behind: Mutex<Option<(Arc<Server>, Uuid)>>,
+    pub(crate) last: Mutex<Option<LastPass>>,
+    pub(crate) running: AtomicBool,
     /// The last pass found the server keeping records back, and the window
     /// has been told.
     alarmed: AtomicBool,
@@ -148,7 +208,7 @@ pub(crate) struct Sync {
 }
 
 impl Sync {
-    fn poke(&self) {
+    pub(crate) fn poke(&self) {
         *self.wake.lock() = true;
         self.woken.notify_one();
     }
@@ -163,7 +223,7 @@ fn now_ms() -> u64 {
 
 /// The server this device is paired with, signed in — the cached one, or a
 /// fresh connection.
-fn server(store: &Store, sync: &Sync) -> SyncResult<Arc<Server>> {
+pub(crate) fn server(store: &Store, sync: &Sync) -> SyncResult<Arc<Server>> {
     if let Some(server) = sync.server.lock().clone() {
         return Ok(server);
     }
@@ -173,15 +233,23 @@ fn server(store: &Store, sync: &Sync) -> SyncResult<Arc<Server>> {
 }
 
 /// One pass, with the outcome written down and told to the page.
-fn pass(app: &AppHandle, store: &Store, sync: &Sync) -> SyncResult<SyncReport> {
+pub(crate) fn pass(app: &AppHandle, store: &Arc<Store>, sync: &Sync) -> SyncResult<SyncReport> {
     if sync.running.swap(true, Ordering::SeqCst) {
         return Err(SyncFailure::error("a pass is already running"));
     }
+    let on_lock = store.lock_state().map(|s| s.active).unwrap_or(false);
     let outcome = (|| {
+        if on_lock {
+            let lock = crate::lock::connection(store, sync)?;
+            return uwurdp_sync::sync_once(store, lock.as_ref()).map_err(SyncFailure::from);
+        }
         let server = server(store, sync)?;
         uwurdp_sync::sync_once(store, server.as_ref()).map_err(SyncFailure::from)
     })();
     sync.running.store(false, Ordering::SeqCst);
+    if on_lock && matches!(outcome, Err(SyncFailure::SignIn)) {
+        crate::lock::session_ended(store, sync);
+    }
 
     let last = match &outcome {
         Ok(report) => LastPass {
@@ -191,7 +259,8 @@ fn pass(app: &AppHandle, store: &Store, sync: &Sync) -> SyncResult<SyncReport> {
         },
         Err(failure) => {
             // A fresh connection next time: the token, the pin, the address
-            // may all be what went wrong.
+            // may all be what went wrong. (UwULock's connection stays: its
+            // tokens are only the server's to end.)
             *sync.server.lock() = None;
             LastPass {
                 at_ms: now_ms(),
@@ -224,21 +293,32 @@ fn describe(failure: &SyncFailure) -> String {
         SyncFailure::VaultLocked => "the vault is locked".into(),
         SyncFailure::PasswordWrong => "wrong password".into(),
         SyncFailure::BadCode => "not a code".into(),
+        SyncFailure::SignIn => "sign in again".into(),
+        SyncFailure::KeysLost => "the account's key for UwU apps is lost".into(),
+        SyncFailure::NoKeyPair => "the account has no key pair".into(),
+        SyncFailure::MoveCheck { differences } => {
+            format!("the copy differs in {} records", differences.len())
+        }
+        SyncFailure::WeakerKdf { message } => format!("refused: {message}"),
+        SyncFailure::SpaceLeft => "the server lists a space this device left".into(),
         SyncFailure::Unreachable { message }
         | SyncFailure::Refused { message }
         | SyncFailure::PairingFailed { message }
+        | SyncFailure::LoginRefused { message }
         | SyncFailure::Error { message } => message.clone(),
     }
 }
 
-/// Starts the worker. It lives as long as the app.
+/// Starts the worker, and the thread that listens to UwULock. Both live as
+/// long as the app.
 pub(crate) fn start(app: &AppHandle) {
     app.manage(Sync::default());
-    let app = app.clone();
+    let worker_app = app.clone();
     std::thread::Builder::new()
         .name("uwurdp-sync".into())
-        .spawn(move || worker(app))
+        .spawn(move || worker(worker_app))
         .expect("the sync thread starts");
+    crate::lock::start_live(app);
 }
 
 fn worker(app: AppHandle) {
@@ -258,13 +338,21 @@ fn worker(app: AppHandle) {
             std::mem::take(&mut *wake)
         };
         let paired = store.sync_state().map(|s| s.paired()).unwrap_or(false);
+        let on_lock = store
+            .lock_state()
+            .map(|s| s.active && s.signed_in)
+            .unwrap_or(false);
         let unlocked = matches!(store.vault_status(), Ok(VaultStatus::Unlocked));
-        if !paired || !unlocked {
+        if !(paired || on_lock) || !unlocked {
             continue;
         }
         let now = Instant::now();
         let waiting = store.pending_count().unwrap_or(0) > 0;
-        let due = asked || now >= next_pull || (waiting && now >= not_before);
+        // With UwULock's realtime channel open, a change elsewhere says so
+        // itself; the minute's pull is only for when it is not.
+        let listening = on_lock && sync.live.load(Ordering::SeqCst);
+        let pull_due = now >= next_pull && !(listening && now < next_pull + QUIET_PULL);
+        let due = asked || pull_due || (waiting && now >= not_before);
         if !due {
             continue;
         }
@@ -284,9 +372,9 @@ fn worker(app: AppHandle) {
 
 /// Run blocking sync work on a worker thread, so the window keeps drawing —
 /// Argon2 and SPAKE2 take a moment, and the network takes longer.
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     app: &AppHandle,
-    work: impl FnOnce(&AppHandle, &Store, &Sync) -> SyncResult<T> + Send + 'static,
+    work: impl FnOnce(&AppHandle, &Arc<Store>, &Sync) -> SyncResult<T> + Send + 'static,
 ) -> SyncResult<T> {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -323,6 +411,9 @@ pub(crate) struct SyncStatus {
     /// What the last complete check found the server keeping back — kept
     /// across restarts, so it shows before the first pass has run.
     withheld: Withheld,
+    /// `none`, `uwusync` or `uwulock`.
+    backend: &'static str,
+    lock: crate::lock::LockStatus,
 }
 
 #[tauri::command]
@@ -332,6 +423,14 @@ pub(crate) fn sync_status(
 ) -> CommandResult<SyncStatus> {
     let store = &state.store;
     let s = store.sync_state().map_err(err)?;
+    let lock = store.lock_state().map_err(err)?;
+    let backend = if lock.active {
+        "uwulock"
+    } else if s.paired() {
+        "uwusync"
+    } else {
+        "none"
+    };
     Ok(SyncStatus {
         paired: s.paired(),
         server_url: s.server_url,
@@ -346,11 +445,13 @@ pub(crate) fn sync_status(
         device_name: device_name(),
         offering: sync.offer.lock().is_some(),
         withheld: store.withheld().unwrap_or_default(),
+        backend,
+        lock: crate::lock::LockStatus::of(lock, &sync),
     })
 }
 
 /// This computer's name, the way the other devices will see it listed.
-fn device_name() -> String {
+pub(crate) fn device_name() -> String {
     let from_env = ["COMPUTERNAME", "HOSTNAME"]
         .iter()
         .find_map(|name| std::env::var(name).ok())
@@ -419,13 +520,13 @@ fn check_password(store: &Store, password: &[u8]) -> SyncResult<()> {
 /// user, so that is a choice the person makes where they can see it — the
 /// vault dialog's checkbox, the next time it asks — never one pairing makes
 /// for them.
-fn wants_remembered(store: &Store) -> bool {
+pub(crate) fn wants_remembered(store: &Store) -> bool {
     store.vault_is_remembered().unwrap_or(false)
 }
 
 /// Keep a remembered vault remembered: a vault key that changed (joining
 /// another account's vault) needs sealing again.
-fn keep_remembered(store: &Store, was_remembered: bool) {
+pub(crate) fn keep_remembered(store: &Store, was_remembered: bool) {
     if was_remembered {
         if let Err(error) = store.remember_vault(crate::device::protect) {
             tracing::warn!(%error, "could not remember the vault again");
@@ -460,6 +561,9 @@ pub(crate) async fn sync_connect(
     blocking(&app, move |app, store, sync| {
         if store.sync_state()?.paired() {
             return Err(SyncFailure::error("this device is already paired"));
+        }
+        if store.lock_state()?.active {
+            return Err(SyncFailure::error("this device syncs through UwULock"));
         }
         if password.trim().is_empty() {
             return Err(SyncFailure::error("the master password cannot be empty"));
@@ -534,6 +638,9 @@ pub(crate) async fn sync_join(
     blocking(&app, move |app, store, sync| {
         if store.sync_state()?.paired() {
             return Err(SyncFailure::error("this device is already paired"));
+        }
+        if store.lock_state()?.active {
+            return Err(SyncFailure::error("this device syncs through UwULock"));
         }
         // Hosts and secrets already here come along into the account's vault,
         // which needs them opened first — with this device's own password.

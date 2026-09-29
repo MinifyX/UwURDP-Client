@@ -21,7 +21,7 @@ uuid.workspace = true
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 x509-cert = "0.3.0"
 ed25519-dalek = "=3.0.0-rc.1"
-reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "query", "rustls-no-provider"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "form", "json", "query", "rustls-no-provider"] }
 url = "2.5"
 base64.workspace = true
 sha2 = "0.11"
@@ -29,6 +29,12 @@ webpki-roots = "1.0.9"
 spake2 = "0.4"
 rand.workspace = true
 serde_json.workspace = true
+uwulock-core.workspace = true
+# The realtime channel of a UwULock Server. Only the handshake and the frames:
+# the TLS underneath is this crate's own rustls, as for every request.
+tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 
 [dev-dependencies]
+# A UwULock Server in the tests, on 127.0.0.1.
+tiny_http = "0.12"
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }

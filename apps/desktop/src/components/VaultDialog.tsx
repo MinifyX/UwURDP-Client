@@ -31,6 +31,7 @@ export function VaultDialog({ reason, cancelLabel = t('Abbrechen'), onDone, onCa
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [needsCode, setNeedsCode] = useState(false);
+  const [lockEmail, setLockEmail] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -49,6 +50,7 @@ export function VaultDialog({ reason, cancelLabel = t('Abbrechen'), onDone, onCa
         else if (state.status === 'unlocked') onDone();
         else {
           setNeedsCode(state.needsRecoveryCode);
+          setLockEmail(state.lockEmail);
           setMode(state.status === 'absent' ? 'create' : 'unlock');
         }
       })
@@ -85,7 +87,11 @@ export function VaultDialog({ reason, cancelLabel = t('Abbrechen'), onDone, onCa
             ? t('Im Wiederherstellungscode ist ein Tippfehler.')
             : needsCode
               ? t('Master-Passwort oder Wiederherstellungscode war falsch.')
-              : t('Das Master-Passwort war falsch.')
+              : lockEmail
+                ? t(
+                    'Das Master-Passwort war falsch. Hast du es bei UwULock geändert? Dann öffnet hier noch das alte – oder melde dich unter Einstellungen → Sync neu an.',
+                  )
+                : t('Das Master-Passwort war falsch.')
           : t('Hat nicht geklappt: {error}', { error: text }),
       );
       setPassword('');
@@ -155,6 +161,11 @@ export function VaultDialog({ reason, cancelLabel = t('Abbrechen'), onDone, onCa
               aria-invalid={Boolean(error)}
             />
           </label>
+          {mode === 'unlock' && lockEmail && (
+            <p className="field-hint">
+              {t('Das Master-Passwort deines UwULock-Kontos {email}.', { email: lockEmail })}
+            </p>
+          )}
           {mode === 'unlock' && needsCode && (
             <label className="field">
               <span>{t('Wiederherstellungscode (aus dem Recovery-Kit)')}</span>

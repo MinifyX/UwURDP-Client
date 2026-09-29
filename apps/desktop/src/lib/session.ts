@@ -406,6 +406,8 @@ export type VaultState = {
   needsRecoveryCode: boolean;
   /** Needs an account key although this device isn't paired; a new master password frees it. */
   stranded: boolean;
+  /** Syncing through UwULock: that account's master password opens the vault. */
+  lockEmail: string | null;
 };
 
 export function vaultState(): Promise<VaultState> {

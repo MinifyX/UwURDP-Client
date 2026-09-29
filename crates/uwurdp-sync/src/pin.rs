@@ -138,7 +138,20 @@ pub fn pinned_config(fingerprint: &str) -> rustls::ClientConfig {
 /// A TLS setup for a server with a real certificate: the usual checks, with
 /// the roots the operating system trusts.
 pub fn webpki_config() -> rustls::ClientConfig {
-    let roots: rustls::RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
+    #[cfg_attr(not(test), allow(unused_mut))]
+    let mut roots: rustls::RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
+    // The live tests' UwULock Server has a certificate from a test CA
+    // (scripts/lock-live.sh). Only in test builds: the app never trusts more
+    // than the public roots.
+    #[cfg(test)]
+    if let Some(path) = std::env::var_os("UWULOCK_TEST_CA") {
+        use rustls::pki_types::pem::PemObject;
+        for certificate in CertificateDer::pem_file_iter(&path).expect("UWULOCK_TEST_CA") {
+            roots
+                .add(certificate.expect("a certificate in UWULOCK_TEST_CA"))
+                .expect("a CA certificate");
+        }
+    }
     rustls::ClientConfig::builder_with_provider(Arc::new(ring::default_provider()))
         .with_safe_default_protocol_versions()
         .expect("ring supports the versions rustls asks for")

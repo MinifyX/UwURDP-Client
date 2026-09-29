@@ -1,7 +1,8 @@
 # Release notes
 
 One file per version, named after it: `0.1.0.json`, `0.1.0-beta.1.json`. `pnpm release` refuses to run
-without it. The text appears under "Was ist neu?" in UwURDP's update hint and on the GitHub release page.
+without it. Changes not released yet collect in `unreleased.json`, in the same form;
+releasing renames it to the version's file. The text appears under "Was ist neu?" in UwURDP's update hint and on the GitHub release page.
 
 ```json
 {
@@ -14,7 +15,8 @@ without it. The text appears under "Was ist neu?" in UwURDP's update hint and on
 
 1. Set the version in `Cargo.toml` (workspace), the `tauri.conf.json` of `apps/desktop` and `apps/setup`,
    and the `package.json` files.
-2. Add `release-notes/<version>.json`.
+2. Rename `release-notes/unreleased.json` to `release-notes/<version>.json` (or add it), and write the
+   first line of each language as the release's headline.
 3. Commit, tag `v<version>` and push both. The tag starts `.github/workflows/installers.yml`, which
    checks the workspace on macOS and Linux and builds every setup — unsigned, since CI holds no key.
 4. Run `pnpm release` on the machine with the signing key (any system), with the tag checked out.

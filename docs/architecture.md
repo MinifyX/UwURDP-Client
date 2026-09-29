@@ -437,6 +437,92 @@ uwusync-server invite` prints a new `uwu1_…` setup code; **Settings → Sync �
   memory.
 - **Revoking** a device takes the master password.
 
+### Through UwULock
+
+A device can sync through a UwULock Server instead: the suite vault of the
+person's UwULock account (`docs/uwu-api.md` §3–§6 in UwULock-Server) speaks
+UwUSync's record model, so everything above — envelopes, clocks, the merge,
+the manifests, the seal — stays as it is, and only the transport, the login
+and where the key comes from change (`uwurdp_sync::lock`).
+
+|             | UwUSync                                    | UwULock                                                       |
+| ----------- | ------------------------------------------ | ------------------------------------------------------------- |
+| Login       | challenge signed by the device key         | email, master password, two-step login, as a Bitwarden client |
+| Key         | vault key wrapped by the Argon2 master key | the `rdp` space's key, under the account's extras key         |
+| Pull / push | `/v1/records`                              | `/uwu/v1/suite/spaces/rdp/records`                            |
+| Live        | polling every minute                       | the realtime channel, `/uwu/v1/realtime`                      |
+| New device  | pairing                                    | signing in with the account                                   |
+
+**Signing in** is Bitwarden's password grant with `scope=uwu.suite
+offline_access` and `client_id=uwurdp`, so the token opens this app's space and
+nothing else (`deviceName=UwURDP`, a device identifier made once per install).
+Two-step login works as in any Bitwarden client — authenticator, email codes,
+YubiKey OTP, and "remember this device". The crypto is UwULock-Client's
+`uwulock-core`, a git dependency pinned to one commit: the master key from the
+prelogin's KDF (with floors and ceilings on what a server may ask for, and
+never weaker than what this account's last sign-in here used — kept per
+account in `lock_accounts`, forgotten only by signing out, as the UwULock app
+keeps it until the account is removed), the user key, the private key, then the **extras key** from `/uwu/v1/keys` —
+opened with the user key, or after an official client rotated the user key with
+the private key and wrapped again, or made by the first UwU app that needs it —
+and under it the **space key**, 32 bytes for XChaCha20-Poly1305 like the
+UwUSync vault key. `uwulock-bitwarden` is not used: at that commit its login is
+the desktop client's (`client_id=desktop`, `scope=api`), which a suite app must
+not ask for.
+
+**The space is the vault.** Its id takes the vault id's place in every record's
+associated data, its key the vault key's, so joining a space is
+`Store::adopt_vault` with that key (`Store::join_space`): hosts and secrets
+already on the device come along, sealed again. The vault here is then wrapped
+under the UwULock master password with the usual local Argon2 — one password
+for both. Kept on the device: the server, the email, the space id, and the
+refresh token, sealed by the operating system like the UwUSync pairing's
+secrets (`lock_state`); per account — normalized server address and email —
+the two-step "remember" token, sealed the same way (`lock_accounts`). That
+token goes only to the server and account that issued it, never to whatever
+server is typed in next, and signing out forgets it. Never kept: the
+master key, the user, private and extras keys. A refresh token works once, so
+a new one is written down before the old one is dropped, and two threads never
+refresh at once. The master password is needed again only when the session
+ends — refresh token run out, device removed, password changed on the server
+(then the vault here still opens with the old one until the next sign-in, which
+only wraps it again), or the space was given a new key (a pull says `reset` and
+the space's id changed).
+
+**A different space is never taken silently.** Only the server says which space
+is the account's, so a device remembers per account the space it used and the
+ones it moved on from (`lock_accounts`). When a sign-in finds another space
+listed — another device gave it a new key, it was deleted, or the server is not
+honest (it could list a space kept from before a rekey, whose key a lost device
+still holds) — nothing is taken or written: the page explains both readings and
+asks, and only a sign-in the person agreed to takes the new space and pushes
+this device's records into it. A space the device moved on from is refused
+outright.
+
+**The realtime channel** is one WebSocket that says _that_ the space changed,
+never what; the worker then runs a pass. It renews its token on the same
+connection before it runs out, notices a dead connection by the missing
+heartbeat, waits between reconnects as the close code asks (exponential
+backoff from 1 to 60 seconds otherwise), and on `logout` locks the vault. While
+it is open, the minute's pull becomes a quarter of an hour's. A `reset` from a
+pull (a cursor older than the server remembers) pulls everything from the
+start, merged as after a fresh install.
+
+**The move from UwUSync** (`uwurdp_sync::lock::moving`, Settings → Sync → Move
+to UwULock) needs the device synced with UwUSync and unlocked: it signs in,
+makes or takes the space, pushes what waits to UwUSync, reads everything
+UwUSync holds and opens it with the vault key here, seals each record again for
+the space — same id, kind, clock and tombstone, new nonce — except manifests,
+and pushes what the space does not hold at least as new (conflicts with another
+device's move go through the merge rule). Then it reads the space back and
+holds every record against what was read; one missing or older record stops the
+move, and the device stays on UwUSync. Only after that does it switch, in one
+transaction: vault adopted without marking anything to push, UwULock the
+backend, the UwUSync pairing forgotten. UwUSync is only ever read from; the
+page then offers to remove the device there, and says so when it was the last
+one. Running the move again, after an interruption or on the next device, skips
+what is there already.
+
 ## Import
 
 `uwurdp-import` turns every source into one `ImportBundle`, so the preview, the

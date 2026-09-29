@@ -100,6 +100,9 @@ density with a calmer face and a sync server that is yours.
 > - **Sync** through a [UwUSync server](https://github.com/MinifyX/UwUSync-Server)
 >   of your own: hosts, logins, passwords and trusted certificates end-to-end
 >   encrypted, a recovery kit shown once, a new device paired by three words.
+>   Or through your [UwULock](https://github.com/MinifyX/UwULock-Server)
+>   account, in the same place as your passwords, with changes arriving live —
+>   and a one-click move from UwUSync to UwULock.
 >
 > **What doesn't, yet.** RD Gateway (the settings are kept and imported, but
 > connecting through one says "not supported yet"), the console/admin session,
@@ -128,6 +131,25 @@ Linux (x86_64 and arm64).
 The [install guide](docs/install.md) has the details: checking the download,
 updates, uninstalling, where your data lives, and what to do when something
 goes wrong. [Auf Deutsch](docs/install.md#uwurdp-installieren).
+
+## Syncing through UwULock
+
+Already using [UwULock](https://github.com/MinifyX/UwULock-Server), the
+Bitwarden-compatible password manager of the UwU suite? Then UwURDP can sync
+through it instead of a UwUSync server: **Settings → Sync → UwULock → Sign in
+with UwULock**, with the server's address, your email and master password, and
+the two-step code if your account has one. Every device signs in the same way.
+Your hosts live in their own space of your account, encrypted with a key only
+your devices have (the server holds it wrapped under your account's keys), and
+the server tells UwURDP at once when another device changed something. From
+then on, your UwULock master password also opens the vault in UwURDP.
+
+On UwUSync already? **Settings → Sync → Move to UwULock** copies everything to
+your UwULock account, checks the copy, and only then switches the device —
+UwUSync keeps its data untouched, and the move can simply be run again if it
+stopped halfway. Afterwards UwURDP offers to remove the device from UwUSync;
+once the last device moved, the UwUSync account can go. How it works:
+[architecture](docs/architecture.md#through-uwulock).
 
 ## The sync server
 

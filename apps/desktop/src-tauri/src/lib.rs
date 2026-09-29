@@ -9,6 +9,8 @@
 //! - [`import`] — the vault and importing RDCMan's and mstsc's files
 //! - [`backup`] — exporting to and importing from `.uwurdp` files
 //! - [`sync`] — Settings → Sync and the thread that keeps devices in step
+//! - [`lock`] — the same through UwULock: signing in, the move from UwUSync,
+//!   the realtime channel
 //! - [`system`] — updates, links, a fresh start for a reloaded page
 //! - [`h264`] — Cisco's OpenH264, fetched when the user turns H.264 on
 
@@ -19,6 +21,7 @@ mod frames;
 mod h264;
 mod hosts;
 mod import;
+mod lock;
 mod sessions;
 mod sync;
 mod system;
@@ -147,6 +150,12 @@ pub fn run() {
             sync::sync_now,
             sync::sync_disconnect,
             sync::sync_recovery_code,
+            lock::lock_sign_in,
+            lock::lock_send_email_code,
+            lock::lock_move,
+            lock::lock_leave_uwusync,
+            lock::lock_forget_move,
+            lock::lock_sign_out,
             system::close_all_sessions,
             system::set_update_channel,
             system::update_status,

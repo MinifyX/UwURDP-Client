@@ -1,11 +1,12 @@
 name: Installers
 
-# macOS and Linux: the checks Windows gets on Lorin's machine, and every file
-# `pnpm release` publishes except the Windows x64 setup: Windows on ARM, the
+# The workspace checks on macOS and Linux, and next to them, not after them,
+# every file `pnpm release` publishes: the Windows setups for x64 and ARM, the
 # universal macOS disk image, and .deb, .rpm and portable folder for Linux x64
-# and arm64. Windows x64 is built there, next to the update signing key;
-# nothing here holds that key or any other secret. The files the updater runs
-# are signed by `pnpm release` after it downloads them from here.
+# and arm64. `pnpm release` only takes a run where all of it finished green.
+# All unsigned: nothing here holds the update signing key or any other secret.
+# The files the updater runs are signed by `pnpm release`, next to the key,
+# after it downloads them from here.
 
 on:
   push:
@@ -75,7 +76,6 @@ jobs:
 
   installers:
     name: Setup (${{ matrix.name }})
-    needs: check
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +94,11 @@ jobs:
           # Natively on ARM, same Ubuntu: nothing has to be cross-linked.
           - name: linux-arm64
             os: ubuntu-22.04-arm
+            target: ''
+          # The setup most people run. `pnpm release --build-windows` can still
+          # build it on Lorin's machine instead.
+          - name: windows-x64
+            os: windows-latest
             target: ''
           # Natively on ARM: ring's assembly wants clang for this target, which
           # the ARM runner brings, and nothing has to be cross-linked.

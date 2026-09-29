@@ -210,9 +210,9 @@ The installer, with the app packed inside:
 pnpm build:setup                  # target/installers/, for the system it runs on
 ```
 
-Releasing is `pnpm release`: it builds and signs the Windows setup here, takes
-the macOS and Linux setups CI built for the tag, signs those here too, and
-publishes all of them. [release-notes/README.md](release-notes/README.md) has
+Releasing is `pnpm release`, on any system that holds the signing key: it takes
+the setups CI built for the tag (Windows, macOS, Linux), signs what the updater
+runs here, and publishes all of them. [release-notes/README.md](release-notes/README.md) has
 the steps.
 
 ## Documentation

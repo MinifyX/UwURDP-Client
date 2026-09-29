@@ -847,3 +847,50 @@ fn the_channel_renews_its_token_in_time_and_after_the_server_refused_it() {
     stop.store(true, Ordering::SeqCst);
     assert_eq!(runner.join().unwrap(), live::Ended::Stopped);
 }
+
+#[test]
+fn the_channel_takes_no_message_larger_than_the_contract_allows() {
+    let fake = Fake::start();
+    let signed = signed_in(&fake);
+    let script = fake.live();
+    let (seen, events) = mpsc::channel();
+    let lock = signed.lock;
+    let runner = std::thread::spawn(move || {
+        live::connection(&lock, &|| true, &mut |event| {
+            let _ = seen.send(event);
+        })
+    });
+    let (reply, auth) = mpsc::channel();
+    script.send(Live::Expect(reply)).unwrap();
+    auth.recv_timeout(Duration::from_secs(10)).unwrap();
+    script
+        .send(Live::Send(
+            r#"{"type":"ready","connectionId":"c1","expires":0,"heartbeat":25}"#.into(),
+        ))
+        .unwrap();
+    assert_eq!(
+        events.recv_timeout(Duration::from_secs(10)).unwrap(),
+        live::Event::Ready
+    );
+
+    // A change, padded with a field no one reads to exactly this size.
+    let padded = |size: usize| {
+        let bare = format!(r#"{{"type":"changed","spaces":["{SPACE}"],"pad":""}}"#);
+        bare.replace(
+            r#""pad":"""#,
+            &format!(r#""pad":"{}""#, "x".repeat(size - bare.len())),
+        )
+    };
+    assert_eq!(padded(live::MAX_MESSAGE).len(), live::MAX_MESSAGE);
+    script.send(Live::Send(padded(live::MAX_MESSAGE))).unwrap();
+    assert_eq!(
+        events.recv_timeout(Duration::from_secs(10)).unwrap(),
+        live::Event::Changed
+    );
+    // One byte more, and the connection ends instead of taking it in.
+    script
+        .send(Live::Send(padded(live::MAX_MESSAGE + 1)))
+        .unwrap();
+    assert_eq!(runner.join().unwrap(), live::Ended::Retry(Duration::ZERO));
+    assert!(events.try_recv().is_err());
+}

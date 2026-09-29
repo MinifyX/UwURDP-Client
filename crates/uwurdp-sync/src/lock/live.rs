@@ -37,6 +37,11 @@ const READY_WITHIN: Duration = Duration::from_secs(15);
 const RENEW_AHEAD: u64 = 60;
 /// A connection that lived this long resets the backoff.
 const STABLE: Duration = Duration::from_secs(60);
+/// The largest message or frame taken from the server. The contract's
+/// messages are a few hundred bytes and at most about 4 KiB; tungstenite's
+/// own limits (64 MiB a message) would let a server fill this device's
+/// memory instead.
+pub(crate) const MAX_MESSAGE: usize = 64 * 1024;
 
 /// What the channel tells the app.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,7 +139,7 @@ pub fn run(lock: &Lock, keep_going: &dyn Fn() -> bool, on_event: &mut dyn FnMut(
 }
 
 /// One connection, from the handshake to its end.
-fn connection(
+pub(super) fn connection(
     lock: &Lock,
     keep_going: &dyn Fn() -> bool,
     on_event: &mut dyn FnMut(Event),
@@ -406,7 +411,11 @@ fn open(lock: &Lock) -> Result<WebSocket<Stream>, String> {
             .parse()
             .map_err(|_| "user agent")?,
     );
-    let (mut socket, _) = tungstenite::client(request, stream).map_err(|e| e.to_string())?;
+    let config = tungstenite::protocol::WebSocketConfig::default()
+        .max_message_size(Some(MAX_MESSAGE))
+        .max_frame_size(Some(MAX_MESSAGE));
+    let (mut socket, _) = tungstenite::client::client_with_config(request, stream, Some(config))
+        .map_err(|e| e.to_string())?;
     // On the socket itself: a timeout set through a clone of it does not
     // reach every system's socket.
     socket

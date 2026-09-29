@@ -508,7 +508,8 @@ outright.
 **The realtime channel** is one WebSocket that says _that_ the space changed,
 never what; the worker then runs a pass. It renews its token on the same
 connection before it runs out, notices a dead connection by the missing
-heartbeat, waits between reconnects as the close code asks (exponential
+heartbeat, takes no message over 64 KiB (the contract's are at most about
+4 KiB), waits between reconnects as the close code asks (exponential
 backoff from 1 to 60 seconds otherwise), and on `logout` locks the vault. While
 it is open, the minute's pull becomes a quarter of an hour's. A `reset` from a
 pull (a cursor older than the server remembers) pulls everything from the
@@ -522,7 +523,9 @@ the space — same id, kind, clock and tombstone, new nonce — except manifests
 and pushes what the space does not hold at least as new (conflicts with another
 device's move go through the merge rule). Then it reads the space back and
 holds every record against what was read; one missing or older record stops the
-move, and the device stays on UwUSync. Only after that does it switch, in one
+move, and the device stays on UwUSync. It keeps only the headers and opened
+payloads, never the sealed pages, and stops when either server sends more than
+a UwULock space holds (50 000 records, 256 MiB). Only after that does it switch, in one
 transaction: vault adopted without marking anything to push, UwULock the
 backend, the UwUSync pairing forgotten. UwUSync is only ever read from; the
 page then offers to remove the device there, and says so when it was the last

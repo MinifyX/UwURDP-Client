@@ -308,6 +308,33 @@ fn a_space_with_a_new_key_asks_for_the_master_password() {
     ));
 }
 
+#[test]
+fn nothing_is_written_to_or_read_from_the_start_of_a_space_that_changed() {
+    let fake = Fake::start();
+    let store = Store::open_in_memory().unwrap();
+    let lock = joined(&fake, &store);
+    // Given a new key (and id) by another device: no reset comes for a pull
+    // from the start or for a push, so this device asks before either.
+    fake.account.lock().spaces.get_mut("rdp").unwrap().0 = Uuid::new_v4();
+    store.save_host(draft("prox-1", "192.0.2.10")).unwrap();
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::SignIn(message))) if message.contains("new key")
+    ));
+    assert!(matches!(
+        lock.pull(uwurdp_proto::SyncCursor(0), 10),
+        Err(TransportError::SignIn(_))
+    ));
+    assert!(fake.records.is_empty());
+
+    // Deleted in the web vault.
+    fake.account.lock().spaces.clear();
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::SignIn(message))) if message.contains("deleted")
+    ));
+}
+
 // ── The move ─────────────────────────────────────────────────────────────
 
 /// A device on UwUSync ([`MemoryServer`]) with a vault of its own and

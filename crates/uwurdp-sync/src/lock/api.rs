@@ -690,6 +690,42 @@ impl Lock {
         format!("/uwu/v1/suite/spaces/{SPACE}/records")
     }
 
+    /// Whether the account's space is still the one this device holds the
+    /// key of. A space given a new key has a new id as well (§6.4), and one
+    /// that was deleted is not there: either way, what the space holds now
+    /// is sealed under a key only the account's other keys open, and only
+    /// the master password gets this device those.
+    fn check_space(&self, space: Uuid) -> Result<(), TransportError> {
+        let current = self
+            .spaces()?
+            .into_iter()
+            .find(|object| object.space == SPACE);
+        match current {
+            Some(object) if object.id == space => Ok(()),
+            Some(_) => Err(TransportError::SignIn(
+                "the space was given a new key".into(),
+            )),
+            None => Err(TransportError::SignIn("the space was deleted".into())),
+        }
+    }
+
+    /// A request about the space's records; a space that is not there (404)
+    /// is told apart from any other refusal.
+    fn call_space<T: DeserializeOwned>(
+        &self,
+        space: Uuid,
+        build: impl Fn() -> RequestBuilder,
+    ) -> Result<T, TransportError> {
+        match self.call(build, MAX_PAGE_BYTES)? {
+            Call::Done(value) => Ok(value),
+            Call::Refused(refusal) if refusal.status == 404 => {
+                self.check_space(space)?;
+                Err(refusal.into_transport())
+            }
+            Call::Refused(refusal) => Err(refusal.into_transport()),
+        }
+    }
+
     fn space_id(&self) -> Result<Uuid, TransportError> {
         self.space
             .ok_or_else(|| TransportError::Refused("no space to sync".into()))
@@ -699,26 +735,18 @@ impl Lock {
 impl Transport for Lock {
     fn pull(&self, since: SyncCursor, limit: usize) -> Result<PullResponse, TransportError> {
         let space = self.space_id()?;
+        if since.0 == 0 {
+            // A pull from the start has no epoch to be told off by: records
+            // of a space given a new key since come back without a reset.
+            self.check_space(space)?;
+        }
         let limit = limit.min(MAX_BATCH);
-        let page: SuitePull = self.call_ok(
-            || {
-                self.request(reqwest::Method::GET, &Self::records_path())
-                    .query(&[("since", since.0.to_string()), ("limit", limit.to_string())])
-            },
-            MAX_PAGE_BYTES,
-        )?;
+        let page: SuitePull = self.call_space(space, || {
+            self.request(reqwest::Method::GET, &Self::records_path())
+                .query(&[("since", since.0.to_string()), ("limit", limit.to_string())])
+        })?;
         if page.reset {
-            // A space with a new key has a new id as well: what comes now is
-            // sealed under a key this device does not have.
-            let current = self
-                .spaces()?
-                .into_iter()
-                .find(|object| object.space == SPACE);
-            if current.is_none_or(|object| object.id != space) {
-                return Err(TransportError::SignIn(
-                    "the space was given a new key".into(),
-                ));
-            }
+            self.check_space(space)?;
             self.reset.store(true, Ordering::SeqCst);
             return Ok(PullResponse {
                 envelopes: Vec::new(),
@@ -740,6 +768,10 @@ impl Transport for Lock {
 
     fn push(&self, envelopes: Vec<Envelope>) -> Result<PushResponse, TransportError> {
         let space = self.space_id()?;
+        // The server cannot tell records sealed for a space's old key from
+        // any others: whether the space is still the one this device has is
+        // for this device to ask before it writes there.
+        self.check_space(space)?;
         let records: Vec<WireRecord> = envelopes
             .iter()
             .map(|envelope| {
@@ -749,13 +781,10 @@ impl Transport for Lock {
             })
             .collect();
         let body = serde_json::json!({ "schema": SCHEMA_VERSION, "records": records });
-        let answer: SuitePush = self.call_ok(
-            || {
-                self.request(reqwest::Method::POST, &Self::records_path())
-                    .json(&body)
-            },
-            MAX_PAGE_BYTES,
-        )?;
+        let answer: SuitePush = self.call_space(space, || {
+            self.request(reqwest::Method::POST, &Self::records_path())
+                .json(&body)
+        })?;
         Ok(PushResponse {
             accepted: answer.accepted,
             conflicts: answer

@@ -211,7 +211,7 @@ fn intact(path: &Path, sha256: &str) -> bool {
 /// place in one rename.
 fn download(binary: &Binary, path: &Path) -> Result<(), String> {
     let client = reqwest::blocking::Client::builder()
-        .use_preconfigured_tls(uwurdp_sync::pin::webpki_config())
+        .use_preconfigured_tls(uwurdp_sync::pin::roots_config())
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(15))
         .user_agent(concat!("UwURDP/", env!("CARGO_PKG_VERSION")))

@@ -489,6 +489,12 @@ ends — refresh token run out, device removed, password changed on the server
 only wraps it again), or the space was given a new key (a pull says `reset` and
 the space's id changed).
 
+**TLS** to a UwULock Server is checked the usual way — chain, name, expiry —
+against the public roots and the ones the operating system trusts, for the
+requests and the realtime channel alike, so a server behind a company's or a
+home network's own CA works once that CA is installed on the system. There is
+no fallback that skips the checks.
+
 **A different space is never taken silently.** Only the server says which space
 is the account's, so a device remembers per account the space it used and the
 ones it moved on from (`lock_accounts`). When a sign-in finds another space

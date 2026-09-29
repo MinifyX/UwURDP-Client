@@ -281,8 +281,10 @@ impl WireRecord {
 }
 
 impl Lock {
-    /// Reach a server. Its certificate has to stand up to the usual checks —
-    /// a UwULock Server has a real one, its own Let's Encrypt or a proxy's.
+    /// Reach a server. Its certificate has to stand up to the usual checks
+    /// against the public roots and the ones the operating system trusts: a
+    /// UwULock Server has a real one — its own Let's Encrypt, a proxy's, or
+    /// one from a private CA installed on this system.
     pub fn connect(server: &str, device: LockDevice) -> Result<Self, TransportError> {
         let base = normalize_server(server)?;
         let mut builder = Client::builder();
@@ -290,7 +292,7 @@ impl Lock {
             builder = builder.no_proxy();
         }
         let client = builder
-            .use_preconfigured_tls(crate::pin::webpki_config())
+            .use_preconfigured_tls(crate::pin::roots_config())
             .redirect(reqwest::redirect::Policy::none())
             .timeout(TIMEOUT)
             .connect_timeout(Duration::from_secs(10))

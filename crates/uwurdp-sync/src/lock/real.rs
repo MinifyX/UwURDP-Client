@@ -158,7 +158,7 @@ impl Raw {
         Self {
             base: server(),
             client: reqwest::blocking::Client::builder()
-                .use_preconfigured_tls(crate::pin::webpki_config())
+                .use_preconfigured_tls(crate::pin::roots_config())
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .unwrap(),

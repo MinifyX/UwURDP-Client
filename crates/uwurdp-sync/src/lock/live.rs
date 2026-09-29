@@ -384,7 +384,7 @@ fn open(lock: &Lock) -> Result<WebSocket<Stream>, String> {
     let stream = if tls {
         let name = rustls::pki_types::ServerName::try_from(host_for_dns.to_string())
             .map_err(|e| e.to_string())?;
-        let connection = rustls::ClientConnection::new(Arc::new(crate::pin::webpki_config()), name)
+        let connection = rustls::ClientConnection::new(Arc::new(crate::pin::roots_config()), name)
             .map_err(|e| e.to_string())?;
         Stream::Tls(Box::new(rustls::StreamOwned::new(connection, tcp)))
     } else {

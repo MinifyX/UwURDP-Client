@@ -33,6 +33,11 @@ export function failureText(failure: SyncFailure): string {
       return t(
         'Dein UwULock-Konto ist noch nicht fertig eingerichtet. Melde dich einmal im UwULock-Web-Tresor an.',
       );
+    case 'weaker-kdf':
+      return t(
+        'UwULock verlangt eine schwächere Schlüsselableitung als bei der letzten Anmeldung dieses Kontos ({reason}). UwURDP hat deshalb nichts abgeschickt: Damit ließe sich dein Master-Passwort leichter erraten. Hast du sie selbst gesenkt, melde dich hier unter Sync von UwULock ab und neu an.',
+        { reason: failure.message },
+      );
     case 'move-check':
       return t(
         'Die Kopie auf UwULock stimmt in {n} Einträgen nicht mit UwUSync überein. UwURDP bleibt deshalb bei UwUSync – versuch es später noch einmal.',

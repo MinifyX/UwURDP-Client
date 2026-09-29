@@ -101,6 +101,7 @@ export type SyncFailure =
   | { kind: 'login-refused'; message: string }
   | { kind: 'keys-lost' }
   | { kind: 'no-key-pair' }
+  | { kind: 'weaker-kdf'; message: string }
   | { kind: 'move-check'; differences: Difference[] }
   | { kind: 'error'; message: string };
 

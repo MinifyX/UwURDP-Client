@@ -26,6 +26,7 @@ fn request<'a>(fake: &'a Fake) -> SignIn<'a> {
         password: PASSWORD,
         two_factor: None,
         remember_token: None,
+        known: Known::default(),
     }
 }
 
@@ -57,6 +58,7 @@ fn joined(fake: &Fake, store: &Store) -> Lock {
                 email: &signed.email,
                 protected_refresh_token: None,
                 protected_remember_token: None,
+                kdf: &signed.kdf_to_keep(),
             },
         )
         .unwrap();
@@ -184,10 +186,67 @@ fn two_step_login_asks_for_a_code_and_can_remember_this_device() {
 }
 
 fn send_email_code_works(fake: &Fake) {
-    super::account::send_email_code(&fake.url, EMAIL, PASSWORD, device()).unwrap();
+    super::account::send_email_code(&fake.url, EMAIL, PASSWORD, &Known::default(), device())
+        .unwrap();
     assert!(fake
         .requests()
         .contains(&"POST /api/two-factor/send-email-login".to_string()));
+}
+
+#[test]
+fn a_weaker_key_derivation_than_last_time_is_refused_before_anything_is_sent() {
+    use uwulock_core::crypto::Kdf;
+    let fake = Fake::start();
+    let store = Store::open_in_memory().unwrap();
+    joined(&fake, &store);
+    let first = known(&store, &format!("{}/", fake.url), "NYU@example.com").unwrap();
+    assert_eq!(
+        first.kdf,
+        Some(Kdf::Pbkdf2 { iterations: 5_000 }),
+        "kept at the sign-in"
+    );
+    // The fake's prelogin says PBKDF2 at 5 000 rounds; say this account's
+    // last sign-in used more, or Argon2id.
+    let stronger = [
+        Kdf::Pbkdf2 {
+            iterations: 600_000,
+        },
+        Kdf::Argon2id {
+            iterations: 3,
+            memory_mib: 64,
+            parallelism: 4,
+        },
+    ];
+    for before in stronger {
+        let logins = fake.account.lock().logins.len();
+        let known = Known { kdf: Some(before) };
+        let request = SignIn {
+            known: known.clone(),
+            ..request(&fake)
+        };
+        match sign_in(&request, device()) {
+            Err(LockError::WeakerKdf(message)) => assert!(message.contains("5000"), "{message}"),
+            other => panic!("{:?}", other.err()),
+        }
+        assert!(matches!(
+            super::account::send_email_code(&fake.url, EMAIL, PASSWORD, &known, device()),
+            Err(LockError::WeakerKdf(_))
+        ));
+        assert_eq!(fake.account.lock().logins.len(), logins, "no hash was sent");
+    }
+    assert!(!fake
+        .requests()
+        .contains(&"POST /api/two-factor/send-email-login".to_string()));
+
+    // The same as last time, or stronger, signs in; what it keeps reads back.
+    let request = SignIn {
+        known: first,
+        ..request(&fake)
+    };
+    assert!(matches!(
+        sign_in(&request, device()).unwrap(),
+        SignInOutcome::SignedIn(_)
+    ));
 }
 
 #[test]
@@ -454,6 +513,7 @@ fn the_move_copies_everything_checks_it_and_a_second_run_copies_nothing() {
                 email: EMAIL,
                 protected_refresh_token: None,
                 protected_remember_token: None,
+                kdf: &signed.kdf_to_keep(),
             },
         )
         .unwrap();

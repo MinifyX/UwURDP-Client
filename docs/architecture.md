@@ -459,8 +459,10 @@ nothing else (`deviceName=UwURDP`, a device identifier made once per install).
 Two-step login works as in any Bitwarden client — authenticator, email codes,
 YubiKey OTP, and "remember this device". The crypto is UwULock-Client's
 `uwulock-core`, a git dependency pinned to one commit: the master key from the
-prelogin's KDF (with floors and ceilings on what a server may ask for), the
-user key, the private key, then the **extras key** from `/uwu/v1/keys` —
+prelogin's KDF (with floors and ceilings on what a server may ask for, and
+never weaker than what this account's last sign-in here used — kept per
+account in `lock_accounts`, forgotten only by signing out, as the UwULock app
+keeps it until the account is removed), the user key, the private key, then the **extras key** from `/uwu/v1/keys` —
 opened with the user key, or after an official client rotated the user key with
 the private key and wrapped again, or made by the first UwU app that needs it —
 and under it the **space key**, 32 bytes for XChaCha20-Poly1305 like the

@@ -178,6 +178,7 @@ fn sign_in(
         }
         _ => None,
     };
+    let known = lock::known(store, server_url, email)?;
     let request = SignIn {
         server_url,
         email,
@@ -188,6 +189,7 @@ fn sign_in(
             remember: input.remember,
         }),
         remember_token: remembered.as_deref().map(String::as_str),
+        known,
     };
     Ok(match lock::sign_in(&request, device(store)?)? {
         SignInOutcome::SignedIn(signed) => Ok(*signed),
@@ -255,6 +257,7 @@ pub(crate) async fn lock_sign_in(
             Err(outcome) => return Ok(outcome),
         };
         let (refresh, remember) = sealed_tokens(&signed)?;
+        let kdf = signed.kdf_to_keep();
         let remembered = sync::wants_remembered(store);
         store.join_space(
             uwurdp_store::Space {
@@ -269,6 +272,7 @@ pub(crate) async fn lock_sign_in(
                 email: &signed.email,
                 protected_refresh_token: refresh,
                 protected_remember_token: remember,
+                kdf: &kdf,
             },
         )?;
         sync::keep_remembered(store, remembered);
@@ -289,7 +293,8 @@ pub(crate) async fn lock_send_email_code(
 ) -> SyncResult<()> {
     let password = Zeroizing::new(password);
     blocking(&app, move |_, store, _| {
-        lock::send_email_code(&server_url, &email, &password, device(store)?)?;
+        let known = lock::known(store, &server_url, &email)?;
+        lock::send_email_code(&server_url, &email, &password, &known, device(store)?)?;
         Ok(())
     })
     .await
@@ -339,6 +344,7 @@ pub(crate) async fn lock_move(
             uwurdp_sync::sync_once(store, uwusync.as_ref())?;
             let report = lock::copy_to_lock(store, uwusync.as_ref(), &signed.lock, &signed.space)?;
             let (refresh, remember) = sealed_tokens(&signed)?;
+            let kdf = signed.kdf_to_keep();
             let remembered = sync::wants_remembered(store);
             store.join_space(
                 uwurdp_store::Space {
@@ -353,6 +359,7 @@ pub(crate) async fn lock_move(
                     email: &signed.email,
                     protected_refresh_token: refresh,
                     protected_remember_token: remember,
+                    kdf: &kdf,
                 },
             )?;
             sync::keep_remembered(store, remembered);

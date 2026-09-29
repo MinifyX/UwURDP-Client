@@ -355,11 +355,14 @@ CREATE TABLE lock_state (
 -- What this device keeps of each UwULock account it signed in to, by the
 -- server's address (normalized) and the email (lower case). The "remember
 -- this device" token of two-step login, sealed like the refresh token, goes
--- to the server and account that issued it and to no other.
+-- to the server and account that issued it and to no other. `kdf` is the key
+-- derivation (JSON) the last sign-in used: a server asking for a weaker one
+-- is refused.
 CREATE TABLE lock_accounts (
     server_url                  TEXT    NOT NULL,
     email                       TEXT    NOT NULL,
     protected_remember_token    BLOB,
+    kdf                         TEXT,
     PRIMARY KEY (server_url, email)
 );
 "#;

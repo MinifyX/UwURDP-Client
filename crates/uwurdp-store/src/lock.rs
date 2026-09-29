@@ -54,11 +54,20 @@ impl std::fmt::Debug for Space {
     }
 }
 
+/// What this device learnt about one UwULock account at earlier sign-ins.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LockAccount {
+    /// The key derivation the last sign-in used, as `uwurdp_sync` wrote it.
+    pub kdf: Option<String>,
+}
+
 /// A sign-in, on its way into the database.
 pub struct LockEnrolment<'a> {
     /// Normalized, as `uwurdp_sync::lock::normalize_server` makes it.
     pub server_url: &'a str,
     pub email: &'a str,
+    /// The key derivation this sign-in used, as `uwurdp_sync` writes it.
+    pub kdf: &'a str,
     /// Sealed by the operating system already.
     pub protected_refresh_token: Option<Vec<u8>>,
     /// A new "remember this device" token for this account; `None` keeps the
@@ -105,6 +114,21 @@ impl Store {
                 })
             },
         )?)
+    }
+
+    /// What this device learnt about an account at earlier sign-ins: the
+    /// server (normalized, as it is kept) and the email.
+    pub fn lock_account(&self, server_url: &str, email: &str) -> Result<LockAccount> {
+        Ok(self
+            .conn
+            .lock()
+            .query_row(
+                "SELECT kdf FROM lock_accounts WHERE server_url = ?1 AND email = ?2",
+                params![server_url, account_email(email)],
+                |row| Ok(LockAccount { kdf: row.get(0)? }),
+            )
+            .optional()?
+            .unwrap_or_default())
     }
 
     /// The id this install logs in to UwULock with: made once, kept for good,
@@ -157,15 +181,17 @@ impl Store {
                 ],
             )?;
             tx.execute(
-                "INSERT INTO lock_accounts (server_url, email, protected_remember_token)
-                 VALUES (?1, ?2, ?3)
+                "INSERT INTO lock_accounts (server_url, email, protected_remember_token, kdf)
+                 VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT (server_url, email) DO UPDATE
                     SET protected_remember_token =
-                        coalesce(excluded.protected_remember_token, protected_remember_token)",
+                            coalesce(excluded.protected_remember_token, protected_remember_token),
+                        kdf = excluded.kdf",
                 params![
                     enrolment.server_url,
                     account_email(enrolment.email),
                     enrolment.protected_remember_token,
+                    enrolment.kdf,
                 ],
             )?;
             if joining == Joining::Moved {
@@ -323,11 +349,17 @@ impl Store {
     /// key, under the UwULock master password — and so do its records; the
     /// server and the email stay to fill in the next sign-in. The device is
     /// not remembered for two-step login any more: signing out is where
-    /// someone would expect that to end.
+    /// someone would expect that to end. Nor is the account's key derivation:
+    /// whoever lowered it on purpose signs out here and in again, as the
+    /// UwULock app has its account removed and added again.
     pub fn leave_lock(&self) -> Result<()> {
         let state = self.lock_state()?;
         if let (Some(server_url), Some(email)) = (&state.server_url, &state.email) {
             self.forget_lock_remember_token(server_url, email)?;
+            self.conn.lock().execute(
+                "UPDATE lock_accounts SET kdf = NULL WHERE server_url = ?1 AND email = ?2",
+                params![server_url, account_email(email)],
+            )?;
         }
         let conn = self.conn.lock();
         conn.execute(
@@ -445,6 +477,7 @@ mod tests {
     use crate::{PasswordChange, SecretText};
 
     const PASSWORD: &[u8] = b"uwulock master password";
+    const KDF: &str = r#"{"type":"pbkdf2","iterations":600000}"#;
 
     fn enrolment<'a>(token: &'a [u8]) -> LockEnrolment<'a> {
         LockEnrolment {
@@ -452,6 +485,7 @@ mod tests {
             email: "nyu@example.com",
             protected_refresh_token: Some(token.to_vec()),
             protected_remember_token: None,
+            kdf: KDF,
         }
     }
 
@@ -659,6 +693,7 @@ mod tests {
                         email,
                         protected_refresh_token: None,
                         protected_remember_token: remember.map(<[u8]>::to_vec),
+                        kdf: KDF,
                     },
                 )
                 .unwrap()
@@ -705,7 +740,27 @@ mod tests {
         );
 
         // Signing out forgets this account's, and only this one's.
+        assert_eq!(
+            store
+                .lock_account("https://lock.example.com", "NYU@example.com")
+                .unwrap()
+                .kdf
+                .as_deref(),
+            Some(KDF)
+        );
         store.leave_lock().unwrap();
+        let account = store
+            .lock_account("https://lock.example.com", "nyu@example.com")
+            .unwrap();
+        assert_eq!(
+            account.kdf, None,
+            "whoever lowered it signs out and in again"
+        );
+        assert!(store
+            .lock_account("https://lock.example.net", "nyu@example.com")
+            .unwrap()
+            .kdf
+            .is_some());
         assert_eq!(
             remembered("https://lock.example.com", "nyu@example.com"),
             None

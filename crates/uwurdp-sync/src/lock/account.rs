@@ -26,9 +26,9 @@ use crate::engine::TransportError;
 use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
-use uwulock_core::crypto::{self, EncString, PrivateKey, SymmetricKey};
+use uwulock_core::crypto::{self, EncString, Kdf, PrivateKey, SymmetricKey};
 use uwulock_core::extras::{self, Resolved, SpaceKey};
-use uwurdp_store::Space;
+use uwurdp_store::{Space, Store};
 use zeroize::Zeroizing;
 
 /// What the person typed.
@@ -42,6 +42,60 @@ pub struct SignIn<'a> {
     /// this server and this account only, which issued it: any other server
     /// could log in to that account as this device with it.
     pub remember_token: Option<&'a str>,
+    /// What this device learnt about the account at earlier sign-ins.
+    pub known: Known,
+}
+
+/// What this device learnt about an account at earlier sign-ins, from
+/// [`known`].
+#[derive(Debug, Clone, Default)]
+pub struct Known {
+    /// The key derivation the last sign-in used. A server asking for a
+    /// weaker one now is refused before anything is derived or sent: the
+    /// hash it would get is that much cheaper to guess the master password
+    /// from — and that password opens the whole UwULock vault.
+    pub kdf: Option<Kdf>,
+}
+
+/// What this device learnt about the account of this server and email.
+/// Nothing for an address that is none: the sign-in says so.
+pub fn known(store: &Store, server_url: &str, email: &str) -> Result<Known, LockError> {
+    let Ok(server_url) = super::normalize_server(server_url) else {
+        return Ok(Known::default());
+    };
+    let account = store.lock_account(&server_url, email)?;
+    let kdf = account
+        .kdf
+        .map(|text| serde_json::from_str(&text))
+        .transpose()
+        .map_err(|_| LockError::Crypto("the key derivation kept here is unreadable".into()))?;
+    Ok(Known { kdf })
+}
+
+/// A server that asks for a cheaper key derivation than this account used
+/// last time is refused, as the UwULock app refuses it. A first sign-in
+/// takes what the server says, within the floors and ceilings of the
+/// prelogin.
+fn refuse_weaker_kdf(kdf: Kdf, known: &Known) -> Result<(), LockError> {
+    match known.kdf {
+        Some(before) if kdf.is_weaker_than(&before) => Err(LockError::WeakerKdf(format!(
+            "the server asks for {} where this account's last sign-in used {}",
+            kdf_words(kdf),
+            kdf_words(before)
+        ))),
+        _ => Ok(()),
+    }
+}
+
+fn kdf_words(kdf: Kdf) -> String {
+    match kdf {
+        Kdf::Pbkdf2 { iterations } => format!("PBKDF2 with {iterations} iterations"),
+        Kdf::Argon2id {
+            iterations,
+            memory_mib,
+            parallelism,
+        } => format!("Argon2id with {iterations} passes, {memory_mib} MiB and {parallelism} lanes"),
+    }
 }
 
 /// A code for two-step login.
@@ -105,6 +159,16 @@ pub struct SignedIn {
     pub refresh_token: Option<Zeroizing<String>>,
     /// Asked for with the code, to skip the second step next time.
     pub remember_token: Option<Zeroizing<String>>,
+    /// The key derivation this sign-in used.
+    pub kdf: Kdf,
+}
+
+impl SignedIn {
+    /// The key derivation, as [`uwurdp_store::LockEnrolment`] keeps it for
+    /// the next sign-in to hold the server to.
+    pub fn kdf_to_keep(&self) -> String {
+        serde_json::to_string(&self.kdf).expect("a KDF serializes")
+    }
 }
 
 /// Sign in and open (or make) this app's space.
@@ -117,6 +181,7 @@ pub fn sign_in(request: &SignIn<'_>, device: LockDevice) -> Result<SignInOutcome
         ));
     }
     let kdf = lock.prelogin(email)?;
+    refuse_weaker_kdf(kdf, &request.known)?;
     let master_key = crypto::master_key(request.password, email, kdf)?;
     let hash = Zeroizing::new(crypto::master_password_hash(&master_key, request.password));
 
@@ -180,6 +245,7 @@ pub fn sign_in(request: &SignIn<'_>, device: LockDevice) -> Result<SignInOutcome
         email: crypto::normalize_email(email),
         refresh_token,
         remember_token: answer.remember_token,
+        kdf,
     })))
 }
 
@@ -189,10 +255,12 @@ pub fn send_email_code(
     server_url: &str,
     email: &str,
     password: &str,
+    known: &Known,
     device: LockDevice,
 ) -> Result<(), LockError> {
     let lock = Lock::connect(server_url, device)?;
     let kdf = lock.prelogin(email.trim())?;
+    refuse_weaker_kdf(kdf, known)?;
     let master_key = crypto::master_key(password, email.trim(), kdf)?;
     let hash = Zeroizing::new(crypto::master_password_hash(&master_key, password));
     lock.send_email_code(email.trim(), &hash)?;

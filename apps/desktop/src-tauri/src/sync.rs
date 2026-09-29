@@ -78,6 +78,11 @@ pub(crate) enum SyncFailure {
     KeysLost,
     /// UwULock: the account never finished registration.
     NoKeyPair,
+    /// UwULock asks for a cheaper key derivation than this account's last
+    /// sign-in used. Nothing was sent.
+    WeakerKdf {
+        message: String,
+    },
     /// The copy on UwULock is not what UwUSync holds. Nothing switched.
     MoveCheck {
         differences: Vec<Difference>,
@@ -123,6 +128,7 @@ impl From<LockError> for SyncFailure {
             LockError::VaultLocked => Self::VaultLocked,
             LockError::MoveCheck(differences) => Self::MoveCheck { differences },
             LockError::Crypto(message) => Self::Error { message },
+            LockError::WeakerKdf(message) => Self::WeakerKdf { message },
         }
     }
 }
@@ -289,6 +295,7 @@ fn describe(failure: &SyncFailure) -> String {
         SyncFailure::MoveCheck { differences } => {
             format!("the copy differs in {} records", differences.len())
         }
+        SyncFailure::WeakerKdf { message } => format!("refused: {message}"),
         SyncFailure::Unreachable { message }
         | SyncFailure::Refused { message }
         | SyncFailure::PairingFailed { message }

@@ -66,6 +66,7 @@ fn signed_in_as(account: &str, device: LockDevice) -> SignedIn {
         password: &password,
         two_factor: None,
         remember_token: None,
+        known: Known::default(),
     };
     match sign_in(&request, device) {
         Ok(SignInOutcome::SignedIn(signed)) => *signed,
@@ -100,6 +101,7 @@ fn join(store: &Store, signed: &SignedIn, how: Joining) {
                 email: &signed.email,
                 protected_refresh_token: None,
                 protected_remember_token: None,
+                kdf: &signed.kdf_to_keep(),
             },
         )
         .unwrap();
@@ -285,6 +287,7 @@ fn login_as_a_suite_app_and_what_its_token_may_do() {
         password: "not it",
         two_factor: None,
         remember_token: None,
+        known: Known::default(),
     };
     match sign_in(&wrong, device()) {
         Err(LockError::WrongPassword(message)) => {
@@ -415,6 +418,7 @@ fn two_step_login_with_an_authenticator_and_a_remembered_device() {
             password: &password,
             two_factor,
             remember_token,
+            known: Known::default(),
         };
         sign_in(&request, this.clone()).unwrap()
     };
@@ -441,6 +445,7 @@ fn two_step_login_with_an_authenticator_and_a_remembered_device() {
         password: &password,
         two_factor: Some(wrong),
         remember_token: None,
+        known: Known::default(),
     };
     match sign_in(&request_wrong, this.clone()) {
         Err(LockError::WrongPassword(message)) => assert!(message.contains("code"), "{message}"),

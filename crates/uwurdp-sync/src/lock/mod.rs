@@ -35,7 +35,8 @@ mod real;
 mod tests;
 
 pub use account::{
-    send_email_code, sign_in, SignIn, SignInOutcome, SignedIn, TwoFactorAnswer, TwoFactorMethod,
+    known, send_email_code, sign_in, Known, SignIn, SignInOutcome, SignedIn, TwoFactorAnswer,
+    TwoFactorMethod,
 };
 pub use api::{normalize_server, Lock, LockDevice};
 pub use moving::{copy_to_lock, Difference, MoveReport, Problem};
@@ -70,6 +71,10 @@ pub enum LockError {
     NoKeyPair,
     #[error("{0}")]
     Crypto(String),
+    /// The server asks for a cheaper key derivation than this account's
+    /// last sign-in used: nothing was derived or sent.
+    #[error("refused: {0}")]
+    WeakerKdf(String),
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error("the vault has to be unlocked first")]

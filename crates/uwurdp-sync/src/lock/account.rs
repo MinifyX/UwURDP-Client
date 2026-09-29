@@ -196,7 +196,7 @@ pub fn send_email_code(
 }
 
 /// The extras key: opened, opened and wrapped again, or made.
-fn extras_key(
+pub(super) fn extras_key(
     lock: &Lock,
     user_key: &SymmetricKey,
     private_key: Option<&PrivateKey>,

@@ -26,6 +26,7 @@ use zeroize::Zeroizing;
 /// call for the same purpose.
 const VAULT_LABEL: &[u8] = b"uwurdp/vault-key/device/v1";
 const SYNC_LABEL: &[u8] = b"uwurdp/sync-keys/device/v1";
+const LOCK_LABEL: &[u8] = b"uwurdp/lock-session/device/v1";
 
 /// The vault key, remembered on this device.
 pub(crate) fn protect(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
@@ -43,6 +44,16 @@ pub(crate) fn protect_sync(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
 
 pub(crate) fn unprotect_sync(bytes: &[u8]) -> std::io::Result<Zeroizing<Vec<u8>>> {
     os::unprotect(bytes, SYNC_LABEL)
+}
+
+/// What a device signed in to UwULock keeps: the refresh token, and the
+/// token that skips two-step login.
+pub(crate) fn protect_lock(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    os::protect(bytes, LOCK_LABEL)
+}
+
+pub(crate) fn unprotect_lock(bytes: &[u8]) -> std::io::Result<Zeroizing<Vec<u8>>> {
+    os::unprotect(bytes, LOCK_LABEL)
 }
 
 #[cfg(windows)]

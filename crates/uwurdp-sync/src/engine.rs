@@ -33,6 +33,13 @@ pub trait Transport {
     /// Offer records. Each one is taken or reported as a conflict, with the
     /// version the server holds instead.
     fn push(&self, envelopes: Vec<Envelope>) -> Result<PushResponse, TransportError>;
+    /// Whether the last pull was answered with "start over": the cursor is
+    /// older than what the server still remembers (a UwULock space that was
+    /// given a new epoch, or tombstones that expired). Asking clears it.
+    /// UwUSync never says so.
+    fn take_reset(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -41,6 +48,11 @@ pub enum TransportError {
     Refused(String),
     #[error("the server could not be reached: {0}")]
     Unreachable(String),
+    /// The session is over and only the master password brings it back: the
+    /// refresh token ran out, the device was removed, the space was given a
+    /// new key. UwULock only.
+    #[error("sign in again: {0}")]
+    SignIn(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -134,6 +146,17 @@ fn pull_all<T: Transport>(
     for _ in 0..MAX_PAGES {
         let cursor = store.sync_state()?.cursor;
         let page = transport.pull(SyncCursor(cursor), MAX_BATCH)?;
+        if transport.take_reset() {
+            // Everything again from the start, merged as after a fresh
+            // install. From the start already, and still told to start over,
+            // is a server that makes no sense: the pull ends there.
+            if cursor == 0 {
+                return Ok(false);
+            }
+            tracing::info!("the server asked for a sync from the start");
+            store.set_sync_cursor(0)?;
+            continue;
+        }
         if page.envelopes.is_empty() {
             return Ok(true);
         }

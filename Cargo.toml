@@ -25,6 +25,11 @@ uwurdp-proto = { path = "crates/uwurdp-proto" }
 uwurdp-sync = { path = "crates/uwurdp-sync" }
 uwurdp-store = { path = "crates/uwurdp-store" }
 uwurdp-vault = { path = "crates/uwurdp-vault" }
+# UwULock's crypto for signing in to a UwULock Server: Bitwarden's master key
+# and password hash, the user key, the extras key and the space key under it.
+# Pinned to a commit on UwULock-Client's `client-0.3`, like UwULock Server's
+# web vault pins it.
+uwulock-core = { git = "https://github.com/MinifyX/UwULock-Client", rev = "c95008cbeb554e99c45f9e260f00058cf83f4243" }
 
 anyhow = "1"
 parking_lot = "0.12"
@@ -47,9 +52,12 @@ windows-sys = "0.61"
 
 [profile.dev]
 opt-level = 1
+# Line numbers for backtraces, no more: a smaller target/ and faster linking.
+debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 3
+debug = false
 
 [profile.release]
 codegen-units = 1

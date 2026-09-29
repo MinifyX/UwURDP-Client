@@ -19,10 +19,13 @@
 //!
 //! - [`http`] is the real transport: one blocking request at a time, against a
 //!   server whose certificate this device pinned ([`pin`]).
+//! - [`lock`] is the other one: a UwULock Server's suite vault, with its
+//!   login, its keys, its realtime channel, and the move from UwUSync to it.
 
 pub mod engine;
 pub mod flow;
 pub mod http;
+pub mod lock;
 pub mod memory;
 pub mod pairing;
 pub mod pin;

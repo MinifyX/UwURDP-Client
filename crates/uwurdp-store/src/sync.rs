@@ -574,6 +574,18 @@ impl Store {
         header: &uwurdp_vault::VaultHeader,
         key: Zeroizing<[u8; 32]>,
     ) -> Result<()> {
+        self.adopt(header, key, Carry::Push, |_| Ok(()))
+    }
+
+    /// [`Self::adopt_vault`], with what becomes of the records here and one
+    /// more step inside the same transaction.
+    pub(crate) fn adopt(
+        &self,
+        header: &uwurdp_vault::VaultHeader,
+        key: Zeroizing<[u8; 32]>,
+        carry: Carry,
+        also: impl FnOnce(&Transaction) -> Result<()>,
+    ) -> Result<()> {
         let adopted = UnlockedVault::from_key(header.vault_id, key);
         let mut conn = self.conn.lock();
         let mut guard = self.vault.lock();
@@ -632,6 +644,11 @@ impl Store {
                 &format!("UPDATE {table} SET vault_id = ?1, server_seq = 0"),
                 [&vault_id],
             )?;
+            if carry == Carry::Moved {
+                // Everything here is on the server already, sealed for this
+                // vault: the first pull says so record by record.
+                continue;
+            }
             // A placeholder for a record that has not arrived is not a
             // record: it keeps the zero clock and stays out of the outbox.
             tx.execute(
@@ -653,12 +670,23 @@ impl Store {
             "UPDATE sync_state SET cursor = 0, last_sync_ms = NULL WHERE id = 1",
             [],
         )?;
+        also(&tx)?;
         tx.commit()?;
 
         *guard = Some(adopted);
         tracing::info!(vault = %header.vault_id, "vault of an account adopted");
         Ok(())
     }
+}
+
+/// What becomes of this device's records when it adopts another vault.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Carry {
+    /// They are new to the account: every one waits to be pushed.
+    Push,
+    /// They were just copied to the account's server by the move from
+    /// UwUSync: nothing waits that did not wait before.
+    Moved,
 }
 
 /// Rows of one kind waiting to be pushed, with their payload built.

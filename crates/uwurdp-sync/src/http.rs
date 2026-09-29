@@ -465,7 +465,7 @@ impl Transport for Server {
 ///
 /// Parsed the way reqwest will parse it, not by hand: `http://localhost:1@evil`
 /// is a request to `evil` with `localhost` as its user name.
-fn safe_address(base: &str) -> bool {
+pub(crate) fn safe_address(base: &str) -> bool {
     let Ok(url) = reqwest::Url::parse(base) else {
         return false;
     };

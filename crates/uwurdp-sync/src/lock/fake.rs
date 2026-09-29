@@ -338,9 +338,9 @@ fn token(request: tiny_http::Request, form: &HashMap<String, String>, account: &
 fn keys_body(account: &Account) -> Value {
     json!({
         "object": "uwuKeys",
-        "extrasKey": account.extras.as_ref().map(|(user, public)| json!({
+        "extrasKey": account.extras.as_ref().map(|(user, private)| json!({
             "userKeyWrapped": user,
-            "publicKeyWrapped": public,
+            "privateKeyWrapped": private,
             "revisionDate": "2026-09-28T12:00:00.000000Z",
         })),
         "lost": account.lost,
@@ -375,12 +375,16 @@ fn api(
             }
             account.extras = Some((
                 json["userKeyWrapped"].as_str().map(str::to_string),
-                json["publicKeyWrapped"]
+                json["privateKeyWrapped"]
                     .as_str()
                     .unwrap_or_default()
                     .to_string(),
             ));
             respond(request, 200, keys_body(&account))
+        }
+        // Every key here is made with its private wrap.
+        ("PUT", "/uwu/v1/keys/private-wrap") => {
+            error(request, 409, "exists", "It is wrapped already.")
         }
         ("PUT", "/uwu/v1/keys/user-wrap") => match account.extras.as_mut() {
             Some((user @ None, _)) => {

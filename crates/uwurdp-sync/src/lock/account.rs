@@ -323,11 +323,22 @@ pub(super) fn extras_key(
             return Err(LockError::NoKeyPair);
         }
         match extras::resolve(&keys, user_key, private_key)? {
-            Resolved::Open { key, rewrap } => {
+            Resolved::Open {
+                key,
+                rewrap,
+                private_wrap,
+            } => {
+                // A failed wrap costs nothing but doing it again next time.
                 if let Some(rewrap) = rewrap {
-                    // A failed wrap costs nothing but doing it again next time.
                     if let Err(error) = lock.put_user_wrap(&rewrap) {
                         tracing::info!(%error, "the extras key could not be wrapped again");
+                    }
+                }
+                // A key made before the private wrap existed gets one; a server
+                // without the endpoint, or one that has it already, is fine.
+                if let Some(private_wrap) = private_wrap {
+                    if let Err(error) = lock.put_private_wrap(&private_wrap) {
+                        tracing::info!(%error, "the extras key could not be wrapped for the key pair");
                     }
                 }
                 return Ok(key);

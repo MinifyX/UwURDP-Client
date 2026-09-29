@@ -505,7 +505,7 @@ fn devices_signing_in_at_once_end_up_with_one_extras_key_and_one_space() {
     assert_eq!(status, 200);
     let again = json!({
         "userKeyWrapped": keys["extrasKey"]["userKeyWrapped"],
-        "publicKeyWrapped": keys["extrasKey"]["publicKeyWrapped"],
+        "privateKeyWrapped": keys["extrasKey"]["privateKeyWrapped"],
     });
     let (status, body) = raw.call("POST", "/uwu/v1/keys", &token, Some(again));
     assert_eq!(

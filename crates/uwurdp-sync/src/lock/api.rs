@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use uwulock_core::crypto::Kdf;
-use uwulock_core::extras::{ExtrasKeyRequest, Keys, UserWrapRequest};
+use uwulock_core::extras::{ExtrasKeyRequest, Keys, PrivateWrapRequest, UserWrapRequest};
 use uwulock_core::wire;
 use uwurdp_proto::{
     Accepted, EntityKind, Envelope, Hlc, PullResponse, PushResponse, SyncCursor, MAX_BATCH,
@@ -653,6 +653,20 @@ impl Lock {
         let _: Value = self.call_ok(
             || {
                 self.request(reqwest::Method::PUT, "/uwu/v1/keys/user-wrap")
+                    .json(request)
+            },
+            MAX_ANSWER_BYTES,
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn put_private_wrap(
+        &self,
+        request: &PrivateWrapRequest,
+    ) -> Result<(), TransportError> {
+        let _: Value = self.call_ok(
+            || {
+                self.request(reqwest::Method::PUT, "/uwu/v1/keys/private-wrap")
                     .json(request)
             },
             MAX_ANSWER_BYTES,

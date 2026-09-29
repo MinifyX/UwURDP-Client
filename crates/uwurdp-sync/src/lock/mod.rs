@@ -53,8 +53,8 @@ pub const DEVICE_NAME: &str = "UwURDP";
 pub enum LockError {
     #[error(transparent)]
     Transport(#[from] TransportError),
-    /// Email or master password refused — in the server's own words, when it
-    /// gave some.
+    /// Email or master password refused, or a two-step code — in the
+    /// server's own words, when it gave some.
     #[error("{0}")]
     WrongPassword(String),
     /// The account's extras key does not open any more: an official

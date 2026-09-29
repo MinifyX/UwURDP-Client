@@ -301,17 +301,29 @@ fn token(request: tiny_http::Request, form: &HashMap<String, String>, account: &
                     "0" | "1" => code == CODE,
                     _ => false,
                 };
+                // A wrong code is refused like a wrong password, in words of
+                // its own, as UwULock (and Bitwarden) do; a remembered device
+                // that is not remembered any more is asked for a code again.
+                if !ok && !code.is_empty() && provider != "5" {
+                    let message = "The code from the authenticator app is wrong. Try again.";
+                    return respond(
+                        request,
+                        400,
+                        json!({
+                            "error": "",
+                            "message": message,
+                            "ErrorModel": { "Message": message, "Object": "error" },
+                            "object": "error",
+                        }),
+                    );
+                }
                 if !ok {
-                    let mut body = json!({
+                    let body = json!({
                         "error": "invalid_grant",
                         "error_description": "Two factor required.",
                         "TwoFactorProviders": ["0", "1"],
                         "TwoFactorProviders2": { "0": null, "1": { "Email": "n***@example.com" } },
                     });
-                    if !code.is_empty() {
-                        body["ErrorModel"] =
-                            json!({ "Message": "Two-step token is invalid. Try again." });
-                    }
                     return respond(request, 400, body);
                 }
                 remember = field("twoFactorRemember") == "1";

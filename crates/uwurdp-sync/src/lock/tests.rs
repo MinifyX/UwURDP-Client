@@ -153,10 +153,11 @@ fn two_step_login_asks_for_a_code_and_can_remember_this_device() {
         }),
         ..request(&fake)
     };
-    let SignInOutcome::TwoFactor { message, .. } = sign_in(&wrong, device()).unwrap() else {
-        panic!("still the second step")
-    };
-    assert!(message.unwrap().contains("invalid"));
+    // Refused in the server's words; the app stays at the code.
+    match sign_in(&wrong, device()) {
+        Err(LockError::WrongPassword(message)) => assert!(message.contains("code"), "{message}"),
+        other => panic!("{:?}", other.err()),
+    }
 
     let right = SignIn {
         two_factor: Some(TwoFactorAnswer {

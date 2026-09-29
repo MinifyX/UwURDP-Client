@@ -80,7 +80,9 @@ fn two_factor_kind(provider: u8) -> (&'static str, bool) {
 pub enum SignInOutcome {
     SignedIn(Box<SignedIn>),
     /// The account has two-step login: ask for a code and sign in again.
-    /// `message` says why when a code was given and did not count.
+    /// `message` says why when a code was given and did not count (a server
+    /// that asks again). UwULock refuses a wrong code the way it refuses a
+    /// wrong password instead: [`LockError::WrongPassword`] with its words.
     TwoFactor {
         methods: Vec<TwoFactorMethod>,
         message: Option<String>,

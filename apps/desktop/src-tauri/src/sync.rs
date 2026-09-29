@@ -83,6 +83,9 @@ pub(crate) enum SyncFailure {
     WeakerKdf {
         message: String,
     },
+    /// UwULock lists a space this device left for a newer one, as a server
+    /// rolling a rekey back would. Nothing was taken.
+    SpaceLeft,
     /// The copy on UwULock is not what UwUSync holds. Nothing switched.
     MoveCheck {
         differences: Vec<Difference>,
@@ -129,6 +132,7 @@ impl From<LockError> for SyncFailure {
             LockError::MoveCheck(differences) => Self::MoveCheck { differences },
             LockError::Crypto(message) => Self::Error { message },
             LockError::WeakerKdf(message) => Self::WeakerKdf { message },
+            LockError::SpaceLeft(_) => Self::SpaceLeft,
         }
     }
 }
@@ -296,6 +300,7 @@ fn describe(failure: &SyncFailure) -> String {
             format!("the copy differs in {} records", differences.len())
         }
         SyncFailure::WeakerKdf { message } => format!("refused: {message}"),
+        SyncFailure::SpaceLeft => "the server lists a space this device left".into(),
         SyncFailure::Unreachable { message }
         | SyncFailure::Refused { message }
         | SyncFailure::PairingFailed { message }

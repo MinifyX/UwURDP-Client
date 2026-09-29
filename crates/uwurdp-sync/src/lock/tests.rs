@@ -27,13 +27,14 @@ fn request<'a>(fake: &'a Fake) -> SignIn<'a> {
         two_factor: None,
         remember_token: None,
         known: Known::default(),
+        accept_space: None,
     }
 }
 
 fn signed_in(fake: &Fake) -> SignedIn {
     match sign_in(&request(fake), device()).unwrap() {
         SignInOutcome::SignedIn(signed) => *signed,
-        SignInOutcome::TwoFactor { .. } => panic!("no two-step login on this account"),
+        _ => panic!("no two-step login on this account, nor another space"),
     }
 }
 
@@ -219,7 +220,10 @@ fn a_weaker_key_derivation_than_last_time_is_refused_before_anything_is_sent() {
     ];
     for before in stronger {
         let logins = fake.account.lock().logins.len();
-        let known = Known { kdf: Some(before) };
+        let known = Known {
+            kdf: Some(before),
+            ..Known::default()
+        };
         let request = SignIn {
             known: known.clone(),
             ..request(&fake)
@@ -247,6 +251,138 @@ fn a_weaker_key_derivation_than_last_time_is_refused_before_anything_is_sent() {
         sign_in(&request, device()).unwrap(),
         SignInOutcome::SignedIn(_)
     ));
+}
+
+/// Sign in as a device that knows what `store` knows of the account.
+fn sign_in_known(
+    fake: &Fake,
+    store: &Store,
+    accept_space: Option<AcceptSpace>,
+) -> Result<SignInOutcome, LockError> {
+    let request = SignIn {
+        known: known(store, &fake.url, EMAIL).unwrap(),
+        accept_space,
+        ..request(fake)
+    };
+    sign_in(&request, device())
+}
+
+fn join_signed(store: &Store, signed: &SignedIn) {
+    store
+        .join_space(
+            copy(&signed.space),
+            PASSWORD.as_bytes(),
+            KdfParams::INSECURE_FOR_TESTS,
+            Joining::SignIn,
+            &LockEnrolment {
+                server_url: &signed.server_url,
+                email: &signed.email,
+                protected_refresh_token: None,
+                protected_remember_token: None,
+                kdf: &signed.kdf_to_keep(),
+            },
+        )
+        .unwrap();
+}
+
+#[test]
+fn another_space_is_taken_only_when_agreed_and_a_left_one_never() {
+    let fake = Fake::start();
+    let store = Store::open_in_memory().unwrap();
+    let lock = joined(&fake, &store);
+    store.save_host(draft("prox-1", "192.0.2.10")).unwrap();
+    sync_once(&store, &lock).unwrap();
+    let (old, _) = fake.space().unwrap();
+    let pushed = fake.records.records().len();
+    assert!(pushed > 0);
+
+    // The server lists another space (a rekey elsewhere — or a server that
+    // is not honest): nothing is taken or written without asking.
+    let new = Uuid::new_v4();
+    fake.account.lock().spaces.get_mut("rdp").unwrap().0 = new;
+    for accept in [
+        None,
+        Some(AcceptSpace::Listed(Uuid::new_v4())),
+        Some(AcceptSpace::New),
+    ] {
+        match sign_in_known(&fake, &store, accept).unwrap() {
+            SignInOutcome::SpaceChanged { was, now, .. } => {
+                assert_eq!((was, now), (old, Some(new)))
+            }
+            _ => panic!("asked first"),
+        }
+    }
+    assert_eq!(store.lock_state().unwrap().space_id, Some(old));
+    assert_eq!(fake.records.records().len(), pushed);
+
+    // Agreed: taken, and the old one is left.
+    let SignInOutcome::SignedIn(signed) =
+        sign_in_known(&fake, &store, Some(AcceptSpace::Listed(new))).unwrap()
+    else {
+        panic!("in")
+    };
+    assert_eq!(signed.space.id, new);
+    join_signed(&store, &signed);
+    assert_eq!(store.lock_state().unwrap().space_id, Some(new));
+    assert_eq!(
+        known(&store, &fake.url, EMAIL).unwrap().left_spaces,
+        vec![old]
+    );
+    // Signing in again to the same one asks nothing.
+    assert!(matches!(
+        sign_in_known(&fake, &store, None).unwrap(),
+        SignInOutcome::SignedIn(_)
+    ));
+
+    // The server lists the old one again, as one would that rolls the rekey
+    // back: refused, agreed to or not.
+    fake.account.lock().spaces.get_mut("rdp").unwrap().0 = old;
+    for accept in [None, Some(AcceptSpace::Listed(old))] {
+        assert!(matches!(
+            sign_in_known(&fake, &store, accept),
+            Err(LockError::SpaceLeft(id)) if id == old
+        ));
+    }
+
+    // Deleted: made again only when agreed.
+    fake.account.lock().spaces.clear();
+    match sign_in_known(&fake, &store, None).unwrap() {
+        SignInOutcome::SpaceChanged { was, now, .. } => assert_eq!((was, now), (new, None)),
+        _ => panic!("asked first"),
+    }
+    assert!(fake.space().is_none(), "nothing made");
+    let SignInOutcome::SignedIn(made) =
+        sign_in_known(&fake, &store, Some(AcceptSpace::New)).unwrap()
+    else {
+        panic!("in")
+    };
+    assert!(made.made_space);
+    assert_eq!(fake.space().unwrap().0, made.space.id);
+}
+
+#[test]
+fn a_remember_token_got_before_the_question_comes_along_with_it() {
+    let fake = Fake::start().with_two_factor();
+    let request = SignIn {
+        two_factor: Some(TwoFactorAnswer {
+            provider: 0,
+            code: CODE.into(),
+            remember: true,
+        }),
+        known: Known {
+            space: Some(Uuid::new_v4()),
+            ..Known::default()
+        },
+        ..request(&fake)
+    };
+    match sign_in(&request, device()).unwrap() {
+        SignInOutcome::SpaceChanged {
+            now: None,
+            remember_token: Some(_),
+            ..
+        } => {}
+        _ => panic!("asked, with the token"),
+    }
 }
 
 #[test]

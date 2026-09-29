@@ -16,8 +16,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use uwurdp_store::{Joining, LockEnrolment, LockState, Store, VaultStatus};
 use uwurdp_sync::lock::{
-    self, live, Lock, LockDevice, MoveReport, SignIn, SignInOutcome, SignedIn, TwoFactorAnswer,
-    TwoFactorMethod,
+    self, live, AcceptSpace, Lock, LockDevice, MoveReport, SignIn, SignInOutcome, SignedIn,
+    TwoFactorAnswer, TwoFactorMethod,
 };
 use uwurdp_vault::KdfParams;
 use zeroize::Zeroizing;
@@ -66,6 +66,25 @@ pub(crate) struct TwoFactorInput {
     remember: bool,
 }
 
+/// The person agreed to take the space the account has now, after
+/// [`LockOutcome::SpaceChanged`]: its id, or none to make a new one.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AcceptSpaceInput {
+    id: Option<String>,
+}
+
+impl AcceptSpaceInput {
+    fn parse(self) -> SyncResult<AcceptSpace> {
+        match self.id {
+            None => Ok(AcceptSpace::New),
+            Some(id) => uuid::Uuid::parse_str(&id)
+                .map(AcceptSpace::Listed)
+                .map_err(|_| SyncFailure::error("that is no space id")),
+        }
+    }
+}
+
 /// How a sign-in (or the move, which begins with one) came out.
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -87,6 +106,11 @@ pub(crate) enum LockOutcome {
         methods: Vec<TwoFactorMethod>,
         message: Option<String>,
     },
+    /// The account's space is not the one this device used there (`now` is
+    /// `None` when there is none): another device gave it a new key, it was
+    /// deleted, or the server misbehaves. Nothing changed here; the page asks
+    /// and signs in again with `acceptSpace`.
+    SpaceChanged { was: String, now: Option<String> },
 }
 
 fn device(store: &Store) -> SyncResult<LockDevice> {
@@ -169,12 +193,14 @@ fn sign_in(
     email: &str,
     password: &str,
     two_factor: Option<TwoFactorInput>,
+    accept_space: Option<AcceptSpaceInput>,
 ) -> SyncResult<Result<SignedIn, LockOutcome>> {
+    let server = lock::normalize_server(server_url).ok();
     // The token that skips the second step goes only to the server and
     // account that issued it.
-    let remembered = match (&two_factor, lock::normalize_server(server_url)) {
-        (None, Ok(server)) => {
-            store.lock_remember_token(&server, email, crate::device::unprotect_lock)?
+    let remembered = match (&two_factor, &server) {
+        (None, Some(server)) => {
+            store.lock_remember_token(server, email, crate::device::unprotect_lock)?
         }
         _ => None,
     };
@@ -190,11 +216,26 @@ fn sign_in(
         }),
         remember_token: remembered.as_deref().map(String::as_str),
         known,
+        accept_space: accept_space.map(AcceptSpaceInput::parse).transpose()?,
     };
     Ok(match lock::sign_in(&request, device(store)?)? {
         SignInOutcome::SignedIn(signed) => Ok(*signed),
         SignInOutcome::TwoFactor { methods, message } => {
             Err(LockOutcome::TwoFactor { methods, message })
+        }
+        SignInOutcome::SpaceChanged {
+            was,
+            now,
+            remember_token,
+        } => {
+            // Kept for the next try, which would need a new code otherwise.
+            if let (Some(token), Some(server)) = (remember_token, &server) {
+                store.keep_lock_remember_token(server, email, &seal(&token)?)?;
+            }
+            Err(LockOutcome::SpaceChanged {
+                was: was.to_string(),
+                now: now.map(|id| id.to_string()),
+            })
         }
     })
 }
@@ -240,6 +281,7 @@ pub(crate) async fn lock_sign_in(
     email: String,
     password: String,
     two_factor: Option<TwoFactorInput>,
+    accept_space: Option<AcceptSpaceInput>,
 ) -> SyncResult<LockOutcome> {
     let password = Zeroizing::new(password);
     blocking(&app, move |app, store, sync| {
@@ -252,7 +294,14 @@ pub(crate) async fn lock_sign_in(
         if store.vault_status()? == VaultStatus::Locked && state.space_id.is_none() {
             return Err(SyncFailure::VaultLocked);
         }
-        let signed = match sign_in(store, &server_url, &email, &password, two_factor)? {
+        let signed = match sign_in(
+            store,
+            &server_url,
+            &email,
+            &password,
+            two_factor,
+            accept_space,
+        )? {
             Ok(signed) => signed,
             Err(outcome) => return Ok(outcome),
         };
@@ -316,6 +365,7 @@ pub(crate) async fn lock_move(
     email: String,
     password: String,
     two_factor: Option<TwoFactorInput>,
+    accept_space: Option<AcceptSpaceInput>,
 ) -> SyncResult<LockOutcome> {
     let password = Zeroizing::new(password);
     blocking(&app, move |app, store, sync| {
@@ -328,7 +378,14 @@ pub(crate) async fn lock_move(
         if store.vault_status()? != VaultStatus::Unlocked {
             return Err(SyncFailure::VaultLocked);
         }
-        let signed = match sign_in(store, &server_url, &email, &password, two_factor)? {
+        let signed = match sign_in(
+            store,
+            &server_url,
+            &email,
+            &password,
+            two_factor,
+            accept_space,
+        )? {
             Ok(signed) => signed,
             Err(outcome) => return Ok(outcome),
         };

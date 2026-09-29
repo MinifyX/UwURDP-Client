@@ -35,8 +35,8 @@ mod real;
 mod tests;
 
 pub use account::{
-    known, send_email_code, sign_in, Known, SignIn, SignInOutcome, SignedIn, TwoFactorAnswer,
-    TwoFactorMethod,
+    known, send_email_code, sign_in, AcceptSpace, Known, SignIn, SignInOutcome, SignedIn,
+    TwoFactorAnswer, TwoFactorMethod,
 };
 pub use api::{normalize_server, Lock, LockDevice};
 pub use moving::{copy_to_lock, Difference, MoveReport, Problem};
@@ -75,6 +75,11 @@ pub enum LockError {
     /// last sign-in used: nothing was derived or sent.
     #[error("refused: {0}")]
     WeakerKdf(String),
+    /// The server lists a space this device used on the account before and
+    /// moved on from — as a server would that rolls a rekey back. Nothing
+    /// was taken or written.
+    #[error("the server lists space {0}, which this device left for a newer one")]
+    SpaceLeft(uuid::Uuid),
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error("the vault has to be unlocked first")]

@@ -357,12 +357,16 @@ CREATE TABLE lock_state (
 -- this device" token of two-step login, sealed like the refresh token, goes
 -- to the server and account that issued it and to no other. `kdf` is the key
 -- derivation (JSON) the last sign-in used: a server asking for a weaker one
--- is refused.
+-- is refused. `space_id` is the space this device used on the account, and
+-- `left_spaces` (a JSON array) the ones it used before and moved on from: a
+-- different space is only taken when the person agrees, a left one never.
 CREATE TABLE lock_accounts (
     server_url                  TEXT    NOT NULL,
     email                       TEXT    NOT NULL,
     protected_remember_token    BLOB,
     kdf                         TEXT,
+    space_id                    TEXT,
+    left_spaces                 TEXT    NOT NULL DEFAULT '[]',
     PRIMARY KEY (server_url, email)
 );
 "#;

@@ -59,6 +59,10 @@ impl std::fmt::Debug for Space {
 pub struct LockAccount {
     /// The key derivation the last sign-in used, as `uwurdp_sync` wrote it.
     pub kdf: Option<String>,
+    /// The space this device used on the account.
+    pub space_id: Option<Uuid>,
+    /// The spaces it used before and moved on from, oldest first.
+    pub left_spaces: Vec<Uuid>,
 }
 
 /// A sign-in, on its way into the database.
@@ -119,16 +123,24 @@ impl Store {
     /// What this device learnt about an account at earlier sign-ins: the
     /// server (normalized, as it is kept) and the email.
     pub fn lock_account(&self, server_url: &str, email: &str) -> Result<LockAccount> {
-        Ok(self
+        let row: Option<(Option<String>, Option<String>, String)> = self
             .conn
             .lock()
             .query_row(
-                "SELECT kdf FROM lock_accounts WHERE server_url = ?1 AND email = ?2",
+                "SELECT kdf, space_id, left_spaces FROM lock_accounts
+                  WHERE server_url = ?1 AND email = ?2",
                 params![server_url, account_email(email)],
-                |row| Ok(LockAccount { kdf: row.get(0)? }),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
-            .optional()?
-            .unwrap_or_default())
+            .optional()?;
+        let Some((kdf, space_id, left_spaces)) = row else {
+            return Ok(LockAccount::default());
+        };
+        Ok(LockAccount {
+            kdf,
+            space_id: space_id.as_deref().map(parse_uuid).transpose()?,
+            left_spaces: left_spaces_of(&left_spaces)?,
+        })
     }
 
     /// The id this install logs in to UwULock with: made once, kept for good,
@@ -180,18 +192,44 @@ impl Store {
                     now_ms() as i64,
                 ],
             )?;
+            let email = account_email(enrolment.email);
+            // The space this device used on the account before, if it was
+            // another, is one it has left: never to be taken again.
+            let before: Option<(Option<String>, String)> = tx
+                .query_row(
+                    "SELECT space_id, left_spaces FROM lock_accounts
+                      WHERE server_url = ?1 AND email = ?2",
+                    params![enrolment.server_url, email],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let mut left = match &before {
+                Some((_, left)) => left_spaces_of(left)?,
+                None => Vec::new(),
+            };
+            if let Some(old) = before.and_then(|(old, _)| old) {
+                let old = parse_uuid(&old)?;
+                if old != space.id && !left.contains(&old) {
+                    left.push(old);
+                }
+            }
+            left.retain(|id| *id != space.id);
             tx.execute(
-                "INSERT INTO lock_accounts (server_url, email, protected_remember_token, kdf)
-                 VALUES (?1, ?2, ?3, ?4)
+                "INSERT INTO lock_accounts
+                        (server_url, email, protected_remember_token, kdf, space_id, left_spaces)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT (server_url, email) DO UPDATE
                     SET protected_remember_token =
                             coalesce(excluded.protected_remember_token, protected_remember_token),
-                        kdf = excluded.kdf",
+                        kdf = excluded.kdf, space_id = excluded.space_id,
+                        left_spaces = excluded.left_spaces",
                 params![
                     enrolment.server_url,
-                    account_email(enrolment.email),
+                    email,
                     enrolment.protected_remember_token,
                     enrolment.kdf,
+                    space.id.to_string(),
+                    serde_json::to_string(&left).expect("ids serialize"),
                 ],
             )?;
             if joining == Joining::Moved {
@@ -324,6 +362,24 @@ impl Store {
         })
     }
 
+    /// Keep a "remember this device" token for this account, sealed: for a
+    /// sign-in that got one but did not get as far as [`Store::join_space`].
+    pub fn keep_lock_remember_token(
+        &self,
+        server_url: &str,
+        email: &str,
+        protected: &[u8],
+    ) -> Result<()> {
+        self.conn.lock().execute(
+            "INSERT INTO lock_accounts (server_url, email, protected_remember_token)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT (server_url, email) DO UPDATE
+                SET protected_remember_token = excluded.protected_remember_token",
+            params![server_url, account_email(email), protected],
+        )?;
+        Ok(())
+    }
+
     fn forget_lock_remember_token(&self, server_url: &str, email: &str) -> Result<()> {
         self.conn.lock().execute(
             "UPDATE lock_accounts SET protected_remember_token = NULL
@@ -351,7 +407,8 @@ impl Store {
     /// not remembered for two-step login any more: signing out is where
     /// someone would expect that to end. Nor is the account's key derivation:
     /// whoever lowered it on purpose signs out here and in again, as the
-    /// UwULock app has its account removed and added again.
+    /// UwULock app has its account removed and added again. Which spaces it
+    /// used stays known: the vault here is still the last one.
     pub fn leave_lock(&self) -> Result<()> {
         let state = self.lock_state()?;
         if let (Some(server_url), Some(email)) = (&state.server_url, &state.email) {
@@ -425,6 +482,13 @@ impl Store {
             )
             .ok())
     }
+}
+
+fn left_spaces_of(text: &str) -> Result<Vec<Uuid>> {
+    serde_json::from_str(text).map_err(|_| StoreError::Invalid {
+        field: "left_spaces",
+        problem: "not a list of ids",
+    })
 }
 
 /// A token as the operating system sealed it, opened. `Ok(None)` when none is
@@ -768,6 +832,63 @@ mod tests {
         assert_eq!(
             remembered("https://lock.example.net", "nyu@example.com").as_deref(),
             Some("remembered-b")
+        );
+    }
+
+    #[test]
+    fn the_space_used_on_an_account_is_kept_and_the_one_before_it_counts_as_left() {
+        let store = Store::open_in_memory().unwrap();
+        let account = || {
+            store
+                .lock_account("https://lock.example.com", "nyu@example.com")
+                .unwrap()
+        };
+        assert_eq!(account(), LockAccount::default());
+        let (first, second) = (space(), space());
+        let join = |space: &Space| {
+            store
+                .join_space(
+                    same(space),
+                    PASSWORD,
+                    KdfParams::INSECURE_FOR_TESTS,
+                    Joining::SignIn,
+                    &enrolment(b"refresh"),
+                )
+                .unwrap()
+        };
+        join(&first);
+        join(&first);
+        assert_eq!(account().space_id, Some(first.id));
+        assert!(account().left_spaces.is_empty());
+
+        join(&second);
+        assert_eq!(account().space_id, Some(second.id));
+        assert_eq!(account().left_spaces, vec![first.id]);
+        store.leave_lock().unwrap();
+        assert_eq!(
+            account().left_spaces,
+            vec![first.id],
+            "kept when signing out"
+        );
+        assert_eq!(
+            store
+                .lock_account("https://lock.example.net", "nyu@example.com")
+                .unwrap(),
+            LockAccount::default(),
+            "another server's account knows nothing of it"
+        );
+
+        // A sign-in that stopped before joining keeps its remember token.
+        store
+            .keep_lock_remember_token("https://lock.example.org", "Nyu@example.com", b"r")
+            .unwrap();
+        assert_eq!(
+            store
+                .lock_remember_token("https://lock.example.org", "nyu@example.com", open)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("r")
         );
     }
 

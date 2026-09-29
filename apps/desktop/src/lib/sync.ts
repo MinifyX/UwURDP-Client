@@ -88,7 +88,12 @@ export type Difference = { id: string; kind: string; problem: 'missing' | 'older
 export type LockOutcome =
   | { kind: 'signed-in'; madeSpace: boolean }
   | { kind: 'moved'; report: MoveReport; lastDevice: boolean }
-  | { kind: 'two-factor'; methods: TwoFactorMethod[]; message: string | null };
+  | { kind: 'two-factor'; methods: TwoFactorMethod[]; message: string | null }
+  /** Not the space this device used on the account; `now` null: there is none. */
+  | { kind: 'space-changed'; was: string; now: string | null };
+
+/** Take the account's space after all: its id, or null to make a new one. */
+export type AcceptSpace = { id: string | null };
 
 export type SyncFailure =
   | { kind: 'vault-locked' }
@@ -102,6 +107,7 @@ export type SyncFailure =
   | { kind: 'keys-lost' }
   | { kind: 'no-key-pair' }
   | { kind: 'weaker-kdf'; message: string }
+  | { kind: 'space-left' }
   | { kind: 'move-check'; differences: Difference[] }
   | { kind: 'error'; message: string };
 
@@ -162,14 +168,15 @@ export const syncRecoveryCode = (password: string) =>
 
 /**
  * Sign in to UwULock and sync through it. `twoFactor` once the server asked
- * for a code.
+ * for a code, `acceptSpace` once the person agreed to another space.
  */
 export const lockSignIn = (
   serverUrl: string,
   email: string,
   password: string,
   twoFactor: TwoFactorInput | null,
-) => invoke<LockOutcome>('lock_sign_in', { serverUrl, email, password, twoFactor });
+  acceptSpace: AcceptSpace | null,
+) => invoke<LockOutcome>('lock_sign_in', { serverUrl, email, password, twoFactor, acceptSpace });
 
 export const lockSendEmailCode = (serverUrl: string, email: string, password: string) =>
   invoke<void>('lock_send_email_code', { serverUrl, email, password });
@@ -180,7 +187,8 @@ export const lockMove = (
   email: string,
   password: string,
   twoFactor: TwoFactorInput | null,
-) => invoke<LockOutcome>('lock_move', { serverUrl, email, password, twoFactor });
+  acceptSpace: AcceptSpace | null,
+) => invoke<LockOutcome>('lock_move', { serverUrl, email, password, twoFactor, acceptSpace });
 
 /** After the move: remove this device from UwUSync, or leave it listed there. */
 export const lockLeaveUwusync = (revoke: boolean) => invoke<void>('lock_leave_uwusync', { revoke });

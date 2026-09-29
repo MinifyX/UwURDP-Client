@@ -14,7 +14,9 @@
 //!    the private key after an official client rotated the user key, and then
 //!    wrapped again for the new one — or made, by the first UwU app that
 //!    needs it;
-//! 5. the space: taken if there is one, made with a fresh key if not.
+//! 5. the space: taken if there is one, made with a fresh key if not. A
+//!    device that used another space on this account before asks first (see
+//!    [`SignInOutcome::SpaceChanged`]), and never takes one it left.
 //!
 //! Only the last step's result stays on this device. The master key, the
 //! user key, the private key and the extras key are dropped (and wiped) when
@@ -44,6 +46,18 @@ pub struct SignIn<'a> {
     pub remember_token: Option<&'a str>,
     /// What this device learnt about the account at earlier sign-ins.
     pub known: Known,
+    /// The person agreed to take this space instead of the known one, after
+    /// [`SignInOutcome::SpaceChanged`].
+    pub accept_space: Option<AcceptSpace>,
+}
+
+/// A space other than the one this device used, agreed to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcceptSpace {
+    /// The space the server listed, by its id.
+    Listed(Uuid),
+    /// None was listed: make a new one.
+    New,
 }
 
 /// What this device learnt about an account at earlier sign-ins, from
@@ -55,6 +69,10 @@ pub struct Known {
     /// hash it would get is that much cheaper to guess the master password
     /// from — and that password opens the whole UwULock vault.
     pub kdf: Option<Kdf>,
+    /// The space this device used on the account.
+    pub space: Option<Uuid>,
+    /// The spaces it used before and moved on from.
+    pub left_spaces: Vec<Uuid>,
 }
 
 /// What this device learnt about the account of this server and email.
@@ -69,7 +87,11 @@ pub fn known(store: &Store, server_url: &str, email: &str) -> Result<Known, Lock
         .map(|text| serde_json::from_str(&text))
         .transpose()
         .map_err(|_| LockError::Crypto("the key derivation kept here is unreadable".into()))?;
-    Ok(Known { kdf })
+    Ok(Known {
+        kdf,
+        space: account.space_id,
+        left_spaces: account.left_spaces,
+    })
 }
 
 /// A server that asks for a cheaper key derivation than this account used
@@ -142,6 +164,18 @@ pub enum SignInOutcome {
     TwoFactor {
         methods: Vec<TwoFactorMethod>,
         message: Option<String>,
+    },
+    /// The account's space is not the one this device used there: another
+    /// device gave it a new key (a new key means a new id), it was deleted
+    /// (`now` is `None`), or the server is not honest. Nothing was taken or
+    /// written; ask the person, and sign in again with
+    /// [`SignIn::accept_space`] if they agree.
+    SpaceChanged {
+        was: Uuid,
+        now: Option<Uuid>,
+        /// Asked for with the code: keep it for this server and account, or
+        /// the next try needs a code again.
+        remember_token: Option<Zeroizing<String>>,
     },
 }
 
@@ -232,7 +266,17 @@ pub fn sign_in(request: &SignIn<'_>, device: LockDevice) -> Result<SignInOutcome
 
     let extras_key = extras_key(&lock, &user_key, private_key.as_ref())?;
     drop(user_key);
-    let (space, made_space) = space(&lock, &extras_key)?;
+    let (space, made_space) = match space(&lock, &extras_key, &request.known, request.accept_space)?
+    {
+        Taken::Space(space, made) => (space, made),
+        Taken::Changed { was, now } => {
+            return Ok(SignInOutcome::SpaceChanged {
+                was,
+                now,
+                remember_token: answer.remember_token,
+            })
+        }
+    };
 
     let server_url = lock.base().to_string();
     let refresh_token = lock.refresh_token();
@@ -305,8 +349,29 @@ pub(super) fn extras_key(
     Err(TransportError::Refused("the extras key keeps changing".into()).into())
 }
 
-/// This app's space: the account's, or a new one.
-fn space(lock: &Lock, extras_key: &SymmetricKey) -> Result<(Space, bool), LockError> {
+/// What [`space`] came to.
+enum Taken {
+    /// The space, and whether this sign-in made it.
+    Space(Space, bool),
+    /// Not the space this device used on the account: ask first.
+    Changed { was: Uuid, now: Option<Uuid> },
+}
+
+/// This app's space: the account's, or a new one — as long as it is the one
+/// this device used on the account before, or the person agreed to another.
+///
+/// Only the server says which space is the account's, and a space's key is
+/// only as good as the account's keys it came under. A device that knows a
+/// space therefore doesn't follow the server to another one on its own: the
+/// server could list a space it kept from before a rekey (whose key a lost
+/// device still holds), and everything here would be pushed to it. One this
+/// device moved on from is refused outright.
+fn space(
+    lock: &Lock,
+    extras_key: &SymmetricKey,
+    known: &Known,
+    accept: Option<AcceptSpace>,
+) -> Result<Taken, LockError> {
     let open = |id: Uuid, wrapped: &str| -> Result<Space, LockError> {
         let key = SpaceKey::unwrap(wrapped, extras_key)?;
         Ok(Space {
@@ -320,13 +385,29 @@ fn space(lock: &Lock, extras_key: &SymmetricKey) -> Result<(Space, bool), LockEr
             .into_iter()
             .find(|object| object.space == SPACE)
         {
-            return Ok((open(existing.id, &existing.key)?, false));
+            if known.left_spaces.contains(&existing.id) {
+                return Err(LockError::SpaceLeft(existing.id));
+            }
+            if let Some(was) = known.space {
+                if was != existing.id && accept != Some(AcceptSpace::Listed(existing.id)) {
+                    return Ok(Taken::Changed {
+                        was,
+                        now: Some(existing.id),
+                    });
+                }
+            }
+            return Ok(Taken::Space(open(existing.id, &existing.key)?, false));
+        }
+        if let Some(was) = known.space {
+            if accept != Some(AcceptSpace::New) {
+                return Ok(Taken::Changed { was, now: None });
+            }
         }
         let key = SpaceKey::generate();
         let id = Uuid::new_v4();
         match lock.create_space(id, &key.wrap(extras_key))? {
             Call::Done(_) => {
-                return Ok((
+                return Ok(Taken::Space(
                     Space {
                         id,
                         key: Zeroizing::new(*key.as_bytes()),

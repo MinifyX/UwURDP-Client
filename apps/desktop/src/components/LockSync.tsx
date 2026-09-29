@@ -8,6 +8,7 @@ import {
   lockSignIn,
   lockSignOut,
   syncNow,
+  type AcceptSpace,
   type Difference,
   type LockOutcome,
   type SyncStatus,
@@ -70,6 +71,13 @@ export function LockSignInForm({
   const [error, setError] = useState<string | null>(null);
   const [differences, setDifferences] = useState<Difference[] | null>(null);
   const [unlocking, setUnlocking] = useState(false);
+  // The account's space is another than the one this device used: asked
+  // about, and once agreed to, taken on the next try.
+  const [spaceChange, setSpaceChange] = useState<Extract<
+    LockOutcome,
+    { kind: 'space-changed' }
+  > | null>(null);
+  const [acceptSpace, setAcceptSpace] = useState<AcceptSpace | null>(null);
 
   const usable = methods?.filter((m) => m.supported) ?? [];
   const chosen = usable.find((m) => m.provider === provider) ?? usable[0] ?? null;
@@ -80,7 +88,7 @@ export function LockSignInForm({
     password.length > 0 &&
     (methods === null || (chosen !== null && code.trim().length > 0));
 
-  const submit = async () => {
+  const submit = async (accept: AcceptSpace | null = acceptSpace) => {
     if (!ready) return;
     setBusy(true);
     setError(null);
@@ -89,7 +97,13 @@ export function LockSignInForm({
       methods && chosen ? { provider: chosen.provider, code: code.trim(), remember } : null;
     try {
       const run = mode === 'move' ? lockMove : lockSignIn;
-      const outcome = await run(server.trim(), email.trim(), password, twoFactor);
+      const outcome = await run(server.trim(), email.trim(), password, twoFactor, accept);
+      if (outcome.kind === 'space-changed') {
+        setSpaceChange(outcome);
+        setMethods(null);
+        setCode('');
+        return;
+      }
       if (outcome.kind === 'two-factor') {
         setMethods(outcome.methods);
         setCode('');
@@ -131,6 +145,49 @@ export function LockSignInForm({
     }
   };
 
+  if (spaceChange) {
+    const agree = () => {
+      const accept = { id: spaceChange.now };
+      setAcceptSpace(accept);
+      setSpaceChange(null);
+      void submit(accept);
+    };
+    return (
+      <div className="form sync-form">
+        <p className="setting-label">
+          {spaceChange.now
+            ? t('Neuer Schlüssel für deine UwURDP-Daten in UwULock?')
+            : t('Deine UwURDP-Daten in UwULock sind weg')}
+        </p>
+        <p className="dialog-lead">
+          {spaceChange.now
+            ? t(
+                'Dein UwULock-Konto hält die UwURDP-Daten jetzt unter einem anderen Schlüssel als dem, mit dem dieses Gerät bisher synchronisiert hat. Das ist in Ordnung, wenn du auf einem anderen Gerät einen neuen Schlüssel erzeugt hast – etwa um ein verlorenes Gerät auszusperren. Wenn nicht, verhält sich womöglich der Server falsch: Dann brich ab und frag bei der Person nach, die ihn betreibt. Übernimmst du den neuen Schlüssel, lädt UwURDP alles von diesem Gerät dorthin hoch.',
+              )
+            : t(
+                'Dein UwULock-Konto hat keine UwURDP-Daten mehr, obwohl dieses Gerät bisher damit synchronisiert hat. Das ist in Ordnung, wenn du sie im UwULock-Web-Tresor gelöscht hast. Wenn nicht, verhält sich womöglich der Server falsch: Dann brich ab und frag bei der Person nach, die ihn betreibt. Machst du weiter, legt UwURDP sie neu an und lädt alles von diesem Gerät hinein.',
+              )}
+        </p>
+        <div className="sync-actions">
+          <button
+            type="button"
+            data-secondary
+            onClick={() => {
+              setSpaceChange(null);
+              setAcceptSpace(null);
+            }}
+          >
+            {t('Abbrechen')}
+          </button>
+          <span className="spacer" />
+          <button type="button" className="primary" onClick={agree}>
+            {spaceChange.now ? t('Neuen Schlüssel übernehmen') : t('Neu anlegen')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form
       className="form sync-form"
@@ -160,7 +217,10 @@ export function LockSignInForm({
               autoFocus={server.length === 0}
               spellCheck={false}
               placeholder="https://lock.example.com"
-              onChange={(e) => setServer(e.target.value)}
+              onChange={(e) => {
+                setServer(e.target.value);
+                setAcceptSpace(null);
+              }}
             />
           </label>
           <label className="field">
@@ -170,7 +230,10 @@ export function LockSignInForm({
               value={email}
               autoComplete="username"
               spellCheck={false}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setAcceptSpace(null);
+              }}
             />
           </label>
           <label className="field">

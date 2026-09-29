@@ -67,10 +67,12 @@ fn signed_in_as(account: &str, device: LockDevice) -> SignedIn {
         two_factor: None,
         remember_token: None,
         known: Known::default(),
+        accept_space: None,
     };
     match sign_in(&request, device) {
         Ok(SignInOutcome::SignedIn(signed)) => *signed,
         Ok(SignInOutcome::TwoFactor { .. }) => panic!("{account} has two-step login"),
+        Ok(SignInOutcome::SpaceChanged { .. }) => panic!("{account}: a device knowing nothing"),
         Err(error) => panic!("{account} did not sign in: {error}"),
     }
 }
@@ -288,6 +290,7 @@ fn login_as_a_suite_app_and_what_its_token_may_do() {
         two_factor: None,
         remember_token: None,
         known: Known::default(),
+        accept_space: None,
     };
     match sign_in(&wrong, device()) {
         Err(LockError::WrongPassword(message)) => {
@@ -419,6 +422,7 @@ fn two_step_login_with_an_authenticator_and_a_remembered_device() {
             two_factor,
             remember_token,
             known: Known::default(),
+            accept_space: None,
         };
         sign_in(&request, this.clone()).unwrap()
     };
@@ -446,6 +450,7 @@ fn two_step_login_with_an_authenticator_and_a_remembered_device() {
         two_factor: Some(wrong),
         remember_token: None,
         known: Known::default(),
+        accept_space: None,
     };
     match sign_in(&request_wrong, this.clone()) {
         Err(LockError::WrongPassword(message)) => assert!(message.contains("code"), "{message}"),
@@ -797,8 +802,29 @@ fn a_rekey_elsewhere_sends_this_device_back_to_the_password() {
     }
     assert!(names(&late).is_empty());
 
-    // Signed in again: the new space, everything in it, and what waited here.
-    let again = signed_in("rekey");
+    // Signed in again: the new space is not taken without asking…
+    let (server, email, password) = (server(), email("rekey"), password());
+    let request = |accept_space| SignIn {
+        server_url: &server,
+        email: &email,
+        password: &password,
+        two_factor: None,
+        remember_token: None,
+        known: known(&b, &server, &email).unwrap(),
+        accept_space,
+    };
+    match sign_in(&request(None), device()).unwrap() {
+        SignInOutcome::SpaceChanged { was, now, .. } => {
+            assert_eq!((was, now), (old.id, Some(new.id)))
+        }
+        _ => panic!("asked first"),
+    }
+    // …and once agreed: everything in it, and what waited here.
+    let SignInOutcome::SignedIn(again) =
+        sign_in(&request(Some(AcceptSpace::Listed(new.id))), device()).unwrap()
+    else {
+        panic!("in")
+    };
     assert_eq!(again.space.id, new.id);
     join(&b, &again, Joining::SignIn);
     let report = sync_once(&b, &again.lock).unwrap();

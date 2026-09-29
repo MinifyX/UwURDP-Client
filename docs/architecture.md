@@ -489,6 +489,16 @@ ends — refresh token run out, device removed, password changed on the server
 only wraps it again), or the space was given a new key (a pull says `reset` and
 the space's id changed).
 
+**A different space is never taken silently.** Only the server says which space
+is the account's, so a device remembers per account the space it used and the
+ones it moved on from (`lock_accounts`). When a sign-in finds another space
+listed — another device gave it a new key, it was deleted, or the server is not
+honest (it could list a space kept from before a rekey, whose key a lost device
+still holds) — nothing is taken or written: the page explains both readings and
+asks, and only a sign-in the person agreed to takes the new space and pushes
+this device's records into it. A space the device moved on from is refused
+outright.
+
 **The realtime channel** is one WebSocket that says _that_ the space changed,
 never what; the worker then runs a pass. It renews its token on the same
 connection before it runs out, notices a dead connection by the missing

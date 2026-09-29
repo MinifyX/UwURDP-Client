@@ -38,6 +38,10 @@ export function failureText(failure: SyncFailure): string {
         'UwULock verlangt eine schwächere Schlüsselableitung als bei der letzten Anmeldung dieses Kontos ({reason}). UwURDP hat deshalb nichts abgeschickt: Damit ließe sich dein Master-Passwort leichter erraten. Hast du sie selbst gesenkt, melde dich hier unter Sync von UwULock ab und neu an.',
         { reason: failure.message },
       );
+    case 'space-left':
+      return t(
+        'UwULock bietet für deine UwURDP-Daten einen alten Schlüssel an, den dieses Gerät schon durch einen neuen ersetzt hat. So sähe es aus, wenn der Server ein ausgesperrtes Gerät wieder mitlesen lassen wollte – UwURDP meldet sich deshalb nicht an. Frag bei der Person nach, die den Server betreibt.',
+      );
     case 'move-check':
       return t(
         'Die Kopie auf UwULock stimmt in {n} Einträgen nicht mit UwUSync überein. UwURDP bleibt deshalb bei UwUSync – versuch es später noch einmal.',

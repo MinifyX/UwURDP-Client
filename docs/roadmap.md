@@ -52,7 +52,7 @@ Done, in 0.1.0-beta.1:
   when it carries passwords.
 - **Sync** through a UwUSync server of your own, with a recovery kit, pairing
   by three words and revoking by master password.
-- **Unreleased: UwULock as the other way to sync.** Settings → Sync offers
+- **0.1.0-beta.7: UwULock as the other way to sync.** Settings → Sync offers
   UwUSync as before, or signing in with a UwULock account: the hosts live in
   the account's `rdp` space, changes arrive over UwULock's realtime channel,
   and a device on UwUSync moves over in one click, checked before it switches.

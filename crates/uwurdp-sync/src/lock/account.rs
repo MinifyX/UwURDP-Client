@@ -38,7 +38,9 @@ pub struct SignIn<'a> {
     pub password: &'a str,
     /// The code of a second step, once the server asked for one.
     pub two_factor: Option<TwoFactorAnswer>,
-    /// A "remember this device" token from an earlier two-step login.
+    /// A "remember this device" token from an earlier two-step login — to
+    /// this server and this account only, which issued it: any other server
+    /// could log in to that account as this device with it.
     pub remember_token: Option<&'a str>,
 }
 
@@ -96,7 +98,9 @@ pub struct SignedIn {
     pub space: Space,
     /// This sign-in made the space: the account had no UwURDP data yet.
     pub made_space: bool,
+    /// Normalized, as [`super::normalize_server`] makes it.
     pub server_url: String,
+    /// In lower case, as the server compares it.
     pub email: String,
     pub refresh_token: Option<Zeroizing<String>>,
     /// Asked for with the code, to skip the second step next time.
@@ -173,7 +177,7 @@ pub fn sign_in(request: &SignIn<'_>, device: LockDevice) -> Result<SignInOutcome
         space,
         made_space,
         server_url,
-        email: email.to_string(),
+        email: crypto::normalize_email(email),
         refresh_token,
         remember_token: answer.remember_token,
     })))

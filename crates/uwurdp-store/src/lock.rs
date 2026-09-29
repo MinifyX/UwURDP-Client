@@ -11,6 +11,8 @@
 //! What is kept besides: the server, the email, the space, and the refresh
 //! token and the "remember this device" token of two-step login, both sealed by
 //! the operating system for this user like the UwUSync pairing's secrets. The
+//! remember token is kept per account — server and email — and only handed
+//! out for the account that issued it: another server must never see it. The
 //! master password and the keys above the space key are never kept.
 
 use crate::device::never_opens;
@@ -54,11 +56,20 @@ impl std::fmt::Debug for Space {
 
 /// A sign-in, on its way into the database.
 pub struct LockEnrolment<'a> {
+    /// Normalized, as `uwurdp_sync::lock::normalize_server` makes it.
     pub server_url: &'a str,
     pub email: &'a str,
     /// Sealed by the operating system already.
     pub protected_refresh_token: Option<Vec<u8>>,
+    /// A new "remember this device" token for this account; `None` keeps the
+    /// one it has.
     pub protected_remember_token: Option<Vec<u8>>,
+}
+
+/// An account's email as it is kept: trimmed and in lower case, as UwULock
+/// (and Bitwarden) compare it.
+fn account_email(email: &str) -> String {
+    email.trim().to_lowercase()
 }
 
 /// How the records here come along into the space.
@@ -134,16 +145,27 @@ impl Store {
             tx.execute(
                 "UPDATE lock_state
                     SET active = 1, server_url = ?1, email = ?2, space_id = ?3,
-                        protected_refresh_token = ?4, protected_remember_token = ?5,
-                        signed_in_ms = ?6, move_started_ms = NULL
+                        protected_refresh_token = ?4, signed_in_ms = ?5,
+                        move_started_ms = NULL
                   WHERE id = 1",
                 params![
                     enrolment.server_url,
                     enrolment.email,
                     space.id.to_string(),
                     enrolment.protected_refresh_token,
-                    enrolment.protected_remember_token,
                     now_ms() as i64,
+                ],
+            )?;
+            tx.execute(
+                "INSERT INTO lock_accounts (server_url, email, protected_remember_token)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT (server_url, email) DO UPDATE
+                    SET protected_remember_token =
+                        coalesce(excluded.protected_remember_token, protected_remember_token)",
+                params![
+                    enrolment.server_url,
+                    account_email(enrolment.email),
+                    enrolment.protected_remember_token,
                 ],
             )?;
             if joining == Joining::Moved {
@@ -236,51 +258,51 @@ impl Store {
         &self,
         unprotect: impl Fn(&[u8]) -> std::io::Result<Zeroizing<Vec<u8>>>,
     ) -> Result<Option<Zeroizing<String>>> {
-        self.lock_token("protected_refresh_token", unprotect)
-    }
-
-    /// The "remember this device" token of two-step login, opened.
-    pub fn lock_remember_token(
-        &self,
-        unprotect: impl Fn(&[u8]) -> std::io::Result<Zeroizing<Vec<u8>>>,
-    ) -> Result<Option<Zeroizing<String>>> {
-        self.lock_token("protected_remember_token", unprotect)
-    }
-
-    fn lock_token(
-        &self,
-        column: &str,
-        unprotect: impl Fn(&[u8]) -> std::io::Result<Zeroizing<Vec<u8>>>,
-    ) -> Result<Option<Zeroizing<String>>> {
         let sealed: Option<Vec<u8>> = self.conn.lock().query_row(
-            &format!("SELECT {column} FROM lock_state WHERE id = 1"),
+            "SELECT protected_refresh_token FROM lock_state WHERE id = 1",
             [],
             |row| row.get(0),
         )?;
-        let Some(sealed) = sealed else {
-            return Ok(None);
-        };
-        match unprotect(&sealed) {
-            Ok(bytes) => match String::from_utf8(bytes.to_vec()) {
-                Ok(text) => Ok(Some(Zeroizing::new(text))),
-                Err(_) => {
-                    self.drop_lock_token(column)?;
-                    Ok(None)
-                }
-            },
-            Err(error) if !never_opens(&error) => Err(StoreError::Device(error.to_string())),
-            Err(_) => {
-                tracing::warn!("what this device kept of its UwULock sign-in no longer opens");
-                self.drop_lock_token(column)?;
-                Ok(None)
-            }
-        }
+        open_token(sealed, unprotect, || {
+            self.conn.lock().execute(
+                "UPDATE lock_state SET protected_refresh_token = NULL WHERE id = 1",
+                [],
+            )?;
+            Ok(())
+        })
     }
 
-    fn drop_lock_token(&self, column: &str) -> Result<()> {
+    /// The "remember this device" token of two-step login, opened — the one
+    /// this server (normalized, as it is kept) issued for this email, and
+    /// only that one.
+    pub fn lock_remember_token(
+        &self,
+        server_url: &str,
+        email: &str,
+        unprotect: impl Fn(&[u8]) -> std::io::Result<Zeroizing<Vec<u8>>>,
+    ) -> Result<Option<Zeroizing<String>>> {
+        let email = account_email(email);
+        let sealed: Option<Vec<u8>> = self
+            .conn
+            .lock()
+            .query_row(
+                "SELECT protected_remember_token FROM lock_accounts
+                  WHERE server_url = ?1 AND email = ?2",
+                params![server_url, email],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        open_token(sealed, unprotect, || {
+            self.forget_lock_remember_token(server_url, &email)
+        })
+    }
+
+    fn forget_lock_remember_token(&self, server_url: &str, email: &str) -> Result<()> {
         self.conn.lock().execute(
-            &format!("UPDATE lock_state SET {column} = NULL WHERE id = 1"),
-            [],
+            "UPDATE lock_accounts SET protected_remember_token = NULL
+              WHERE server_url = ?1 AND email = ?2",
+            params![server_url, account_email(email)],
         )?;
         Ok(())
     }
@@ -299,8 +321,14 @@ impl Store {
 
     /// Stop syncing through UwULock. The vault stays as it is — the space's
     /// key, under the UwULock master password — and so do its records; the
-    /// server and the email stay to fill in the next sign-in.
+    /// server and the email stay to fill in the next sign-in. The device is
+    /// not remembered for two-step login any more: signing out is where
+    /// someone would expect that to end.
     pub fn leave_lock(&self) -> Result<()> {
+        let state = self.lock_state()?;
+        if let (Some(server_url), Some(email)) = (&state.server_url, &state.email) {
+            self.forget_lock_remember_token(server_url, email)?;
+        }
         let conn = self.conn.lock();
         conn.execute(
             "UPDATE lock_state
@@ -364,6 +392,35 @@ impl Store {
                 },
             )
             .ok())
+    }
+}
+
+/// A token as the operating system sealed it, opened. `Ok(None)` when none is
+/// kept, or what is kept no longer opens for this user — then `forget` drops
+/// it, and the master password is the way back in. An error, with it kept,
+/// when the operating system can't tell right now.
+fn open_token(
+    sealed: Option<Vec<u8>>,
+    unprotect: impl Fn(&[u8]) -> std::io::Result<Zeroizing<Vec<u8>>>,
+    forget: impl FnOnce() -> Result<()>,
+) -> Result<Option<Zeroizing<String>>> {
+    let Some(sealed) = sealed else {
+        return Ok(None);
+    };
+    match unprotect(&sealed) {
+        Ok(bytes) => match String::from_utf8(bytes.to_vec()) {
+            Ok(text) => Ok(Some(Zeroizing::new(text))),
+            Err(_) => {
+                forget()?;
+                Ok(None)
+            }
+        },
+        Err(error) if !never_opens(&error) => Err(StoreError::Device(error.to_string())),
+        Err(_) => {
+            tracing::warn!("what this device kept of its UwULock sign-in no longer opens");
+            forget()?;
+            Ok(None)
+        }
     }
 }
 
@@ -584,6 +641,79 @@ mod tests {
         assert!(store.lock_refresh_token(open).unwrap().is_none());
         store.lock_vault();
         store.unlock_vault(PASSWORD).unwrap();
+    }
+
+    #[test]
+    fn the_remember_token_is_kept_for_the_server_and_account_that_issued_it_only() {
+        let store = Store::open_in_memory().unwrap();
+        let space = space();
+        let join = |server: &str, email: &str, remember: Option<&[u8]>| {
+            store
+                .join_space(
+                    same(&space),
+                    PASSWORD,
+                    KdfParams::INSECURE_FOR_TESTS,
+                    Joining::SignIn,
+                    &LockEnrolment {
+                        server_url: server,
+                        email,
+                        protected_refresh_token: None,
+                        protected_remember_token: remember.map(<[u8]>::to_vec),
+                    },
+                )
+                .unwrap()
+        };
+        let remembered = |server: &str, email: &str| {
+            store
+                .lock_remember_token(server, email, open)
+                .unwrap()
+                .map(|token| token.to_string())
+        };
+        join(
+            "https://lock.example.com",
+            "Nyu@Example.com",
+            Some(b"remembered-a"),
+        );
+        assert_eq!(
+            remembered("https://lock.example.com", " nyu@example.com ").as_deref(),
+            Some("remembered-a")
+        );
+        assert_eq!(
+            remembered("https://lock.example.net", "nyu@example.com"),
+            None
+        );
+        assert_eq!(
+            remembered("https://lock.example.com", "mew@example.com"),
+            None
+        );
+
+        // Another server's token is its own; a sign-in without a new one
+        // keeps what the account had.
+        join(
+            "https://lock.example.net",
+            "nyu@example.com",
+            Some(b"remembered-b"),
+        );
+        join("https://lock.example.com", "nyu@example.com", None);
+        assert_eq!(
+            remembered("https://lock.example.com", "nyu@example.com").as_deref(),
+            Some("remembered-a")
+        );
+        assert_eq!(
+            remembered("https://lock.example.net", "nyu@example.com").as_deref(),
+            Some("remembered-b")
+        );
+
+        // Signing out forgets this account's, and only this one's.
+        store.leave_lock().unwrap();
+        assert_eq!(
+            remembered("https://lock.example.com", "nyu@example.com"),
+            None
+        );
+        assert_eq!(
+            remembered("https://lock.example.net", "nyu@example.com").as_deref(),
+            Some("remembered-b")
+        );
     }
 
     #[test]

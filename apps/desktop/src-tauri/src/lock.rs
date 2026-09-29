@@ -170,10 +170,13 @@ fn sign_in(
     password: &str,
     two_factor: Option<TwoFactorInput>,
 ) -> SyncResult<Result<SignedIn, LockOutcome>> {
-    let remembered = if two_factor.is_none() {
-        store.lock_remember_token(crate::device::unprotect_lock)?
-    } else {
-        None
+    // The token that skips the second step goes only to the server and
+    // account that issued it.
+    let remembered = match (&two_factor, lock::normalize_server(server_url)) {
+        (None, Ok(server)) => {
+            store.lock_remember_token(&server, email, crate::device::unprotect_lock)?
+        }
+        _ => None,
     };
     let request = SignIn {
         server_url,
@@ -197,25 +200,18 @@ fn sign_in(
 /// The refresh token and the "remember this device" token, sealed.
 type SealedTokens = (Option<Vec<u8>>, Option<Vec<u8>>);
 
-/// The tokens of a sign-in, sealed for keeping.
-fn sealed_tokens(signed: &SignedIn, store: &Store) -> SyncResult<SealedTokens> {
-    let seal = |token: &Zeroizing<String>| {
-        crate::device::protect_lock(token.as_bytes())
-            .map_err(|error| SyncFailure::error(format!("the operating system: {error}")))
-    };
+/// The tokens of a sign-in, sealed for keeping. A new "remember me" token
+/// replaces the account's old one; without one, the store keeps the old one
+/// — of this server and account, never another's.
+fn sealed_tokens(signed: &SignedIn) -> SyncResult<SealedTokens> {
     let refresh = signed.refresh_token.as_ref().map(seal).transpose()?;
-    // A new "remember me" token replaces the old one; without one, the old
-    // one stays as it was.
-    let remember = match &signed.remember_token {
-        Some(token) => Some(seal(token)?),
-        None => store
-            .lock_remember_token(crate::device::unprotect_lock)
-            .ok()
-            .flatten()
-            .map(|token| seal(&token))
-            .transpose()?,
-    };
+    let remember = signed.remember_token.as_ref().map(seal).transpose()?;
     Ok((refresh, remember))
+}
+
+fn seal(token: &Zeroizing<String>) -> SyncResult<Vec<u8>> {
+    crate::device::protect_lock(token.as_bytes())
+        .map_err(|error| SyncFailure::error(format!("the operating system: {error}")))
 }
 
 /// Start syncing with what a sign-in brought.
@@ -258,7 +254,7 @@ pub(crate) async fn lock_sign_in(
             Ok(signed) => signed,
             Err(outcome) => return Ok(outcome),
         };
-        let (refresh, remember) = sealed_tokens(&signed, store)?;
+        let (refresh, remember) = sealed_tokens(&signed)?;
         let remembered = sync::wants_remembered(store);
         store.join_space(
             uwurdp_store::Space {
@@ -342,7 +338,7 @@ pub(crate) async fn lock_move(
             // What waits here goes to UwUSync first, so the copy has it too.
             uwurdp_sync::sync_once(store, uwusync.as_ref())?;
             let report = lock::copy_to_lock(store, uwusync.as_ref(), &signed.lock, &signed.space)?;
-            let (refresh, remember) = sealed_tokens(&signed, store)?;
+            let (refresh, remember) = sealed_tokens(&signed)?;
             let remembered = sync::wants_remembered(store);
             store.join_space(
                 uwurdp_store::Space {

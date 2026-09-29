@@ -474,8 +474,11 @@ associated data, its key the vault key's, so joining a space is
 already on the device come along, sealed again. The vault here is then wrapped
 under the UwULock master password with the usual local Argon2 — one password
 for both. Kept on the device: the server, the email, the space id, and the
-refresh token and the two-step "remember" token, sealed by the operating
-system like the UwUSync pairing's secrets (`lock_state`). Never kept: the
+refresh token, sealed by the operating system like the UwUSync pairing's
+secrets (`lock_state`); per account — normalized server address and email —
+the two-step "remember" token, sealed the same way (`lock_accounts`). That
+token goes only to the server and account that issued it, never to whatever
+server is typed in next, and signing out forgets it. Never kept: the
 master key, the user, private and extras keys. A refresh token works once, so
 a new one is written down before the old one is dropped, and two threads never
 refresh at once. The master password is needed again only when the session

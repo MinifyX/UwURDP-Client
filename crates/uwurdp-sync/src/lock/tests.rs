@@ -531,6 +531,65 @@ fn nothing_is_written_to_or_read_from_the_start_of_a_space_that_changed() {
     ));
 }
 
+#[test]
+fn a_push_names_its_space_and_a_new_key_in_between_keeps_the_edit_here() {
+    let fake = Fake::start();
+    let store = Store::open_in_memory().unwrap();
+    let lock = joined(&fake, &store);
+    let space = lock.space().unwrap();
+    store.save_host(draft("prox-1", "192.0.2.10")).unwrap();
+    sync_once(&store, &lock).unwrap();
+    assert!(fake
+        .account
+        .lock()
+        .pushed_space_ids
+        .iter()
+        .all(|id| *id == serde_json::json!(space)));
+    let held = fake.records.len();
+
+    // Another device gives the space a new key right after this one looked:
+    // the server refuses the push, and this device asks for the master
+    // password instead of trying again.
+    store.save_host(draft("nas", "192.0.2.20")).unwrap();
+    fake.account.lock().rekey_at_next_push = true;
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::SignIn(message))) if message.contains("new key")
+    ));
+    assert_eq!(fake.records.len(), held, "nothing of it was taken");
+    assert_eq!(names(&store), vec!["nas", "prox-1"]);
+    assert!(
+        store.pending_count().unwrap() > 0,
+        "still waiting to go out"
+    );
+}
+
+#[test]
+fn only_a_409_about_the_space_asks_for_the_master_password() {
+    let fake = Fake::start();
+    let store = Store::open_in_memory().unwrap();
+    let lock = joined(&fake, &store);
+    store.save_host(draft("prox-1", "192.0.2.10")).unwrap();
+
+    // A record id another space or account has: an error about that record.
+    fake.account.lock().refuse_next_push = Some(super::api::EXISTS);
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::Refused(message))) if message.contains("exists")
+    ));
+    // A 409 of a newer server, in a word this build does not know: taken
+    // as a space that changed, never as a reason to push again.
+    fake.account.lock().refuse_next_push = Some("space_mismatch");
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::SignIn(_)))
+    ));
+    assert!(fake.records.is_empty());
+    assert!(store.pending_count().unwrap() > 0);
+    sync_once(&store, &lock).unwrap();
+    assert!(!fake.records.is_empty());
+}
+
 // ── The move ─────────────────────────────────────────────────────────────
 
 /// A device on UwUSync ([`MemoryServer`]) with a vault of its own and
@@ -725,6 +784,24 @@ fn a_copy_the_server_keeps_back_stops_the_move() {
 }
 
 #[test]
+fn headers_a_server_made_up_do_not_pass_the_check() {
+    let fake = Fake::start();
+    let (store, uwusync) = on_uwusync();
+    let signed = signed_in(&fake);
+    // Every record the move reads back claims to be newer than it is, as if
+    // another device had written it since: by the headers alone, the copy
+    // would pass and this device forget UwUSync.
+    fake.account.lock().forge_pulls = true;
+    match copy_to_lock(&store, &uwusync, &signed.lock, &signed.space) {
+        Err(LockError::MoveCheck(differences)) => {
+            assert!(differences.len() >= 6, "{differences:?}");
+            assert!(differences.iter().all(|d| d.problem == Problem::Missing));
+        }
+        other => panic!("{:?}", other.map(|_| ())),
+    }
+}
+
+#[test]
 fn a_locked_vault_moves_nothing() {
     let fake = Fake::start();
     let (store, uwusync) = on_uwusync();
@@ -846,4 +923,51 @@ fn the_channel_renews_its_token_in_time_and_after_the_server_refused_it() {
     assert_ne!(again["token"], "access-1");
     stop.store(true, Ordering::SeqCst);
     assert_eq!(runner.join().unwrap(), live::Ended::Stopped);
+}
+
+#[test]
+fn the_channel_takes_no_message_larger_than_the_contract_allows() {
+    let fake = Fake::start();
+    let signed = signed_in(&fake);
+    let script = fake.live();
+    let (seen, events) = mpsc::channel();
+    let lock = signed.lock;
+    let runner = std::thread::spawn(move || {
+        live::connection(&lock, &|| true, &mut |event| {
+            let _ = seen.send(event);
+        })
+    });
+    let (reply, auth) = mpsc::channel();
+    script.send(Live::Expect(reply)).unwrap();
+    auth.recv_timeout(Duration::from_secs(10)).unwrap();
+    script
+        .send(Live::Send(
+            r#"{"type":"ready","connectionId":"c1","expires":0,"heartbeat":25}"#.into(),
+        ))
+        .unwrap();
+    assert_eq!(
+        events.recv_timeout(Duration::from_secs(10)).unwrap(),
+        live::Event::Ready
+    );
+
+    // A change, padded with a field no one reads to exactly this size.
+    let padded = |size: usize| {
+        let bare = format!(r#"{{"type":"changed","spaces":["{SPACE}"],"pad":""}}"#);
+        bare.replace(
+            r#""pad":"""#,
+            &format!(r#""pad":"{}""#, "x".repeat(size - bare.len())),
+        )
+    };
+    assert_eq!(padded(live::MAX_MESSAGE).len(), live::MAX_MESSAGE);
+    script.send(Live::Send(padded(live::MAX_MESSAGE))).unwrap();
+    assert_eq!(
+        events.recv_timeout(Duration::from_secs(10)).unwrap(),
+        live::Event::Changed
+    );
+    // One byte more, and the connection ends instead of taking it in.
+    script
+        .send(Live::Send(padded(live::MAX_MESSAGE + 1)))
+        .unwrap();
+    assert_eq!(runner.join().unwrap(), live::Ended::Retry(Duration::ZERO));
+    assert!(events.try_recv().is_err());
 }

@@ -158,7 +158,7 @@ impl Raw {
         Self {
             base: server(),
             client: reqwest::blocking::Client::builder()
-                .use_preconfigured_tls(crate::pin::webpki_config())
+                .use_preconfigured_tls(crate::pin::roots_config())
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .unwrap(),
@@ -622,6 +622,15 @@ fn records_travel_in_the_contracts_shape_and_its_limits_hold() {
         .collect();
     let (status, body) = push(json!({ "schema": 2, "records": many }));
     assert!(matches!(status, 400 | 413), "{status} {body}");
+    // Records sealed for another space than the account's (SV-L10): a 409
+    // that is not about a record's id.
+    let (status, body) = push(json!({
+        "schema": 2,
+        "spaceId": Uuid::new_v4(),
+        "records": [record(&fresh)],
+    }));
+    assert_eq!(status, 409, "{body}");
+    assert_ne!(body["code"].as_str(), Some(api::EXISTS), "{body}");
     // The other app's space, with this app's token.
     let (status, body) = raw.call(
         "POST",

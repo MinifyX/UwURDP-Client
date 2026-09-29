@@ -34,6 +34,13 @@ const MAX_PAGE_BYTES: u64 = (MAX_BATCH_BYTES as u64) * 2 + (1 << 20);
 const MAX_ANSWER_BYTES: u64 = 256 * 1024;
 /// An access token this close to running out is refreshed first.
 const REFRESH_AHEAD: Duration = Duration::from_secs(120);
+/// UwULock's code for a push that names another space than the account's
+/// current one (409): the space was given a new key since this device
+/// looked.
+pub(crate) const SPACE_CHANGED: &str = "space_changed";
+/// UwULock's code for a record id that belongs to another space or account
+/// (409): about that record, not about the space.
+pub(crate) const EXISTS: &str = "exists";
 
 /// This install, as the server lists it among the account's devices.
 #[derive(Debug, Clone)]
@@ -281,8 +288,10 @@ impl WireRecord {
 }
 
 impl Lock {
-    /// Reach a server. Its certificate has to stand up to the usual checks —
-    /// a UwULock Server has a real one, its own Let's Encrypt or a proxy's.
+    /// Reach a server. Its certificate has to stand up to the usual checks
+    /// against the public roots and the ones the operating system trusts: a
+    /// UwULock Server has a real one — its own Let's Encrypt, a proxy's, or
+    /// one from a private CA installed on this system.
     pub fn connect(server: &str, device: LockDevice) -> Result<Self, TransportError> {
         let base = normalize_server(server)?;
         let mut builder = Client::builder();
@@ -290,7 +299,7 @@ impl Lock {
             builder = builder.no_proxy();
         }
         let client = builder
-            .use_preconfigured_tls(crate::pin::webpki_config())
+            .use_preconfigured_tls(crate::pin::roots_config())
             .redirect(reqwest::redirect::Policy::none())
             .timeout(TIMEOUT)
             .connect_timeout(Duration::from_secs(10))
@@ -724,7 +733,8 @@ impl Lock {
     }
 
     /// A request about the space's records; a space that is not there (404)
-    /// is told apart from any other refusal.
+    /// or not the one named (409, see [`names_another_space`]) is told apart
+    /// from any other refusal.
     fn call_space<T: DeserializeOwned>(
         &self,
         space: Uuid,
@@ -735,6 +745,16 @@ impl Lock {
             Call::Refused(refusal) if refusal.status == 404 => {
                 self.check_space(space)?;
                 Err(refusal.into_transport())
+            }
+            Call::Refused(refusal) if names_another_space(&refusal) => {
+                // Given a new key between this device's look at the space and
+                // its push. Whatever the list says now, nothing is pushed
+                // again: only the master password gets this device the new
+                // key, and the sign-in asks before it takes another space.
+                self.check_space(space)?;
+                Err(TransportError::SignIn(
+                    "the space was given a new key".into(),
+                ))
             }
             Call::Refused(refusal) => Err(refusal.into_transport()),
         }
@@ -784,7 +804,9 @@ impl Transport for Lock {
         let space = self.space_id()?;
         // The server cannot tell records sealed for a space's old key from
         // any others: whether the space is still the one this device has is
-        // for this device to ask before it writes there.
+        // asked before it writes there, and the push names the space its
+        // records are sealed for (`spaceId`), so a new key that comes in
+        // between is refused by the server instead of racing this push.
         self.check_space(space)?;
         let records: Vec<WireRecord> = envelopes
             .iter()
@@ -794,7 +816,11 @@ impl Transport for Lock {
                 record
             })
             .collect();
-        let body = serde_json::json!({ "schema": SCHEMA_VERSION, "records": records });
+        let body = serde_json::json!({
+            "schema": SCHEMA_VERSION,
+            "spaceId": space,
+            "records": records,
+        });
         let answer: SuitePush = self.call_space(space, || {
             self.request(reqwest::Method::POST, &Self::records_path())
                 .json(&body)
@@ -813,6 +839,19 @@ impl Transport for Lock {
     fn take_reset(&self) -> bool {
         self.reset.swap(false, Ordering::SeqCst)
     }
+}
+
+/// Whether a refusal says the push named another space than the account's
+/// current one. The server sends [`SPACE_CHANGED`]; any other 409 of a push
+/// but [`EXISTS`] is read the same way, the reading that never writes into a
+/// space this device did not agree to.
+fn names_another_space(refusal: &Refusal) -> bool {
+    refusal.status == 409
+        && match refusal.code.as_deref() {
+            Some(SPACE_CHANGED) => true,
+            Some(EXISTS) => false,
+            _ => true,
+        }
 }
 
 fn unreachable(error: reqwest::Error) -> TransportError {
@@ -969,6 +1008,21 @@ mod tests {
         };
         assert!(unknown.into_envelope(envelope.vault_id).is_none());
         assert_eq!(decode("-_--").unwrap(), vec![0xfb, 0xff, 0xbe]);
+    }
+
+    #[test]
+    fn only_a_409_about_the_space_means_the_space_changed() {
+        let refusal = |status: u16, code: Option<&str>| Refusal {
+            status,
+            code: code.map(str::to_string),
+            message: String::new(),
+        };
+        assert!(names_another_space(&refusal(409, Some(SPACE_CHANGED))));
+        assert!(names_another_space(&refusal(409, Some("space_mismatch"))));
+        assert!(names_another_space(&refusal(409, None)));
+        assert!(!names_another_space(&refusal(409, Some(EXISTS))));
+        assert!(!names_another_space(&refusal(404, Some(SPACE_CHANGED))));
+        assert!(!names_another_space(&refusal(422, Some("quota"))));
     }
 
     #[test]

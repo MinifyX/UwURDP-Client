@@ -76,7 +76,7 @@ impl Server {
         }
         let tls = match fingerprint {
             Some(fingerprint) => crate::pin::pinned_config(fingerprint),
-            None => crate::pin::webpki_config(),
+            None => crate::pin::roots_config(),
         };
         let mut builder = Client::builder();
         // Plain HTTP only ever goes to this machine, so it must not detour

@@ -135,28 +135,56 @@ pub fn pinned_config(fingerprint: &str) -> rustls::ClientConfig {
         .with_no_client_auth()
 }
 
-/// A TLS setup for a server with a real certificate: the usual checks, with
-/// the roots the operating system trusts.
-pub fn webpki_config() -> rustls::ClientConfig {
-    #[cfg_attr(not(test), allow(unused_mut))]
-    let mut roots: rustls::RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
-    // The live tests' UwULock Server has a certificate from a test CA
-    // (scripts/lock-live.sh). Only in test builds: the app never trusts more
-    // than the public roots.
-    #[cfg(test)]
-    if let Some(path) = std::env::var_os("UWULOCK_TEST_CA") {
-        use rustls::pki_types::pem::PemObject;
-        for certificate in CertificateDer::pem_file_iter(&path).expect("UWULOCK_TEST_CA") {
-            roots
-                .add(certificate.expect("a certificate in UWULOCK_TEST_CA"))
-                .expect("a CA certificate");
-        }
-    }
+/// A TLS setup for a server with a real certificate: the usual checks —
+/// chain, name, expiry — against the public roots (`webpki-roots`) and the
+/// ones the operating system trusts, so a server behind a company's or a
+/// home network's own CA works once that CA is installed on the system.
+pub fn roots_config() -> rustls::ClientConfig {
+    config_with_roots(trusted_roots().clone())
+}
+
+fn config_with_roots(roots: rustls::RootCertStore) -> rustls::ClientConfig {
     rustls::ClientConfig::builder_with_provider(Arc::new(ring::default_provider()))
         .with_safe_default_protocol_versions()
         .expect("ring supports the versions rustls asks for")
         .with_root_certificates(roots)
         .with_no_client_auth()
+}
+
+/// The public roots and the system's, read once: the system's store takes a
+/// moment to read on some systems.
+fn trusted_roots() -> &'static rustls::RootCertStore {
+    static ROOTS: std::sync::OnceLock<rustls::RootCertStore> = std::sync::OnceLock::new();
+    ROOTS.get_or_init(|| {
+        let system = rustls_native_certs::load_native_certs();
+        for error in &system.errors {
+            tracing::debug!(%error, "a part of the system's trust store did not load");
+        }
+        #[cfg_attr(not(test), allow(unused_mut))]
+        let mut roots = roots_with(system.certs);
+        // The live tests' UwULock Server has a certificate from a test CA
+        // (scripts/lock-live.sh). Only in test builds: the app itself trusts
+        // no CA the system does not.
+        #[cfg(test)]
+        if let Some(path) = std::env::var_os("UWULOCK_TEST_CA") {
+            use rustls::pki_types::pem::PemObject;
+            for certificate in CertificateDer::pem_file_iter(&path).expect("UWULOCK_TEST_CA") {
+                roots
+                    .add(certificate.expect("a certificate in UWULOCK_TEST_CA"))
+                    .expect("a CA certificate");
+            }
+        }
+        roots
+    })
+}
+
+/// The public roots and these. What does not parse as a CA is left out; a
+/// broken entry in the system's store costs that entry, not the connection.
+fn roots_with(extra: Vec<CertificateDer<'static>>) -> rustls::RootCertStore {
+    let mut roots: rustls::RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
+    let (added, ignored) = roots.add_parsable_certificates(extra);
+    tracing::debug!(added, ignored, "roots from the system's trust store");
+    roots
 }
 
 #[cfg(test)]
@@ -174,6 +202,58 @@ mod tests {
             cert.der().to_vec(),
             fingerprint(&key.subject_public_key_info()),
         )
+    }
+
+    /// A private CA, as a company or a home network runs one, and a server
+    /// certificate from it.
+    fn private_ca() -> (CertificateDer<'static>, CertificateDer<'static>) {
+        use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair};
+        let ca_key = KeyPair::generate().unwrap();
+        let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let ca = ca_params.self_signed(&ca_key).unwrap();
+        let issuer = Issuer::new(ca_params, ca_key);
+        let key = KeyPair::generate().unwrap();
+        let server = CertificateParams::new(vec!["lock.test".to_string()])
+            .unwrap()
+            .signed_by(&key, &issuer)
+            .unwrap();
+        (
+            CertificateDer::from(ca.der().to_vec()),
+            CertificateDer::from(server.der().to_vec()),
+        )
+    }
+
+    fn verifies(roots: rustls::RootCertStore, server: &CertificateDer<'_>) -> bool {
+        rustls::client::WebPkiServerVerifier::builder_with_provider(
+            Arc::new(roots),
+            Arc::new(ring::default_provider()),
+        )
+        .build()
+        .unwrap()
+        .verify_server_cert(
+            server,
+            &[],
+            &ServerName::try_from("lock.test").unwrap(),
+            &[],
+            UnixTime::now(),
+        )
+        .is_ok()
+    }
+
+    #[test]
+    fn a_server_behind_a_private_ca_is_trusted_once_the_system_trusts_that_ca() {
+        let (ca, server) = private_ca();
+        assert!(!verifies(roots_with(Vec::new()), &server), "not by default");
+        let roots = roots_with(vec![ca, CertificateDer::from(b"no certificate".to_vec())]);
+        assert_eq!(roots.len(), webpki_roots::TLS_SERVER_ROOTS.len() + 1);
+        assert!(verifies(roots, &server));
+    }
+
+    #[test]
+    fn the_public_roots_are_always_there() {
+        assert!(trusted_roots().len() >= webpki_roots::TLS_SERVER_ROOTS.len());
+        let _ = roots_config();
     }
 
     #[test]

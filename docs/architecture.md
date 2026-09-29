@@ -487,7 +487,18 @@ refresh at once. The master password is needed again only when the session
 ends — refresh token run out, device removed, password changed on the server
 (then the vault here still opens with the old one until the next sign-in, which
 only wraps it again), or the space was given a new key (a pull says `reset` and
-the space's id changed).
+the space's id changed). A push looks at the space first and names the space
+its records are sealed for (`spaceId` next to `schema` and `records`); a server
+whose space got a new key in between answers 409 (`space_changed`), and the
+device asks for the master password as above instead of pushing again. The
+edit stays on the device and goes out once it is back in a space. A 409
+`exists` (a record id another space or account has) is about that record only.
+
+**TLS** to a UwULock Server is checked the usual way — chain, name, expiry —
+against the public roots and the ones the operating system trusts, for the
+requests and the realtime channel alike, so a server behind a company's or a
+home network's own CA works once that CA is installed on the system. There is
+no fallback that skips the checks.
 
 **A different space is never taken silently.** Only the server says which space
 is the account's, so a device remembers per account the space it used and the
@@ -502,7 +513,8 @@ outright.
 **The realtime channel** is one WebSocket that says _that_ the space changed,
 never what; the worker then runs a pass. It renews its token on the same
 connection before it runs out, notices a dead connection by the missing
-heartbeat, waits between reconnects as the close code asks (exponential
+heartbeat, takes no message over 64 KiB (the contract's are at most about
+4 KiB), waits between reconnects as the close code asks (exponential
 backoff from 1 to 60 seconds otherwise), and on `logout` locks the vault. While
 it is open, the minute's pull becomes a quarter of an hour's. A `reset` from a
 pull (a cursor older than the server remembers) pulls everything from the
@@ -514,10 +526,13 @@ makes or takes the space, pushes what waits to UwUSync, reads everything
 UwUSync holds and opens it with the vault key here, seals each record again for
 the space — same id, kind, clock and tombstone, new nonce — except manifests,
 and pushes what the space does not hold at least as new (conflicts with another
-device's move go through the merge rule). Then it reads the space back and
-holds every record against what was read; one missing or older record stops the
-move, and the device stays on UwUSync. Only after that does it switch, in one
-transaction: vault adopted without marking anything to push, UwULock the
+device's move go through the merge rule). Then it reads the space back, opens
+every record with the space's key — header included, so a header the server
+made up counts as missing — and holds it against what was read; one missing or
+older record stops the move, and the device stays on UwUSync. It keeps only the
+headers and opened payloads, never the sealed pages, and stops when either
+server sends more than a UwULock space holds (50 000 records, 256 MiB). Only
+after that does it switch, in one transaction: vault adopted without marking anything to push, UwULock the
 backend, the UwUSync pairing forgotten. UwUSync is only ever read from; the
 page then offers to remove the device there, and says so when it was the last
 one. Running the move again, after an interruption or on the next device, skips

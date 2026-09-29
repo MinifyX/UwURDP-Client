@@ -26,6 +26,9 @@ url = "2.5"
 base64.workspace = true
 sha2 = "0.11"
 webpki-roots = "1.0.9"
+# The operating system's trust store next to the public roots, so a server
+# behind a company's or a home network's own CA can be reached too.
+rustls-native-certs = "0.8"
 spake2 = "0.4"
 rand.workspace = true
 serde_json.workspace = true

@@ -235,5 +235,7 @@
   "Fortsetzen…": "Continue…",
   "Umziehen…": "Move…",
   "Das Master-Passwort war falsch. Hast du es bei UwULock geändert? Dann öffnet hier noch das alte – oder melde dich unter Einstellungen → Sync neu an.": "The master password was wrong. Did you change it at UwULock? Then the old one still opens it here – or sign in again under Settings → Sync.",
-  "Das Master-Passwort deines UwULock-Kontos {email}.": "The master password of your UwULock account {email}."
+  "Das Master-Passwort deines UwULock-Kontos {email}.": "The master password of your UwULock account {email}.",
+  "Dieser UwULock-Server hat den App-Sync abgeschaltet. Änderungen bleiben auf diesem Gerät; ist der Sync wieder an, gleicht UwURDP alles ab – ohne neue Anmeldung.": "This UwULock server has app sync switched off. Changes stay on this device; once sync is on again, UwURDP catches up with everything, without signing in again.",
+  "Dieser UwULock-Server hat den App-Sync abgeschaltet. Wer den Server betreibt, kann ihn im Admin-Portal unter Funktionen wieder einschalten.": "This UwULock server has app sync switched off. Whoever runs the server can switch it on again in the admin portal under Features."
 }

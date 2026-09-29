@@ -34,6 +34,9 @@ const TICK: Duration = Duration::from_secs(5);
 const PULL_EVERY: Duration = Duration::from_secs(60);
 /// After a failed pass, how long before the next try.
 const BACKOFF: Duration = Duration::from_secs(30);
+/// While UwULock has app sync switched off, how long before it looks again —
+/// quietly, since nothing is wrong here.
+const SWITCHED_OFF_WAIT: Duration = Duration::from_secs(5 * 60);
 /// With UwULock's realtime channel open, how much longer a pull waits: the
 /// channel says when something changed, and this only covers a message that
 /// got lost.
@@ -68,6 +71,9 @@ pub(crate) enum SyncFailure {
     /// UwULock: the session ended, and only the master password brings it
     /// back.
     SignIn,
+    /// UwULock: the server has app sync switched off. The session stays;
+    /// syncing waits until an admin switches it on again.
+    SwitchedOff,
     /// UwULock refused the email, the master password or the code, in its
     /// own words.
     LoginRefused {
@@ -116,6 +122,7 @@ impl From<TransportError> for SyncFailure {
             TransportError::Unreachable(message) => Self::Unreachable { message },
             TransportError::Refused(message) => Self::Refused { message },
             TransportError::SignIn(_) => Self::SignIn,
+            TransportError::SwitchedOff => Self::SwitchedOff,
         }
     }
 }
@@ -188,6 +195,8 @@ pub(crate) struct Sync {
     pub(crate) live: AtomicBool,
     /// UwULock refused the realtime channel; polling until the next sign-in.
     pub(crate) live_refused: AtomicBool,
+    /// UwULock has app sync switched off: the last pass was told so.
+    pub(crate) switched_off: AtomicBool,
     /// The UwUSync server this device just moved away from, and its id
     /// there: to remove it there, if the person wants.
     pub(crate) left_behind: Mutex<Option<(Arc<Server>, Uuid)>>,
@@ -250,8 +259,20 @@ pub(crate) fn pass(app: &AppHandle, store: &Arc<Store>, sync: &Sync) -> SyncResu
     if on_lock && matches!(outcome, Err(SyncFailure::SignIn)) {
         crate::lock::session_ended(store, sync);
     }
+    let off = on_lock && matches!(outcome, Err(SyncFailure::SwitchedOff));
+    let was_off = sync.switched_off.swap(off, Ordering::SeqCst);
+    if was_off && outcome.is_ok() {
+        // On again: the realtime channel it refused meanwhile is worth a try.
+        sync.live_refused.store(false, Ordering::SeqCst);
+    }
 
     let last = match &outcome {
+        // No failure to show: the status says it is switched off.
+        Err(SyncFailure::SwitchedOff) => LastPass {
+            at_ms: now_ms(),
+            report: None,
+            error: None,
+        },
         Ok(report) => LastPass {
             at_ms: now_ms(),
             report: Some(*report),
@@ -294,6 +315,7 @@ fn describe(failure: &SyncFailure) -> String {
         SyncFailure::PasswordWrong => "wrong password".into(),
         SyncFailure::BadCode => "not a code".into(),
         SyncFailure::SignIn => "sign in again".into(),
+        SyncFailure::SwitchedOff => "this UwULock server has app sync switched off".into(),
         SyncFailure::KeysLost => "the account's key for UwU apps is lost".into(),
         SyncFailure::NoKeyPair => "the account has no key pair".into(),
         SyncFailure::MoveCheck { differences } => {
@@ -360,6 +382,11 @@ fn worker(app: AppHandle) {
             Ok(_) => {
                 next_pull = Instant::now() + PULL_EVERY;
                 not_before = Instant::now();
+            }
+            Err(SyncFailure::SwitchedOff) => {
+                tracing::info!("UwULock has app sync switched off; looking again later");
+                next_pull = Instant::now() + SWITCHED_OFF_WAIT;
+                not_before = Instant::now() + SWITCHED_OFF_WAIT;
             }
             Err(failure) => {
                 tracing::info!(error = %describe(&failure), "sync pass failed");

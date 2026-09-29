@@ -16,7 +16,15 @@ import {
 } from '../lib/sync';
 import { Icon } from './Icon';
 import { NyuScene } from './nyu/scenes';
-import { ago, failureText, PassDetails, PasswordConfirm, syncDot } from './SyncParts';
+import {
+  ago,
+  APP_SYNC_OFF,
+  failureText,
+  PassDetails,
+  PasswordConfirm,
+  syncDot,
+  useAppSyncOff,
+} from './SyncParts';
 import { VaultDialog } from './VaultDialog';
 
 /** A two-step method, as the person knows it. */
@@ -79,10 +87,13 @@ export function LockSignInForm({
   > | null>(null);
   const [acceptSpace, setAcceptSpace] = useState<AcceptSpace | null>(null);
 
+  // Said before anyone types a password: the server would refuse anyway.
+  const appSyncOff = useAppSyncOff(server);
   const usable = methods?.filter((m) => m.supported) ?? [];
   const chosen = usable.find((m) => m.provider === provider) ?? usable[0] ?? null;
   const ready =
     !busy &&
+    !appSyncOff &&
     server.trim().length > 0 &&
     email.trim().length > 0 &&
     password.length > 0 &&
@@ -310,6 +321,11 @@ export function LockSignInForm({
           {differences && differences.length > 0 && <> {differencesText(differences)}</>}
         </p>
       )}
+      {appSyncOff && !error && (
+        <p className="field-error" role="alert">
+          {APP_SYNC_OFF()}
+        </p>
+      )}
       {busy && mode === 'move' && (
         <p className="field-hint" role="status">
           {t('Zieht um… das dauert bei vielen Einträgen einen Moment.')}
@@ -330,7 +346,12 @@ export function LockSignInForm({
           {t('Zurück')}
         </button>
         <span className="spacer" />
-        <button type="submit" className="primary" disabled={!ready}>
+        <button
+          type="submit"
+          className="primary"
+          disabled={!ready}
+          title={appSyncOff ? APP_SYNC_OFF() : undefined}
+        >
           {busy
             ? mode === 'move'
               ? t('Zieht um…')
@@ -496,6 +517,12 @@ export function LockOverview({ status, onChanged }: { status: SyncStatus; onChan
             <p className="setting-description field-error" role="alert">
               {t(
                 'Die Anmeldung ist abgelaufen oder wurde beendet. Bis du dich neu anmeldest, bleiben Änderungen auf diesem Gerät.',
+              )}
+            </p>
+          ) : lock.switchedOff ? (
+            <p className="setting-description" role="status">
+              {t(
+                'Dieser UwULock-Server hat den App-Sync abgeschaltet. Änderungen bleiben auf diesem Gerät; ist der Sync wieder an, gleicht UwURDP alles ab – ohne neue Anmeldung.',
               )}
             </p>
           ) : (

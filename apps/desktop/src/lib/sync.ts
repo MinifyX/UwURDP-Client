@@ -62,6 +62,8 @@ export type LockStatus = {
   moveStartedMs: number | null;
   /** Moved, and this device may still be removed from UwUSync. */
   leftBehind: boolean;
+  /** The server has app sync switched off: syncing waits, the session stays. */
+  switchedOff: boolean;
 };
 
 /** One way of two-step login the UwULock account has set up. */
@@ -103,6 +105,7 @@ export type SyncFailure =
   | { kind: 'refused'; message: string }
   | { kind: 'pairing-failed'; message: string }
   | { kind: 'sign-in' }
+  | { kind: 'switched-off' }
   | { kind: 'login-refused'; message: string }
   | { kind: 'keys-lost' }
   | { kind: 'no-key-pair' }
@@ -177,6 +180,13 @@ export const lockSignIn = (
   twoFactor: TwoFactorInput | null,
   acceptSpace: AcceptSpace | null,
 ) => invoke<LockOutcome>('lock_sign_in', { serverUrl, email, password, twoFactor, acceptSpace });
+
+/**
+ * Whether the UwULock Server at this address has app sync switched off. False
+ * for a server that says nothing about it or can't be reached.
+ */
+export const lockAppSyncOff = (serverUrl: string) =>
+  invoke<boolean>('lock_app_sync_off', { serverUrl });
 
 export const lockSendEmailCode = (serverUrl: string, email: string, password: string) =>
   invoke<void>('lock_send_email_code', { serverUrl, email, password });

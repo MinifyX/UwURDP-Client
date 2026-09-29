@@ -155,6 +155,7 @@ pub fn run() {
             lock::lock_move,
             lock::lock_leave_uwusync,
             lock::lock_forget_move,
+            lock::lock_app_sync_off,
             lock::lock_sign_out,
             system::close_all_sessions,
             system::set_update_channel,

@@ -26,7 +26,16 @@ import { Icon } from './Icon';
 import { LockOverview, LockSignInForm, MoveDone } from './LockSync';
 import { Modal } from './Modal';
 import { NyuScene } from './nyu/scenes';
-import { ago, copy, failureText, PassDetails, PasswordConfirm, syncDot } from './SyncParts';
+import {
+  ago,
+  APP_SYNC_OFF,
+  copy,
+  failureText,
+  PassDetails,
+  PasswordConfirm,
+  syncDot,
+  useAppSyncOff,
+} from './SyncParts';
 import { VaultDialog } from './VaultDialog';
 
 /**
@@ -619,6 +628,8 @@ function Paired({
   const [unlocking, setUnlocking] = useState(false);
   const [askingKit, setAskingKit] = useState(false);
   const [kit, setKit] = useState<Connected | null>(null);
+  // A move that began knows its server: said here when it has app sync off.
+  const moveServerOff = useAppSyncOff(status.lock.moveStartedMs ? status.lock.serverUrl : null);
 
   const loadDevices = useCallback(() => {
     void syncDevices()
@@ -778,14 +789,16 @@ function Paired({
         <div className="setting-text">
           <p className="setting-label">{t('Zu UwULock umziehen')}</p>
           <p className="setting-description">
-            {status.lock.moveStartedMs
-              ? t(
-                  'Ein Umzug hat {when} begonnen und ist nicht fertig geworden. Bis er fertig ist, synchronisiert dieses Gerät weiter über UwUSync.',
-                  { when: ago(status.lock.moveStartedMs) },
-                )
-              : t(
-                  'Hosts und Passwörter ziehen mit einem Klick auf einen UwULock-Server um. UwURDP prüft die Kopie, bevor es wechselt – auf UwUSync bleibt alles, wie es ist.',
-                )}
+            {moveServerOff
+              ? APP_SYNC_OFF()
+              : status.lock.moveStartedMs
+                ? t(
+                    'Ein Umzug hat {when} begonnen und ist nicht fertig geworden. Bis er fertig ist, synchronisiert dieses Gerät weiter über UwUSync.',
+                    { when: ago(status.lock.moveStartedMs) },
+                  )
+                : t(
+                    'Hosts und Passwörter ziehen mit einem Klick auf einen UwULock-Server um. UwURDP prüft die Kopie, bevor es wechselt – auf UwUSync bleibt alles, wie es ist.',
+                  )}
           </p>
         </div>
         <div className="setting-control">
@@ -804,7 +817,11 @@ function Paired({
               {t('Verwerfen')}
             </button>
           )}
-          <button onClick={() => setMoving(true)} disabled={locked}>
+          <button
+            onClick={() => setMoving(true)}
+            disabled={locked || moveServerOff}
+            title={moveServerOff ? APP_SYNC_OFF() : undefined}
+          >
             <Icon name="export" size={15} />
             {status.lock.moveStartedMs ? t('Fortsetzen…') : t('Umziehen…')}
           </button>

@@ -347,20 +347,29 @@ export function MoveDone({
           )}
         </p>
       )}
-      {leftBehind ? (
+      {leftBehind && outcome.lastDevice ? (
+        // UwUSync keeps its last device (it refuses to remove it): nothing
+        // to leave, only an account its admin can delete now.
+        <>
+          <p className="setting-description">
+            {t(
+              'Das war das letzte Gerät auf UwUSync: Wer den Server betreibt, kann das Konto dort jetzt löschen.',
+            )}
+          </p>
+          <div className="sync-actions">
+            <span className="spacer" />
+            <button className="primary" disabled={busy} onClick={() => void leave(false)}>
+              {t('Fertig')}
+            </button>
+          </div>
+        </>
+      ) : leftBehind ? (
         <>
           <p className="setting-description">
             {t(
               'Auf UwUSync bleiben deine Daten unberührt. Soll dieses Gerät dort ausgetragen werden? Die anderen Geräte synchronisieren dort weiter, bis auch sie umgezogen sind.',
             )}
           </p>
-          {outcome.lastDevice && (
-            <p className="setting-description">
-              {t(
-                'Das war das letzte Gerät auf UwUSync: Wer den Server betreibt, kann das Konto dort jetzt löschen.',
-              )}
-            </p>
-          )}
           {error && (
             <p className="field-error" role="alert">
               {error}

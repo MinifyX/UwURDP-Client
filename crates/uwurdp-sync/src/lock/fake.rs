@@ -5,7 +5,8 @@
 //!
 //! It can misbehave on purpose: run out an access token, end the session,
 //! forget the extras key's user wrap as an official client's rotation does,
-//! tell a pull to start over, give the space a new key, keep a record back,
+//! tell a pull to start over, give the space a new key (between a device's
+//! look at the space and its push, too), keep a record back, refuse a push,
 //! make up the headers of what it hands out.
 
 use crate::engine::Transport;
@@ -61,6 +62,13 @@ pub struct Account {
     pub live: Option<mpsc::Receiver<Live>>,
     /// The script for the connection after the current one.
     pub live_next: Option<mpsc::Receiver<Live>>,
+    /// The `spaceId` of every push, as it came.
+    pub pushed_space_ids: Vec<Value>,
+    /// The next push finds the space given a new key, as if that happened
+    /// right after the device looked.
+    pub rekey_at_next_push: bool,
+    /// The next push is refused with 409 and this code.
+    pub refuse_next_push: Option<&'static str>,
     /// Every pull says each record is newer than it is.
     pub forge_pulls: bool,
 }
@@ -105,6 +113,9 @@ impl Fake {
             requests: Vec::new(),
             live: None,
             live_next: None,
+            pushed_space_ids: Vec::new(),
+            rekey_at_next_push: false,
+            refuse_next_push: None,
             forge_pulls: false,
         }));
         let records = Arc::new(MemoryServer::new());
@@ -450,7 +461,23 @@ fn api(
             if json["schema"] != 2 {
                 return error(request, 400, "schema", "Unknown schema.");
             }
+            account.pushed_space_ids.push(json["spaceId"].clone());
+            if let Some(code) = account.refuse_next_push.take() {
+                return error(request, 409, code, "Refused.");
+            }
+            if std::mem::take(&mut account.rekey_at_next_push) {
+                account.spaces.get_mut("rdp").unwrap().0 = Uuid::new_v4();
+            }
             let space = account.spaces["rdp"].0;
+            // Optional, for clients from before it (SV-L10 of UwULock).
+            if !json["spaceId"].is_null() && json["spaceId"] != json!(space) {
+                return error(
+                    request,
+                    409,
+                    crate::lock::api::SPACE_CHANGED,
+                    "The records are sealed for another space.",
+                );
+            }
             let wire: Vec<WireRecord> = serde_json::from_value(json["records"].clone()).unwrap();
             let envelopes = wire
                 .into_iter()

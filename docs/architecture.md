@@ -487,7 +487,12 @@ refresh at once. The master password is needed again only when the session
 ends — refresh token run out, device removed, password changed on the server
 (then the vault here still opens with the old one until the next sign-in, which
 only wraps it again), or the space was given a new key (a pull says `reset` and
-the space's id changed).
+the space's id changed). A push looks at the space first and names the space
+its records are sealed for (`spaceId` next to `schema` and `records`); a server
+whose space got a new key in between answers 409 (`space_changed`), and the
+device asks for the master password as above instead of pushing again. The
+edit stays on the device and goes out once it is back in a space. A 409
+`exists` (a record id another space or account has) is about that record only.
 
 **TLS** to a UwULock Server is checked the usual way — chain, name, expiry —
 against the public roots and the ones the operating system trusts, for the

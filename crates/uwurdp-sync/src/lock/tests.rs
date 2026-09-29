@@ -531,6 +531,65 @@ fn nothing_is_written_to_or_read_from_the_start_of_a_space_that_changed() {
     ));
 }
 
+#[test]
+fn a_push_names_its_space_and_a_new_key_in_between_keeps_the_edit_here() {
+    let fake = Fake::start();
+    let store = Store::open_in_memory().unwrap();
+    let lock = joined(&fake, &store);
+    let space = lock.space().unwrap();
+    store.save_host(draft("prox-1", "192.0.2.10")).unwrap();
+    sync_once(&store, &lock).unwrap();
+    assert!(fake
+        .account
+        .lock()
+        .pushed_space_ids
+        .iter()
+        .all(|id| *id == serde_json::json!(space)));
+    let held = fake.records.len();
+
+    // Another device gives the space a new key right after this one looked:
+    // the server refuses the push, and this device asks for the master
+    // password instead of trying again.
+    store.save_host(draft("nas", "192.0.2.20")).unwrap();
+    fake.account.lock().rekey_at_next_push = true;
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::SignIn(message))) if message.contains("new key")
+    ));
+    assert_eq!(fake.records.len(), held, "nothing of it was taken");
+    assert_eq!(names(&store), vec!["nas", "prox-1"]);
+    assert!(
+        store.pending_count().unwrap() > 0,
+        "still waiting to go out"
+    );
+}
+
+#[test]
+fn only_a_409_about_the_space_asks_for_the_master_password() {
+    let fake = Fake::start();
+    let store = Store::open_in_memory().unwrap();
+    let lock = joined(&fake, &store);
+    store.save_host(draft("prox-1", "192.0.2.10")).unwrap();
+
+    // A record id another space or account has: an error about that record.
+    fake.account.lock().refuse_next_push = Some(super::api::EXISTS);
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::Refused(message))) if message.contains("exists")
+    ));
+    // A 409 of a newer server, in a word this build does not know: taken
+    // as a space that changed, never as a reason to push again.
+    fake.account.lock().refuse_next_push = Some("space_mismatch");
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::SignIn(_)))
+    ));
+    assert!(fake.records.is_empty());
+    assert!(store.pending_count().unwrap() > 0);
+    sync_once(&store, &lock).unwrap();
+    assert!(!fake.records.is_empty());
+}
+
 // ── The move ─────────────────────────────────────────────────────────────
 
 /// A device on UwUSync ([`MemoryServer`]) with a vault of its own and

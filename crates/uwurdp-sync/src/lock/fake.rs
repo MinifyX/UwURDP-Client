@@ -5,7 +5,8 @@
 //!
 //! It can misbehave on purpose: run out an access token, end the session,
 //! forget the extras key's user wrap as an official client's rotation does,
-//! tell a pull to start over, give the space a new key, keep a record back.
+//! tell a pull to start over, give the space a new key, keep a record back,
+//! make up the headers of what it hands out.
 
 use crate::engine::Transport;
 use crate::lock::api::WireRecord;
@@ -60,6 +61,8 @@ pub struct Account {
     pub live: Option<mpsc::Receiver<Live>>,
     /// The script for the connection after the current one.
     pub live_next: Option<mpsc::Receiver<Live>>,
+    /// Every pull says each record is newer than it is.
+    pub forge_pulls: bool,
 }
 
 pub struct Fake {
@@ -102,6 +105,7 @@ impl Fake {
             requests: Vec::new(),
             live: None,
             live_next: None,
+            forge_pulls: false,
         }));
         let records = Arc::new(MemoryServer::new());
         let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
@@ -426,11 +430,16 @@ fn api(
             let since = query["since"].parse().unwrap();
             let limit = query["limit"].parse::<usize>().unwrap().min(MAX_BATCH);
             let page = records.pull(SyncCursor(since), limit).unwrap();
-            let wire: Vec<WireRecord> = page
+            let mut wire: Vec<WireRecord> = page
                 .envelopes
                 .iter()
                 .map(WireRecord::from_envelope)
                 .collect();
+            if account.forge_pulls {
+                for record in &mut wire {
+                    record.updated_at.wall_ms += 3_600_000;
+                }
+            }
             respond(
                 request,
                 200,

@@ -725,6 +725,24 @@ fn a_copy_the_server_keeps_back_stops_the_move() {
 }
 
 #[test]
+fn headers_a_server_made_up_do_not_pass_the_check() {
+    let fake = Fake::start();
+    let (store, uwusync) = on_uwusync();
+    let signed = signed_in(&fake);
+    // Every record the move reads back claims to be newer than it is, as if
+    // another device had written it since: by the headers alone, the copy
+    // would pass and this device forget UwUSync.
+    fake.account.lock().forge_pulls = true;
+    match copy_to_lock(&store, &uwusync, &signed.lock, &signed.space) {
+        Err(LockError::MoveCheck(differences)) => {
+            assert!(differences.len() >= 6, "{differences:?}");
+            assert!(differences.iter().all(|d| d.problem == Problem::Missing));
+        }
+        other => panic!("{:?}", other.map(|_| ())),
+    }
+}
+
+#[test]
 fn a_locked_vault_moves_nothing() {
     let fake = Fake::start();
     let (store, uwusync) = on_uwusync();

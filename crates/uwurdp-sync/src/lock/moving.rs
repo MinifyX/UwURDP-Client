@@ -3,10 +3,11 @@
 //! Everything UwUSync holds is read, opened with the vault key this device
 //! has, sealed again for the UwULock space — same id, kind, clock and
 //! tombstone, a new nonce, the space's id and key — and pushed. Then the copy
-//! is read back and held against what was read: only when every record is
-//! there, at least as new, does the caller switch this device over. UwUSync
-//! is only ever read from, so until then nothing has changed for it, and a
-//! move that stops halfway leaves this device syncing as before.
+//! is read back, every record of it opened with the space's key and held
+//! against what was read: only when every record is there, opens, and is at
+//! least as new, does the caller switch this device over. UwUSync is only ever
+//! read from, so until then nothing has changed for it, and a move that stops
+//! halfway leaves this device syncing as before.
 //!
 //! Running it again — after an interruption, or on the next device of the
 //! same person — is safe and quick: what the space holds already at the same
@@ -26,14 +27,15 @@ use super::api::Lock;
 use super::LockError;
 use crate::engine::{Transport, TransportError, MAX_ROUNDS};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use uwurdp_proto::{
     resolve, EntityKind, Envelope, Hlc, Resolution, SyncCursor, Version, MAX_BATCH,
     MAX_BATCH_BYTES, MAX_BLOB_BYTES,
 };
 use uwurdp_store::{Space, Store};
-use uwurdp_vault::UnlockedVault;
+use uwurdp_vault::{Sealed, UnlockedVault};
 
 /// The most pages one read goes through, as in a sync pass.
 const MAX_PAGES: usize = 1_000;
@@ -74,7 +76,7 @@ pub struct Difference {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Problem {
-    /// Not on UwULock at all.
+    /// Not on UwULock at all, or not opening there with the space's key.
     Missing,
     /// On UwULock in an older version than on UwUSync.
     Older,
@@ -190,8 +192,9 @@ pub fn copy_to_lock<T: Transport>(
         waiting = again;
     }
 
-    // Step 5: read the copy back and hold it against what was read.
-    let there = headers(to)?;
+    // Step 5: read the copy back, open it, and hold it against what was read.
+    let wanted: HashSet<Uuid> = source.iter().map(|opened| opened.id).collect();
+    let there = opened_copy(to, &target, &wanted)?;
     let mut differences: Vec<Difference> = source
         .iter()
         .filter_map(|opened| {
@@ -264,9 +267,9 @@ impl Budget {
 const TOO_MUCH_THERE: &str =
     "UwULock sent more than a space holds (50 000 records, 256 MiB): nothing switched";
 
-/// The headers of everything in the space. The seals are not opened: whose
-/// version is newer is in the header, and a header a server made up fails
-/// its seal on the first sync there, like any other.
+/// The headers of everything in the space, to decide what to push. The
+/// seals are not opened here: a header a server made up only changes what is
+/// pushed, and the check at the end ([`opened_copy`]) finds it out.
 fn headers(lock: &Lock) -> Result<HashMap<Uuid, Held>, LockError> {
     let mut budget = Budget::new(TOO_MUCH_THERE);
     let mut held = HashMap::new();
@@ -276,6 +279,58 @@ fn headers(lock: &Lock) -> Result<HashMap<Uuid, Held>, LockError> {
         Ok(())
     })?;
     Ok(held)
+}
+
+/// The versions of the `wanted` records the space holds, as far as they open
+/// with the space's key under their own header: a record a server made up,
+/// or whose header it changed, is left out, and so counts as missing.
+fn opened_copy(
+    lock: &Lock,
+    target: &UnlockedVault,
+    wanted: &HashSet<Uuid>,
+) -> Result<HashMap<Uuid, Held>, LockError> {
+    let mut budget = Budget::new(TOO_MUCH_THERE);
+    let mut copy: HashMap<Uuid, Held> = HashMap::new();
+    each_record(lock, |envelope| {
+        budget.take(envelope.blob.len())?;
+        if !wanted.contains(&envelope.id) {
+            return Ok(());
+        }
+        let (id, held) = (envelope.id, Held::of(&envelope));
+        if !opens(target, envelope) {
+            return Ok(());
+        }
+        match copy.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(held);
+            }
+            // The same record twice: the newer one that opens counts.
+            Entry::Occupied(mut entry) => {
+                if resolve(held.version, entry.get().version) == Resolution::Local {
+                    entry.insert(held);
+                }
+            }
+        }
+        Ok(())
+    })?;
+    Ok(copy)
+}
+
+/// Whether a record opens with the space's key, its header bound in.
+fn opens(target: &UnlockedVault, envelope: Envelope) -> bool {
+    envelope.vault_id == target.vault_id()
+        && target
+            .open_synced(
+                envelope.id,
+                envelope.kind,
+                envelope.updated_at,
+                envelope.deleted,
+                &Sealed {
+                    nonce: envelope.nonce,
+                    blob: envelope.blob,
+                },
+            )
+            .is_ok()
 }
 
 /// Every record a server has, from the start, page by page, handed to `each`

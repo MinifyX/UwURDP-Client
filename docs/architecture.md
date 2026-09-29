@@ -521,12 +521,13 @@ makes or takes the space, pushes what waits to UwUSync, reads everything
 UwUSync holds and opens it with the vault key here, seals each record again for
 the space — same id, kind, clock and tombstone, new nonce — except manifests,
 and pushes what the space does not hold at least as new (conflicts with another
-device's move go through the merge rule). Then it reads the space back and
-holds every record against what was read; one missing or older record stops the
-move, and the device stays on UwUSync. It keeps only the headers and opened
-payloads, never the sealed pages, and stops when either server sends more than
-a UwULock space holds (50 000 records, 256 MiB). Only after that does it switch, in one
-transaction: vault adopted without marking anything to push, UwULock the
+device's move go through the merge rule). Then it reads the space back, opens
+every record with the space's key — header included, so a header the server
+made up counts as missing — and holds it against what was read; one missing or
+older record stops the move, and the device stays on UwUSync. It keeps only the
+headers and opened payloads, never the sealed pages, and stops when either
+server sends more than a UwULock space holds (50 000 records, 256 MiB). Only
+after that does it switch, in one transaction: vault adopted without marking anything to push, UwULock the
 backend, the UwUSync pairing forgotten. UwUSync is only ever read from; the
 page then offers to remove the device there, and says so when it was the last
 one. Running the move again, after an interruption or on the next device, skips

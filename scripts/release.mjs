@@ -1,11 +1,19 @@
 // Publishes the UwURDP version in tauri.conf.json, for Windows, macOS and
-// Linux, from this PC.
+// Linux, from the machine that holds the update signing key.
 //
-//   pnpm release                build the Windows x64 setup, fetch what CI built
-//                               for the tag (Windows ARM, macOS, Linux), sign
-//                               what the updater runs, check everything, publish it
-//   pnpm release --no-build     use the Windows setup already in target/installers
-//   pnpm release --windows-only only Windows x64, when CI can't help
+//   pnpm release                  fetch what CI built for the tag (Windows x64
+//                                 and ARM, macOS, Linux), sign what the updater
+//                                 runs, check everything, publish it
+//   pnpm release --build-windows  the same, but build the Windows x64 setup here
+//                                 (on Windows) instead of taking CI's
+//   pnpm release --no-build       take the Windows x64 setup already in
+//                                 target/installers instead of CI's
+//   pnpm release --windows-only   only Windows x64, built here, when CI can't
+//                                 help (with --no-build: the one already built)
+//   pnpm release --dry-run        everything up to publishing: fetch, sign and
+//                                 check, then stop. Works on any pushed commit
+//                                 with a green Installers run (a `ci/…` branch),
+//                                 no tag needed; nothing leaves this machine.
 //
 // Needs a clean tree whose HEAD carries the pushed tag v<version>,
 // release-notes/<version>.json, the GitHub CLI signed in with write access and
@@ -14,8 +22,9 @@
 // (default: Documents\UwURDP-Update-Schluessel).
 //
 // The key never leaves this machine: CI (.github/workflows/installers.yml)
-// builds everything else unsigned when the tag is pushed, and this script
-// downloads it and signs the files the updater runs here.
+// builds everything unsigned when the tag is pushed, and this script
+// downloads it and signs the files the updater runs here. Only a Windows x64
+// setup built here (--build-windows, --windows-only) needs Windows.
 //
 // The release's files carry no version in their names (UwURDP-windows-x64-setup.exe,
 // UwURDP-linux-arm64.deb, …), so a link to the newest one never changes.
@@ -57,8 +66,19 @@ const fail = (message) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let token; // GitHub token for the API, looked up once
-const build = !process.argv.includes('--no-build');
+const noBuild = process.argv.includes('--no-build');
 const windowsOnly = process.argv.includes('--windows-only');
+const dryRun = process.argv.includes('--dry-run');
+// The Windows x64 setup from this machine rather than from CI.
+const localWindows = windowsOnly || noBuild || process.argv.includes('--build-windows');
+const build = localWindows && !noBuild;
+// What a real release insists on and a dry run only reports: the tag, the
+// release notes, a version not released yet.
+const insist = (ok, message) => {
+  if (ok) return;
+  if (!dryRun) fail(message);
+  console.log(`  (dry run, ignored) ${message}`);
+};
 const conf = JSON.parse(readFileSync(join(root, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8'));
 const version = conf.version;
 const tag = `v${version}`;
@@ -68,7 +88,7 @@ const windowsSetup = join(installers, windowsName);
 
 /**
  * What the release carries: each file under its published name, the CI
- * artifact it comes from (none: built here), and for the ones an installed app
+ * artifact it comes from (none: from this machine), and for the ones an installed app
  * updates itself with, `sign`: the feed's platform key → the versioned name the
  * signature has to carry. Those names are what installed apps check
  * (`setup_name` in apps/desktop/src-tauri/src/updates.rs); never change one,
@@ -89,7 +109,7 @@ const linux = (arch, rust) => [
 ];
 const PLATFORMS = [
   {
-    artifact: null,
+    artifact: localWindows ? null : 'installers-windows-x64',
     file: windowsName,
     sign: { 'windows-x86_64': `UwURDP-Setup-${version}.exe` },
   },
@@ -116,34 +136,44 @@ const PLATFORMS = [
     file: 'UwURDP-update-linux-x64.AppImage',
     sign: { 'linux-x86_64': `UwURDP-Setup-${version}-linux-x64.AppImage` },
   },
-].filter((entry) => !windowsOnly || entry.artifact === null);
+].filter((entry) => !windowsOnly || entry.file === windowsName);
 
 console.log(`\n▸ Checking UwURDP ${version}`);
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(version)) fail(`Unexpected version ${version}`);
-if (git(['status', '--porcelain', '--untracked-files=no'])) {
-  fail('The working tree has uncommitted changes.');
-}
+insist(
+  !git(['status', '--porcelain', '--untracked-files=no']),
+  'The working tree has uncommitted changes.',
+);
 const head = git(['rev-parse', 'HEAD']);
 let tagged = '';
 try {
   tagged = git(['rev-parse', `${tag}^{commit}`]);
 } catch {
-  fail(`Tag ${tag} is missing. Tag the release commit and push the tag first.`);
+  // Reported just below.
 }
-if (tagged !== head) fail(`HEAD isn't ${tag}. Check out the tag first.`);
-const pushed = git(['ls-remote', '--tags', 'origin', `refs/tags/${tag}`]).split(/\s/)[0];
-if (pushed !== git(['rev-parse', `refs/tags/${tag}`])) fail(`Push ${tag} first.`);
+if (!tagged) {
+  insist(false, `Tag ${tag} is missing. Tag the release commit and push the tag first.`);
+} else {
+  insist(tagged === head, `HEAD isn't ${tag}. Check out the tag first.`);
+  const pushed = git(['ls-remote', '--tags', 'origin', `refs/tags/${tag}`]).split(/\s/)[0];
+  insist(pushed === git(['rev-parse', `refs/tags/${tag}`]), `Push ${tag} first.`);
+}
 if (!ghToken()) fail('Sign in to the GitHub CLI first (gh auth login).');
-if (await github(`releases/tags/${tag}`)) fail(`${tag} is already released.`);
+insist(!(await github(`releases/tags/${tag}`)), `${tag} is already released.`);
 const notesFile = join(root, 'release-notes', `${version}.json`);
-if (!existsSync(notesFile)) fail(`release-notes/${version}.json is missing.`);
-const notes = JSON.parse(readFileSync(notesFile, 'utf8'));
-if (typeof notes.de !== 'string' || typeof notes.en !== 'string') {
-  fail('The release notes need de and en.');
+let notes = { de: '(Versionshinweise fehlen)', en: '(release notes missing)' };
+if (existsSync(notesFile)) {
+  notes = JSON.parse(readFileSync(notesFile, 'utf8'));
+  if (typeof notes.de !== 'string' || typeof notes.en !== 'string') {
+    fail('The release notes need de and en.');
+  }
+} else {
+  insist(false, `release-notes/${version}.json is missing.`);
 }
 const key = signingKey();
 
 if (build) {
+  if (process.platform !== 'win32') fail('Building the Windows setup needs Windows.');
   console.log('\n▸ Building the Windows setup');
   // Without the key: the build runs third-party build scripts.
   const env = { ...process.env };
@@ -154,17 +184,22 @@ if (build) {
     stdio: 'inherit',
     env,
   });
-} else if (!existsSync(windowsSetup)) {
+} else if (localWindows && !existsSync(windowsSetup)) {
   fail(`${windowsSetup} is missing. Run without --no-build.`);
-} else if (statSync(windowsSetup).mtimeMs < Number(git(['log', '-1', '--format=%ct'])) * 1000) {
+} else if (
+  localWindows &&
+  statSync(windowsSetup).mtimeMs < Number(git(['log', '-1', '--format=%ct'])) * 1000
+) {
   fail('The setup in target/installers is older than the release commit. Run without --no-build.');
 }
 
 const work = mkdtempSync(join(tmpdir(), 'uwurdp-release-'));
 try {
-  const files = new Map([[windowsName, windowsSetup]]);
+  const files = new Map(localWindows ? [[windowsName, windowsSetup]] : []);
   if (!windowsOnly) {
-    console.log('\n▸ Fetching what CI built for this tag: Windows ARM, macOS, Linux');
+    console.log(
+      `\n▸ Fetching what CI built for this ${dryRun ? 'commit' : 'tag'}: ${localWindows ? '' : 'Windows x64, '}Windows ARM, macOS, Linux`,
+    );
     const ci = join(work, 'ci');
     const run = await ciRun(head);
     execFileSync('gh', ['run', 'download', String(run), '--repo', REPOSITORY, '--dir', ci], {
@@ -217,6 +252,12 @@ try {
   );
   writeFileSync(sums, `${lines.join('\n')}\n`);
   files.set('SHA256SUMS.txt', sums);
+
+  if (dryRun) {
+    dryRunReport(files, signed, readFileSync(sums, 'utf8'));
+    rmSync(work, { recursive: true, force: true });
+    process.exit(0);
+  }
 
   console.log(`\n▸ Creating the release on ${REPOSITORY}`);
   const notesPath = join(work, 'notes.md');
@@ -305,6 +346,25 @@ try {
   if (!windowsOnly) aur(readFileSync(sums, 'utf8'));
 } finally {
   rmSync(work, { recursive: true, force: true });
+}
+
+/**
+ * What a release would publish, without publishing anything: the files, the
+ * feed entries and the AUR package, each built the way the release builds it.
+ */
+function dryRunReport(files, signed, sums) {
+  console.log('\n▸ Dry run: the release would carry');
+  for (const [name, path] of files) {
+    console.log(`  ${name} (${(statSync(path).size / 1024 / 1024).toFixed(1)} MiB)`);
+  }
+  const feeds = releaseFeeds({ version, notes, setups: signed });
+  for (const [name, feed] of Object.entries(feeds)) {
+    console.log(`  ${FEED_BRANCH}/${name}: ${Object.keys(feed.platforms).join(', ')}`);
+  }
+  releaseBody(false);
+  const packaged = aurFiles({ version, sums });
+  console.log(`  AUR uwurdp-bin: ${Object.keys(packaged).join(', ')}`);
+  console.log(`\n✧ Dry run of UwURDP ${version} passed. Nothing was published.`);
 }
 
 /** The release page: what changed, then which file is for which system. */
@@ -452,12 +512,12 @@ async function ciRun(sha) {
     const running = runs.find((run) => run.status !== 'completed');
     if (!running && runs.length > 0 && Date.now() - started > 60_000) {
       fail(
-        `The Installers run for ${sha.slice(0, 7)} failed. Fix it, or release with --windows-only.`,
+        `The Installers run for ${sha.slice(0, 7)} failed. Fix it, or release Windows x64 alone with --windows-only (on Windows).`,
       );
     }
     if (Date.now() - started > 90 * 60_000) fail('Gave up waiting for CI after 90 minutes.');
     if (!announced) {
-      console.log('  waiting for CI to finish the macOS and Linux builds…');
+      console.log('  waiting for CI to finish the builds…');
       announced = true;
     }
     await sleep(30_000);

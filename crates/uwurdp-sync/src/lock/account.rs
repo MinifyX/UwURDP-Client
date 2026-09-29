@@ -214,6 +214,10 @@ pub fn sign_in(request: &SignIn<'_>, device: LockDevice) -> Result<SignInOutcome
             "email and master password are both needed".into(),
         ));
     }
+    // Before the key derivation: the server would refuse the login anyway.
+    if lock.app_sync_switched_off() {
+        return Err(TransportError::SwitchedOff.into());
+    }
     let kdf = lock.prelogin(email)?;
     refuse_weaker_kdf(kdf, &request.known)?;
     let master_key = crypto::master_key(request.password, email, kdf)?;
@@ -236,6 +240,10 @@ pub fn sign_in(request: &SignIn<'_>, device: LockDevice) -> Result<SignInOutcome
                 return Ok(SignInOutcome::TwoFactor { methods, message });
             }
             if matches!(status, 400 | 401) {
+                // Switched off just now: suite logins are `invalid_client`.
+                if lock.app_sync_switched_off() {
+                    return Err(TransportError::SwitchedOff.into());
+                }
                 return Err(LockError::WrongPassword(refusal_message(
                     &refusal,
                     "Email or master password is wrong.",

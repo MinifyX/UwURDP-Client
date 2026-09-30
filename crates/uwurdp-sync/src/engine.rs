@@ -53,6 +53,11 @@ pub enum TransportError {
     /// new key. UwULock only.
     #[error("sign in again: {0}")]
     SignIn(String),
+    /// The UwULock Server has app sync (its suite vault) switched off. The
+    /// session and the data are fine and stay; syncing waits until an admin
+    /// switches it on again. UwULock only.
+    #[error("this UwULock server has app sync switched off")]
+    SwitchedOff,
 }
 
 #[derive(Debug, thiserror::Error)]

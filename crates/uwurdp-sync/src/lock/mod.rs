@@ -39,6 +39,13 @@ pub use account::{
     TwoFactorAnswer, TwoFactorMethod,
 };
 pub use api::{normalize_server, Lock, LockDevice};
+
+/// Whether the UwULock Server at `server_url` has app sync switched off, as
+/// its `/uwu/v1/info` says — for the settings to say so before anyone types a
+/// password. `false` for a server that says nothing about it.
+pub fn app_sync_switched_off(server_url: &str, device: LockDevice) -> Result<bool, TransportError> {
+    Ok(Lock::connect(server_url, device)?.app_sync_switched_off())
+}
 pub use moving::{copy_to_lock, Difference, MoveReport, Problem};
 
 use crate::engine::TransportError;

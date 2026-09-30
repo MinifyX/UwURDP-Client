@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { locale, t, useLanguage } from '../lib/i18n';
-import { asSyncFailure, type SyncFailure, type SyncStatus } from '../lib/sync';
+import { asSyncFailure, lockAppSyncOff, type SyncFailure, type SyncStatus } from '../lib/sync';
 import { Modal } from './Modal';
 
 // What both ways of syncing show: UwUSync's pages in SyncSettings, UwULock's
@@ -23,6 +23,8 @@ export function failureText(failure: SyncFailure): string {
       return t('Die Kopplung hat nicht geklappt: {reason}', { reason: failure.message });
     case 'sign-in':
       return t('Die Anmeldung bei UwULock ist abgelaufen. Melde dich neu an.');
+    case 'switched-off':
+      return APP_SYNC_OFF();
     case 'login-refused':
       return t('UwULock lehnt die Anmeldung ab: {reason}', { reason: failure.message });
     case 'keys-lost':
@@ -50,6 +52,35 @@ export function failureText(failure: SyncFailure): string {
     default:
       return failure.message;
   }
+}
+
+/** What UwURDP says when the UwULock Server has app sync switched off. */
+export const APP_SYNC_OFF = () =>
+  t(
+    'Dieser UwULock-Server hat den App-Sync abgeschaltet. Wer den Server betreibt, kann ihn im Admin-Portal unter Funktionen wieder einschalten.',
+  );
+
+/**
+ * Whether the UwULock Server at `server` has app sync switched off, asked a
+ * moment after the address stops changing. False while nothing is known.
+ */
+export function useAppSyncOff(server: string | null): boolean {
+  const [off, setOff] = useState<{ server: string; off: boolean } | null>(null);
+  const address = server?.trim() ?? '';
+  useEffect(() => {
+    if (!address) return;
+    let current = true;
+    const timer = window.setTimeout(() => {
+      void lockAppSyncOff(address)
+        .then((found) => current && setOff({ server: address, off: found }))
+        .catch(() => undefined);
+    }, 400);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [address]);
+  return off !== null && off.server === address && off.off;
 }
 
 /** "vor 3 Minuten", in the app's language. */

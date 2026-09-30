@@ -510,6 +510,18 @@ asks, and only a sign-in the person agreed to takes the new space and pushes
 this device's records into it. A space the device moved on from is refused
 outright.
 
+**App sync switched off.** An admin can switch the suite vault off on the
+server (feature switch `suite`, UwULock Server 0.6.0-beta.2): its endpoints then
+answer 404 `feature_off`, suite logins `invalid_client`, refreshes
+`invalid_grant`, and the realtime channel closes with 4403. UwURDP tells this
+apart from an ended session by `/uwu/v1/info`'s `switches.suite`, asked
+before a sign-in (so no password hash goes out) and when a refresh is refused:
+it keeps the refresh token, says "this UwULock server has app sync switched
+off" in Settings → Sync, disables sign-in and the move for that server, and
+looks again every five minutes instead of retrying. Switched on again, it
+syncs what waited here without a new sign-in and opens the realtime channel
+again. A server without `switches` is taken as before.
+
 **The realtime channel** is one WebSocket that says _that_ the space changed,
 never what; the worker then runs a pass. It renews its token on the same
 connection before it runs out, notices a dead connection by the missing

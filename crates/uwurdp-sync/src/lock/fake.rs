@@ -71,6 +71,10 @@ pub struct Account {
     pub refuse_next_push: Option<&'static str>,
     /// Every pull says each record is newer than it is.
     pub forge_pulls: bool,
+    /// The admin switched the suite vault off (feature switch `suite`).
+    pub suite_off: bool,
+    /// `/uwu/v1/info` has `switches`, as from UwULock Server 0.6.0-beta.2.
+    pub switches: bool,
 }
 
 pub struct Fake {
@@ -117,6 +121,8 @@ impl Fake {
             rekey_at_next_push: false,
             refuse_next_push: None,
             forge_pulls: false,
+            suite_off: false,
+            switches: true,
         }));
         let records = Arc::new(MemoryServer::new());
         let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
@@ -155,6 +161,14 @@ impl Fake {
         let mut account = self.account.lock();
         account.access.clear();
         account.refresh.clear();
+    }
+
+    /// The admin switches the suite vault off (`true`) or on again, as
+    /// UwULock Server does it: logins `invalid_client`, refreshes
+    /// `invalid_grant`, the spaces 404 `feature_off`, the realtime channel
+    /// closed with 4403 — and nothing forgotten.
+    pub fn switch_suite(&self, off: bool) {
+        self.account.lock().suite_off = off;
     }
 
     /// What an official client's rotation leaves behind.
@@ -260,7 +274,26 @@ fn handle(mut request: tiny_http::Request, account: &Mutex<Account>, records: &M
         ),
         ("POST", "/identity/connect/token") => token(request, &form(&body), account),
         ("POST", "/api/two-factor/send-email-login") => respond(request, 200, Value::Null),
+        ("GET", "/uwu/v1/info") => {
+            let account = account.lock();
+            let mut body = json!({
+                "object": "info", "name": "UwULock Server", "version": "0.6.0",
+                "features": if account.suite_off { json!(["vault"]) } else { json!(["vault", "suite"]) },
+            });
+            if account.switches {
+                body["switches"] = json!({ "suite": !account.suite_off, "families": true });
+            }
+            drop(account);
+            respond(request, 200, body)
+        }
+        ("GET", "/uwu/v1/realtime") if account.lock().suite_off => realtime_closed(request, 4403),
         ("GET", "/uwu/v1/realtime") => realtime(request, account),
+        _ if path.starts_with("/uwu/v1/suite/") && account.lock().suite_off => error(
+            request,
+            404,
+            "feature_off",
+            "This is switched off on this server.",
+        ),
         _ if path.starts_with("/uwu/v1/") => {
             let bearer = header(&request, "Authorization");
             let authorised = {
@@ -284,6 +317,10 @@ fn token(request: tiny_http::Request, form: &HashMap<String, String>, account: &
     let field = |name: &str| form.get(name).cloned().unwrap_or_default();
     match field("grant_type").as_str() {
         "refresh_token" => {
+            // Switched off: refused, but not used up.
+            if account.suite_off {
+                return respond(request, 400, json!({ "error": "invalid_grant" }));
+            }
             // A refresh token works once.
             if field("client_id") != "uwurdp" || !account.refresh.remove(&field("refresh_token")) {
                 return respond(request, 400, json!({ "error": "invalid_grant" }));
@@ -293,7 +330,10 @@ fn token(request: tiny_http::Request, form: &HashMap<String, String>, account: &
         }
         "password" => {
             account.logins.push((field("scope"), field("client_id")));
-            if field("scope") != "uwu.suite offline_access" || field("client_id") != "uwurdp" {
+            if account.suite_off
+                || field("scope") != "uwu.suite offline_access"
+                || field("client_id") != "uwurdp"
+            {
                 return respond(request, 400, json!({ "error": "invalid_client" }));
             }
             if field("username") != EMAIL || field("password") != account.hash {
@@ -501,15 +541,27 @@ fn api(
 
 /// The realtime channel: the handshake by hand, then whatever the test's
 /// script says.
+/// Takes the WebSocket and closes it at once with `code`.
+fn realtime_closed(request: tiny_http::Request, code: u16) {
+    let (sender, script) = mpsc::channel();
+    sender.send(Live::Close(code)).unwrap();
+    drop(sender);
+    serve_live(request, Some(script));
+}
+
 fn realtime(request: tiny_http::Request, account: &Mutex<Account>) {
-    let key = header(&request, "Sec-WebSocket-Key").unwrap_or_default();
-    let protocol = header(&request, "Sec-WebSocket-Protocol").unwrap_or_default();
     let script = {
         let mut account = account.lock();
         let script = account.live.take();
         account.live = account.live_next.take();
         script
     };
+    serve_live(request, script);
+}
+
+fn serve_live(request: tiny_http::Request, script: Option<mpsc::Receiver<Live>>) {
+    let key = header(&request, "Sec-WebSocket-Key").unwrap_or_default();
+    let protocol = header(&request, "Sec-WebSocket-Protocol").unwrap_or_default();
     let Some(script) = script else {
         return error(request, 404, "not_found", "Not found.");
     };

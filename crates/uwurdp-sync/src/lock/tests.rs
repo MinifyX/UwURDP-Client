@@ -971,3 +971,77 @@ fn the_channel_takes_no_message_larger_than_the_contract_allows() {
     assert_eq!(runner.join().unwrap(), live::Ended::Retry(Duration::ZERO));
     assert!(events.try_recv().is_err());
 }
+
+// ── App sync switched off on the server ──────────────────────────────────
+
+#[test]
+fn app_sync_switched_off_waits_and_keeps_the_session_for_when_it_is_on_again() {
+    let fake = Fake::start();
+    let store = Store::open_in_memory().unwrap();
+    let lock = joined(&fake, &store);
+    store.save_host(draft("prox-1", "192.0.2.10")).unwrap();
+
+    fake.switch_suite(true);
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::SwitchedOff))
+    ));
+    // Its access token ran out meanwhile: the refused refresh is no ended
+    // session, and the refresh token stays.
+    fake.expire_access();
+    assert!(matches!(
+        sync_once(&store, &lock),
+        Err(SyncError::Transport(TransportError::SwitchedOff))
+    ));
+    assert!(lock.refresh_token().is_some());
+    assert!(fake.records.is_empty());
+
+    // On again: the edit made meanwhile goes out, without a new sign-in.
+    fake.switch_suite(false);
+    let report = sync_once(&store, &lock).unwrap();
+    assert!(report.pushed > 0);
+    assert!(!fake.records.is_empty());
+}
+
+#[test]
+fn signing_in_or_moving_to_a_server_with_app_sync_off_says_so_before_anything_is_sent() {
+    let fake = Fake::start();
+    fake.switch_suite(true);
+    assert!(app_sync_switched_off(&fake.url, device()).unwrap());
+    assert!(matches!(
+        sign_in(&request(&fake), device()),
+        Err(LockError::Transport(TransportError::SwitchedOff))
+    ));
+    // Asked before the key derivation: no password hash went out.
+    assert!(!fake
+        .requests()
+        .iter()
+        .any(|r| r.ends_with("/connect/token") || r.ends_with("/prelogin")));
+
+    // Switched off between the sign-in and the copy: the move stops, and
+    // the device stays on UwUSync.
+    fake.switch_suite(false);
+    assert!(!app_sync_switched_off(&fake.url, device()).unwrap());
+    let (store, uwusync) = on_uwusync();
+    let signed = signed_in(&fake);
+    fake.switch_suite(true);
+    assert!(matches!(
+        copy_to_lock(&store, &uwusync, &signed.lock, &signed.space),
+        Err(LockError::Transport(TransportError::SwitchedOff))
+    ));
+
+    // A server before feature switches says nothing about it.
+    fake.account.lock().switches = false;
+    assert!(!app_sync_switched_off(&fake.url, device()).unwrap());
+}
+
+#[test]
+fn the_channel_of_a_switched_off_app_sync_is_refused_not_retried() {
+    let fake = Fake::start();
+    let signed = signed_in(&fake);
+    fake.switch_suite(true);
+    assert_eq!(
+        live::run(&signed.lock, &|| true, &mut |_| {}),
+        live::Ended::Refused
+    );
+}

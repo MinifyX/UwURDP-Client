@@ -151,6 +151,10 @@ stopped halfway. Afterwards UwURDP offers to remove the device from UwUSync;
 once the last device moved, the UwUSync account can go. How it works:
 [architecture](docs/architecture.md#through-uwulock).
 
+If the admin of your UwULock Server switches app sync off, UwURDP says so
+under Settings → Sync and keeps your changes on this device until it is on
+again; signing in and the move wait for it too.
+
 ## The sync server
 
 UwURDP doesn't have a server of its own. It speaks the wire protocol of

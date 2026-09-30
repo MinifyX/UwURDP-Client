@@ -41,6 +41,11 @@ pub(crate) const SPACE_CHANGED: &str = "space_changed";
 /// UwULock's code for a record id that belongs to another space or account
 /// (409): about that record, not about the space.
 pub(crate) const EXISTS: &str = "exists";
+/// UwULock's code for every endpoint of a feature an admin switched off
+/// (404): for a suite app, the suite vault.
+pub(crate) const FEATURE_OFF: &str = "feature_off";
+/// The suite vault's feature switch in `/uwu/v1/info`'s `switches`.
+const SUITE_SWITCH: &str = "suite";
 
 /// This install, as the server lists it among the account's devices.
 #[derive(Debug, Clone)]
@@ -146,7 +151,14 @@ pub(crate) struct Refusal {
 }
 
 impl Refusal {
+    fn switched_off(&self) -> bool {
+        self.status == 404 && self.code.as_deref() == Some(FEATURE_OFF)
+    }
+
     fn into_transport(self) -> TransportError {
+        if self.switched_off() {
+            return TransportError::SwitchedOff;
+        }
         match self.status {
             401 => TransportError::SignIn(self.message),
             _ => TransportError::Refused(match self.code {
@@ -372,6 +384,20 @@ impl Lock {
             .header("Device-Type", self.device.kind.to_string())
     }
 
+    /// Whether the server says in `/uwu/v1/info` that its app sync (the
+    /// suite vault) is switched off. Only a plain `false` counts: a server
+    /// before feature switches, one that doesn't answer, or an answer that
+    /// makes no sense say nothing, and syncing goes on as it would.
+    pub fn app_sync_switched_off(&self) -> bool {
+        let Ok(response) = self.request(reqwest::Method::GET, "/uwu/v1/info").send() else {
+            return false;
+        };
+        if !response.status().is_success() {
+            return false;
+        }
+        read_limited(response, MAX_ANSWER_BYTES).is_ok_and(|body| suite_switched_off(&body))
+    }
+
     // ── Logging in ─────────────────────────────────────────────────────────
 
     /// How the master key is derived for this email.
@@ -562,6 +588,11 @@ impl Lock {
             return Ok(());
         }
         if matches!(status, 400 | 401) {
+            // With app sync switched off the server refuses every refresh.
+            // That ends nothing: the tokens stay for when it is on again.
+            if self.app_sync_switched_off() {
+                return Err(TransportError::SwitchedOff);
+            }
             // `invalid_grant`: run out, revoked, device removed, password
             // changed. Only the master password helps now.
             *self.tokens.lock() = None;
@@ -742,6 +773,7 @@ impl Lock {
     ) -> Result<T, TransportError> {
         match self.call(build, MAX_PAGE_BYTES)? {
             Call::Done(value) => Ok(value),
+            Call::Refused(refusal) if refusal.switched_off() => Err(TransportError::SwitchedOff),
             Call::Refused(refusal) if refusal.status == 404 => {
                 self.check_space(space)?;
                 Err(refusal.into_transport())
@@ -854,6 +886,14 @@ fn names_another_space(refusal: &Refusal) -> bool {
         }
 }
 
+/// `/uwu/v1/info` with `"switches": { "suite": false }`.
+fn suite_switched_off(body: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|info| info.get("switches")?.get(SUITE_SWITCH)?.as_bool())
+        == Some(false)
+}
+
 fn unreachable(error: reqwest::Error) -> TransportError {
     TransportError::Unreachable(error.to_string())
 }
@@ -903,9 +943,12 @@ fn refusal(status: u16, body: &[u8]) -> Refusal {
         .or_else(|| text(&value["error_description"]))
         .or_else(|| text(&value["error"]))
         .unwrap_or_else(|| format!("HTTP {status}"));
+    // UwULock puts its reason in `code`; `error` carries it in a bare answer.
+    let code =
+        text(&value["code"]).or_else(|| text(&value["error"]).filter(|error| error == FEATURE_OFF));
     Refusal {
         status,
-        code: text(&value["code"]),
+        code,
         message,
     }
 }
@@ -1008,6 +1051,31 @@ mod tests {
         };
         assert!(unknown.into_envelope(envelope.vault_id).is_none());
         assert_eq!(decode("-_--").unwrap(), vec![0xfb, 0xff, 0xbe]);
+    }
+
+    #[test]
+    fn a_switched_off_suite_vault_is_told_apart() {
+        let off = refusal(
+            404,
+            br#"{"object":"error","message":"This is switched off on this server.","code":"feature_off"}"#,
+        );
+        assert!(matches!(off.into_transport(), TransportError::SwitchedOff));
+        let bare = refusal(404, br#"{"error":"feature_off"}"#);
+        assert!(matches!(bare.into_transport(), TransportError::SwitchedOff));
+        // Any other 404 is not.
+        let gone = refusal(404, br#"{"message":"Not found.","code":"not_found"}"#);
+        assert!(matches!(gone.into_transport(), TransportError::Refused(_)));
+
+        assert!(suite_switched_off(
+            br#"{"name":"UwULock Server","switches":{"suite":false,"families":true}}"#
+        ));
+        assert!(!suite_switched_off(br#"{"switches":{"suite":true}}"#));
+        // A server before feature switches, or nonsense, says nothing.
+        assert!(!suite_switched_off(
+            br#"{"name":"UwULock Server","features":["suite"]}"#
+        ));
+        assert!(!suite_switched_off(br#"{"switches":{"suite":"no"}}"#));
+        assert!(!suite_switched_off(b"not json"));
     }
 
     #[test]

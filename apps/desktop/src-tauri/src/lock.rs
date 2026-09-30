@@ -38,6 +38,8 @@ pub(crate) struct LockStatus {
     signed_in_ms: Option<u64>,
     /// A move from UwUSync began and did not finish.
     move_started_ms: Option<u64>,
+    /// The server has app sync switched off; syncing waits, the session stays.
+    switched_off: bool,
     /// The move is done, and this device may still be removed from UwUSync.
     left_behind: bool,
 }
@@ -52,6 +54,7 @@ impl LockStatus {
             live_refused: sync.live_refused.load(Ordering::SeqCst),
             signed_in_ms: state.signed_in_ms,
             move_started_ms: state.move_started_ms,
+            switched_off: state.active && sync.switched_off.load(Ordering::SeqCst),
             left_behind: sync.left_behind.lock().is_some(),
         }
     }
@@ -332,6 +335,17 @@ pub(crate) async fn lock_sign_in(
     .await
 }
 
+/// Whether the UwULock Server at `server_url` has app sync switched off, for
+/// the forms to say so before anyone types a password. A server that doesn't
+/// say, or can't be reached, is not switched off as far as the page knows.
+#[tauri::command]
+pub(crate) async fn lock_app_sync_off(app: AppHandle, server_url: String) -> SyncResult<bool> {
+    blocking(&app, move |_, store, _| {
+        Ok(lock::app_sync_switched_off(&server_url, device(store)?).unwrap_or(false))
+    })
+    .await
+}
+
 /// Ask UwULock to email a two-step code.
 #[tauri::command]
 pub(crate) async fn lock_send_email_code(
@@ -527,7 +541,8 @@ fn listen(app: AppHandle) {
             .map(|s| s.active && s.signed_in)
             .unwrap_or(false)
             && matches!(store.vault_status(), Ok(VaultStatus::Unlocked))
-            && !sync.live_refused.load(Ordering::SeqCst);
+            && !sync.live_refused.load(Ordering::SeqCst)
+            && !sync.switched_off.load(Ordering::SeqCst);
         if !wanted {
             std::thread::sleep(IDLE);
             continue;

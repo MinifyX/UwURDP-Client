@@ -57,6 +57,9 @@ Done, in 0.1.0-beta.1:
   the account's `rdp` space, changes arrive over UwULock's realtime channel,
   and a device on UwUSync moves over in one click, checked before it switches.
   See [architecture](architecture.md#through-uwulock).
+- **0.1.0-beta.8**: the UwULock sync reads with limits, checks every entry it
+  moved, trusts the system's certificate authorities, and tells a server with
+  app sync switched off apart from a broken one.
 - **The installer with Nyu** and signed updates on Windows (x64 and ARM),
   macOS and Linux.
 

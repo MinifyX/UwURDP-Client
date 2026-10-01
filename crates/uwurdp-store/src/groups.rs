@@ -8,7 +8,9 @@
 //!
 //! A group can hand a login to its hosts — every host without a login of its
 //! own connects with it, like RDCMan's "inherit from parent". See
-//! [`Store::set_group_login`].
+//! [`Store::set_group_login`]. Drive redirection is handed down the same
+//! way: a host whose settings say nothing about it uses its group's (see
+//! [`Store::host_drives`]).
 //!
 //! Every move is one call — a host onto a group, between two hosts, into the
 //! other workspace — and renumbers what it touched in one transaction. Only
@@ -16,7 +18,8 @@
 //! into a sync of the whole list.
 
 use crate::hosts::{
-    ensure_group, group_id, group_name, read_host, HostRecord, PasswordChange, Workspace,
+    ensure_group, group_id, group_name, normalize_drives, rdp_from_text, read_host, HostRecord,
+    PasswordChange, Workspace,
 };
 use crate::logins::{apply_login, read_login, release_login, LoginChange};
 use crate::vault::truncate_wal;
@@ -24,6 +27,7 @@ use crate::{tick, vault_id, Result, Store, StoreError};
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::Serialize;
 use uuid::Uuid;
+use uwurdp_proto::DriveRedirection;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +39,17 @@ pub struct GroupRecord {
     pub username: String,
     pub domain: String,
     pub has_password: bool,
+    /// The drive redirection the group hands to its hosts; `None` is off.
+    pub drives: Option<DriveRedirection>,
+}
+
+/// A group's `drives` column, read leniently: what does not parse is none.
+pub(crate) fn drives_from_text(text: Option<String>) -> Option<DriveRedirection> {
+    text.and_then(|text| serde_json::from_str(&text).ok())
+}
+
+pub(crate) fn drives_to_text(drives: Option<&DriveRedirection>) -> Option<String> {
+    drives.and_then(|drives| serde_json::to_string(drives).ok())
 }
 
 fn required(name: &str) -> Result<String> {
@@ -58,7 +73,7 @@ impl Store {
     pub fn list_groups(&self) -> Result<Vec<GroupRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT workspace, name, position, identity_id FROM host_groups
+            "SELECT workspace, name, position, identity_id, drives FROM host_groups
               WHERE deleted = 0 AND name != ''
               ORDER BY workspace, position, lower(name)",
         )?;
@@ -70,12 +85,13 @@ impl Store {
                     row.get::<_, String>(1)?,
                     row.get::<_, i64>(2)?,
                     row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(stmt);
         rows.into_iter()
-            .map(|(workspace, name, position, identity)| {
+            .map(|(workspace, name, position, identity, drives)| {
                 let login = read_login(&conn, identity.as_deref())?;
                 Ok(GroupRecord {
                     workspace,
@@ -84,6 +100,7 @@ impl Store {
                     username: login.username,
                     domain: login.domain,
                     has_password: login.has_password,
+                    drives: drives_from_text(drives),
                 })
             })
             .collect()
@@ -114,7 +131,62 @@ impl Store {
             username: String::new(),
             domain: String::new(),
             has_password: false,
+            drives: None,
         })
+    }
+
+    /// Set the drive redirection a group hands to its hosts, or drop it with
+    /// `None`.
+    pub fn set_group_drives(
+        &self,
+        workspace: Workspace,
+        name: &str,
+        drives: Option<DriveRedirection>,
+    ) -> Result<()> {
+        let drives = drives.map(normalize_drives);
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        let Some(id) = group_id(&tx, workspace, name)? else {
+            return Err(unknown_group());
+        };
+        let clock = tick(&tx, self.device)?;
+        tx.execute(
+            "UPDATE host_groups
+                SET drives = ?2, rev = rev + 1,
+                    dirty = 1, hlc_wall_ms = ?3, hlc_counter = ?4, hlc_device = ?5
+              WHERE id = ?1",
+            params![
+                id,
+                drives_to_text(drives.as_ref()),
+                clock.wall_ms as i64,
+                clock.counter,
+                clock.device
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The drive redirection a host connects with: its own when its settings
+    /// have one, otherwise its group's, otherwise off.
+    pub fn host_drives(&self, host_id: Uuid) -> Result<DriveRedirection> {
+        let conn = self.conn.lock();
+        let row: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT h.rdp, g.drives FROM hosts h
+                   LEFT JOIN host_groups g ON g.id = h.group_id AND g.deleted = 0
+                  WHERE h.id = ?1 AND h.deleted = 0",
+                [host_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((rdp, group)) = row else {
+            return Err(StoreError::UnknownHost(host_id));
+        };
+        Ok(rdp_from_text(rdp)
+            .drives
+            .or_else(|| drives_from_text(group))
+            .unwrap_or_default())
     }
 
     /// Set the login a group hands to its hosts, or drop it with an empty
@@ -490,6 +562,70 @@ fn tombstone_group(tx: &Transaction, device: u32, id: &str) -> Result<()> {
 mod tests {
     use super::*;
     use crate::hosts::tests::draft;
+    use uwurdp_proto::SharedDrive;
+
+    fn shared(name: &str, path: &str) -> DriveRedirection {
+        DriveRedirection {
+            enabled: true,
+            drives: vec![SharedDrive {
+                name: name.into(),
+                path: path.into(),
+                ..SharedDrive::default()
+            }],
+            ..DriveRedirection::default()
+        }
+    }
+
+    #[test]
+    fn a_host_takes_its_groups_drives_unless_it_has_its_own() {
+        let store = store();
+        let inherits = add(&store, "web", Workspace::Business, Some("Clients"));
+        let own = add(&store, "db", Workspace::Business, Some("Clients"));
+        let alone = add(&store, "nas", Workspace::Business, None);
+
+        // Nothing anywhere: off.
+        assert!(!store.host_drives(inherits.id).unwrap().enabled);
+
+        store
+            .set_group_drives(
+                Workspace::Business,
+                "Clients",
+                Some(shared("", "/srv/share/")),
+            )
+            .unwrap();
+        let mut draft = draft("db", "db.lan");
+        draft.id = Some(own.id);
+        draft.workspace = Some(Workspace::Business);
+        draft.group_path = Some("Clients".into());
+        draft.rdp.drives = Some(DriveRedirection::default());
+        store.save_host(draft).unwrap();
+
+        let drives = store.host_drives(inherits.id).unwrap();
+        assert!(drives.enabled);
+        assert_eq!(drives.drives[0].name, "share", "named after the folder");
+        assert!(
+            !store.host_drives(own.id).unwrap().enabled,
+            "its own \"off\" wins over the group's"
+        );
+        assert!(!store.host_drives(alone.id).unwrap().enabled);
+
+        let group = store
+            .list_groups()
+            .unwrap()
+            .into_iter()
+            .find(|g| g.name == "Clients")
+            .unwrap();
+        assert_eq!(group.drives.unwrap().drives[0].path, "/srv/share/");
+
+        store
+            .set_group_drives(Workspace::Business, "Clients", None)
+            .unwrap();
+        assert!(!store.host_drives(inherits.id).unwrap().enabled);
+        assert!(matches!(
+            store.set_group_drives(Workspace::Business, "Nope", None),
+            Err(StoreError::Invalid { .. })
+        ));
+    }
 
     fn store() -> Store {
         Store::open_in_memory().unwrap()

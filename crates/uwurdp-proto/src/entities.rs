@@ -158,6 +158,11 @@ pub struct RdpSettings {
     pub graphics_pipeline: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gateway: Option<GatewaySettings>,
+    /// Local folders and drives the server sees as `\\tsclient\<name>`.
+    /// `None` takes the group's (see [`GroupPayload::drives`]), which is off
+    /// when the group has none either.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drives: Option<DriveRedirection>,
     #[serde(flatten, skip_serializing_if = "extra_is_empty")]
     pub extra: Extra,
 }
@@ -177,6 +182,7 @@ impl Default for RdpSettings {
             wallpaper: true,
             graphics_pipeline: true,
             gateway: None,
+            drives: None,
             extra: Extra::new(),
         }
     }
@@ -197,6 +203,35 @@ pub struct GatewaySettings {
     pub extra: Extra,
 }
 
+/// Drive redirection, like mstsc's "Local devices and resources → Drives".
+///
+/// The paths belong to one device: a host synced to another computer carries
+/// them along, and a folder that does not exist there is skipped when
+/// connecting. [`ALL_DRIVES`] as a path means every fixed drive of the
+/// computer that connects.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DriveRedirection {
+    pub enabled: bool,
+    pub drives: Vec<SharedDrive>,
+    #[serde(flatten, skip_serializing_if = "extra_is_empty")]
+    pub extra: Extra,
+}
+
+/// One shared folder or drive: what the server calls it and where it is here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SharedDrive {
+    pub name: String,
+    pub path: String,
+    #[serde(flatten, skip_serializing_if = "extra_is_empty")]
+    pub extra: Extra,
+}
+
+/// The path that stands for every fixed drive of the connecting computer, as
+/// mstsc's `drivestoredirect:s:*`.
+pub const ALL_DRIVES: &str = "*";
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupPayload {
     pub workspace: String,
@@ -205,6 +240,10 @@ pub struct GroupPayload {
     /// The login every host in the group uses unless it has its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity_id: Option<Uuid>,
+    /// The drive redirection every host in the group uses unless it has its
+    /// own; `None` is off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drives: Option<DriveRedirection>,
     #[serde(flatten, default, skip_serializing_if = "extra_is_empty")]
     pub extra: Extra,
 }
@@ -296,6 +335,7 @@ mod tests {
             name: "Homelab".into(),
             position: 0,
             identity_id: None,
+            drives: None,
             extra: Extra::new(),
         })
         .unwrap();
@@ -326,6 +366,31 @@ mod tests {
         assert!(rdp.clipboard, "missing fields take their defaults");
         let json = serde_json::to_value(&rdp).expect("serialise");
         assert_eq!(json["multimon"], true);
+    }
+
+    #[test]
+    fn drive_redirection_is_optional_and_round_trips() {
+        let json = serde_json::to_value(RdpSettings::default()).unwrap();
+        assert!(
+            json.get("drives").is_none(),
+            "inherit is written as nothing"
+        );
+
+        let written =
+            r#"{"drives":{"enabled":true,"drives":[{"name":"Data","path":"/srv/data"}]}}"#;
+        let rdp: RdpSettings = serde_json::from_str(written).unwrap();
+        let drives = rdp.drives.clone().expect("drives");
+        assert!(drives.enabled);
+        assert_eq!(drives.drives[0].name, "Data");
+        assert!(rdp.extra.is_empty());
+        assert_eq!(
+            serde_json::to_value(&rdp).unwrap()["drives"]["drives"][0]["path"],
+            "/srv/data"
+        );
+
+        let group: GroupPayload =
+            serde_json::from_str(r#"{"workspace":"private","name":"G","position":0}"#).unwrap();
+        assert_eq!(group.drives, None, "an older build's group has none");
     }
 
     #[test]

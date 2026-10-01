@@ -107,14 +107,15 @@ without it gets the old bitmap path, which current Windows serves slowly and
 tile by tile: the desktop builds up from the top left like an old CRT. With
 it, the server picks a codec per region and has cheap commands for the rest:
 
-| What the server sends              | Used for                           | Decoded by                       |
-| ---------------------------------- | ---------------------------------- | -------------------------------- |
-| AVC420 (H.264)                     | video, scrolling, the whole screen | Cisco's OpenH264, when installed |
-| RemoteFX Progressive               | photos, gradients                  | `ironrdp-graphics`               |
-| ClearCodec                         | text, UI (lossless)                | `ironrdp-graphics`               |
-| Planar, uncompressed               | everything else                    | `ironrdp-graphics`, ours         |
-| RemoteFX (CAVIDEO)                 | older servers                      | ours, on IronRDP's primitives    |
-| SolidFill, SurfaceToSurface, cache | fills, scrolling, repeats          | ours                             |
+| What the server sends              | Used for                         | Decoded by                       |
+| ---------------------------------- | -------------------------------- | -------------------------------- |
+| AVC444, AVC444v2 (H.264, 4:4:4)    | the whole screen, text in colour | Cisco's OpenH264, ours on top    |
+| AVC420 (H.264, 4:2:0)              | video, scrolling, older servers  | Cisco's OpenH264, when installed |
+| RemoteFX Progressive               | photos, gradients                | `ironrdp-graphics`               |
+| ClearCodec                         | text, UI (lossless)              | `ironrdp-graphics`               |
+| Planar, uncompressed               | everything else                  | `ironrdp-graphics`, ours         |
+| RemoteFX (CAVIDEO)                 | older servers                    | ours, on IronRDP's primitives    |
+| SolidFill, SurfaceToSurface, cache | fills, scrolling, repeats        | ours                             |
 
 `uwurdp-core::gfx` is the client side. IronRDP 0.17 only has the pipeline's
 PDUs (`ironrdp-egfx`); surfaces, the bitmap cache, composing and codec
@@ -148,10 +149,21 @@ DVC ──zgfx──▶ GfxChannel ──▶ Pipeline: surfaces ──(mapped)�
   ClearCodec's short V-bars in the wrong bit order, so text and UI tiles stay
   flat or black. Back to a release once one has IronRDP #1443, #1694, #1696,
   #1698 and #1728.
-- What we advertise: with H.264, version 8.1 with AVC420 (AVC444 would need a
-  second decoding pass); without, 10.7 with AVC off. Both with the small
-  cache. A host can turn the pipeline off (`graphicsPipeline` in its RDP
-  settings); the session then uses the old path.
+- What we advertise: with H.264, every version from 10.7 down to 8.1 with
+  AVC on, like mstsc; Windows then sends AVC444. Without, 10.7 with AVC off.
+  Both with the small cache. The server's CapabilitiesConfirm decides which
+  AVC codecs we take: 8.1 allows AVC420 only, 10.x both unless AVC is off.
+  A host can turn the pipeline off (`graphicsPipeline` in its RDP settings);
+  the session then uses the old path.
+- AVC420 gives every 2×2 block one colour, which smears coloured text and
+  ClearType edges. AVC444 sends two 4:2:0 pictures through one H.264
+  stream: the main view (luma, averaged chroma) and the auxiliary view
+  with the chroma samples the main view left out (v1 and v2 lay them out
+  differently, MS-RDPEGFX 3.3.8.3). `gfx::avc` puts them back together into
+  4:4:4 like FreeRDP's `prim_YUV.c`, inside the region rectangles, and
+  converts with BT.709 at full range. A server may send luma and chroma
+  apart (luma while something moves, the chroma once it stands still), so
+  each surface keeps its own decoder and the 4:4:4 picture built so far.
 - The log says which codecs a server used: the line `graphics pipeline done`
   with its counters is the first thing to look at when a server draws slowly.
 
@@ -175,9 +187,11 @@ UwURDP would have no such license. So:
 - The About page carries Cisco's conditions.
 
 The tests encode and decode with OpenH264 built from source (a dev-dependency,
-never in the app), and the dev server speaks the pipeline too (H.264 to
-clients that offer it, uncompressed otherwise), so the whole path runs in
-`cargo test` and in the end-to-end run.
+never in the app): `tests/support/avc444.rs` splits a picture into the two
+views like a server, and the unit tests decode them and check that thin
+coloured strokes keep their colour. The dev server speaks the pipeline too
+(AVC444 or AVC420 to clients that offer H.264, uncompressed otherwise), so
+the whole path runs in `cargo test` and in the end-to-end run.
 
 ## The frame path
 
@@ -234,6 +248,7 @@ One message per send, little-endian, the first byte says what it is:
 | 5    | `POINTER_HIDDEN`   | —                                                               |
 | 6    | `POINTER_POSITION` | u16 x, y                                                        |
 | 7    | `CLOSED`           | JSON `{"reason":"logoff\|disconnect\|server\|error","message"}` |
+| 8    | `CLIPBOARD`        | JSON `{"state":"downloading\|ready\|offered\|sent\|failed",…}`  |
 
 Pixels are straight RGBA, row-major, without padding — exactly what
 `ImageData` wants, so the page copies nothing. One `BITMAPS` message is capped
@@ -287,15 +302,52 @@ lesson in from the start:
   bar at the top.
 - A desktop that doesn't fit the tab is **scaled down** (smart sizing, the
   default) or **scrolled**.
+- At 1:1 the picture is pixel-exact: the size asked for is the tab's in
+  device pixels, rounded down (and the width even, as DisplayControl wants),
+  the canvas's CSS size is its pixel size over `devicePixelRatio`, and its
+  corner is moved onto the device pixel grid, since centring can leave it
+  half a pixel off and the browser would resample. It is only scaled when
+  it is more than a device pixel too large; scaled, it is smoothed.
 
 ## Clipboard and sound
 
-- **Clipboard:** plain text both ways over CLIPRDR. IronRDP's callbacks run in
-  the middle of processing a PDU, so they never touch the OS clipboard
-  themselves; a small worker thread owns it through `arboard`, notices local
-  changes once a second and when the window gets focus, and answers the
-  server's requests. A broken clipboard is logged and swallowed, never takes
-  the session down. Files through the clipboard aren't supported yet.
+- **Clipboard:** text, HTML and pictures (`CF_UNICODETEXT`, `HTML Format`,
+  `CF_DIB`) and files both ways over CLIPRDR (`uwurdp-core/src/clipboard/`),
+  all behind the host's one clipboard switch. IronRDP's callbacks run in the
+  middle of processing a PDU, so they never touch the OS clipboard or the
+  disk themselves; a worker thread per session owns both through `arboard`.
+  - **Local changes** are seen within a quarter second on Windows and macOS
+    (their change counters, `GetClipboardSequenceNumber` and `changeCount`,
+    are read without opening the clipboard) and within half a second on
+    Linux, which has none, so there text and file lists are compared; a
+    picture replacing a picture shows up when the window gets the focus. The
+    format list goes out only once the channel is ready (an empty one answers
+    the server's first request), and the data is read when the server asks
+    for it. Every request gets an answer, an error if need be.
+  - **No echo:** what the worker put on the local clipboard itself is
+    remembered as it reads back, so it never goes back to the server as a
+    "copy". This used to send the server's own text back on every focus.
+  - **The server's copies** are fetched right away, one request at a time
+    (the channel matches answers by order alone): text with its HTML, else a
+    picture. Text is read up to its first NUL with broken surrogates
+    replaced — Windows sends junk after the terminator, which used to fail
+    the whole paste.
+  - **Files from the server** (`FileGroupDescriptorW`) are locked, downloaded
+    in 1 MiB ranges, four in flight, into a folder of the session's own in
+    the temp directory, then put on the local clipboard as a file list
+    (`CF_HDROP`, file URLs, `text/uri-list`). Up to 256 MB that happens on
+    its own; a bigger set waits for the page's "Fetch". The folder goes when
+    the session does (or the next download replaces it).
+  - **Local files** — copied, or dropped on the desktop through Tauri's
+    drag-and-drop event — become a descriptor list, folders walked
+    recursively, and the server's size and range requests are served from
+    the files, never more than 8 MiB in memory; locked lists stay servable
+    after the clipboard moves on.
+
+  Downloads, the "paste with Ctrl+V" hint after a drop and failures reach the
+  page as `CLIPBOARD` messages. A broken clipboard is logged and swallowed,
+  never takes the session down.
+
 - **Sound:** RDPSND, played locally through `cpal` as PCM. Opus is off. The
   backend is ours (`uwurdp-core/src/audio.rs`), not `ironrdp-rdpsnd-native`'s:
   that one never starts its stream, so on Windows nothing played and every
@@ -338,6 +390,39 @@ UwURDP treats it the way SSH treats host keys: **trust on first use**.
   can't prove it holds nothing back (see manifests below), certificates that
   came from sync aren't trusted, and UwURDP asks again.
 
+## Drive redirection
+
+Local folders show up on the server under "This PC" and as
+`\\tsclient\<name>`, like mstsc's drives. RDPDR is IronRDP's
+`ironrdp-rdpdr`; the file system behind it is ours
+(`uwurdp-core/src/drive.rs`), because `ironrdp-rdpdr-native` only builds on
+Unix and takes the server's paths as they come.
+
+- **Confined to the shared folder.** A server path is split into names;
+  `..`, drive letters, stream names and anything with a separator of this
+  system in it are refused before a file is touched. What exists is then
+  canonicalised and has to be under the shared folder's canonical path, so a
+  symbolic link (or a Windows device name like `NUL`) out of it is refused like
+  `..`. An entry that links outside isn't listed.
+- **Server input never ends the session.** No panics on what the server
+  sends; a request IronRDP can't decode gets `STATUS_NOT_SUPPORTED` instead of
+  the error that would close the connection. Reads are capped at 1 MiB, open
+  files at 256, a listing at 100 000 entries.
+- Create, read, write, close, rename, delete (on close, as Windows does),
+  file and volume information, directory listings with `*`/`?`. Change
+  notifications stay pending, as in FreeRDP; byte-range locks are accepted and
+  not enforced.
+- **The sound channel comes along.** Windows only serves RDPDR to a client
+  that also announces RDPSND, so with sound off a silent one is announced.
+- **Device-local paths.** The list syncs like every other setting, but a path
+  belongs to the device that added it: a folder that isn't there is skipped
+  at connect time with a log line, the session goes on. `*` stands for every
+  fixed drive of the computer that connects (Windows; elsewhere it shares
+  nothing).
+
+A host has its own setting (off, or a list) or takes its group's, like the
+login. The default is off.
+
 ## Logins and inheritance
 
 A login is its own record — user, domain, and a password sealed in the vault —
@@ -370,7 +455,7 @@ used in RDCMan.
 
 ## Data model
 
-The SQLite schema is UwUSSH's V1–V6 plus one migration of its own, **V7**:
+The SQLite schema is UwUSSH's V1–V6 plus migrations of its own. **V7**:
 
 ```sql
 ALTER TABLE identities  ADD COLUMN domain TEXT NOT NULL DEFAULT '';
@@ -380,14 +465,24 @@ ALTER TABLE hosts       ADD COLUMN gateway_identity_id TEXT REFERENCES identitie
 ALTER TABLE host_groups ADD COLUMN identity_id TEXT REFERENCES identities (id);
 ```
 
+**V8** is UwULock's sync state. **V9** gives a group its drive redirection:
+
+```sql
+ALTER TABLE host_groups ADD COLUMN drives TEXT;          -- DriveRedirection as JSON, NULL = none
+```
+
+It also moves a `drives` an older build kept among a group's unknown fields
+into the column.
+
 The sync payloads grow the same way:
 
 - **HostPayload** gains `rdp: RdpSettings` — `display` (`fit`, `fixed`,
   `fullscreen`), `width`, `height`, `smartSizing`, `colorDepth`, `audio`
-  (`local`, `remote`, `off`), `clipboard`, `admin`, `nla`, `wallpaper`, and
-  `gateway { address, port, useHostLogin, bypassLocal }` — plus `comment` and
-  `gateway_identity_id`.
-- **GroupPayload** gains `identity_id`, the group login.
+  (`local`, `remote`, `off`), `clipboard`, `admin`, `nla`, `wallpaper`,
+  `gateway { address, port, useHostLogin, bypassLocal }` and
+  `drives { enabled, drives: [{ name, path }] }` (absent: the group's) — plus
+  `comment` and `gateway_identity_id`.
+- **GroupPayload** gains `identity_id`, the group login, and `drives`.
 - **IdentityPayload** gains `domain`.
 
 Every field has a default, and modes are strings rather than enums, so a record
@@ -566,7 +661,8 @@ Credentials are deduplicated: a profile forty hosts share arrives once.
   `.rdg`) and Local scope (in `RDCMan.settings`), with RDCMan's inheritance
   resolved down the tree.
 - **Settings:** display size, colour depth, console session, sound,
-  clipboard, gateway, and comments. Settings UwURDP has no field for are
+  clipboard, drives (`redirectDrives` shares every fixed drive, `*`), gateway,
+  and comments. Settings UwURDP has no field for are
   appended to the host's comment rather than lost. Smart groups are skipped.
 - **Passwords** are DPAPI-decrypted, which only works on the Windows account
   that saved them. Files encrypted with a certificate keep their users and
@@ -577,15 +673,18 @@ Credentials are deduplicated: a profile forty hosts share arrives once.
 ### mstsc `.rdp`
 
 UTF-16 or UTF-8, several at once. `password 51:b:…` is DPAPI too, with the
-same one-account rule.
+same one-account rule. `drivestoredirect:s:` maps `*` and drive letters
+(`C:\`), but switched off: an `.rdp` file can come from anyone, and one with
+`*` would hand a stranger every drive. `DynamicDrives` and names that aren't a
+drive letter are left out.
 
 ### UwURDP's own export
 
-Everything — hosts, groups, logins, trusted certificates — in one `.uwurdp`
-file. Without passwords it's plain JSON, readable and diffable. With passwords
-the whole file is sealed under a password of its own (Argon2id,
-XChaCha20-Poly1305), not the master password, because the file may go to
-another device or another person. Reading it back adds nothing twice, and it
+Everything — hosts, groups (with their login and shared folders), logins,
+trusted certificates — in one `.uwurdp` file. Without passwords it's plain
+JSON, readable and diffable. With passwords the whole file is sealed under a
+password of its own (Argon2id, XChaCha20-Poly1305), not the master password,
+because the file may go to another device or another person. Reading it back adds nothing twice, and it
 only trusts certificates for hosts the file brings.
 
 ## Installer and updates
@@ -616,19 +715,21 @@ has the steps.
 
 About 300 Rust tests:
 
-| Crate / area   | Tests | What they cover                                                           |
-| -------------- | ----- | ------------------------------------------------------------------------- |
-| `uwurdp-store` | 80    | Schema migrations, logins and inheritance, export files, sync plumbing    |
-| `uwurdp-sync`  | 51    | Two real devices against an in-memory server, a lying server, pairing     |
-| `uwurdp-core`  | 64+7  | Dirty regions, frame encoding, input, flow control; 7 end-to-end sessions |
-| `uwurdp-vault` | 35    | Key derivation, wrapping, record encryption                               |
-| `uwurdp-proto` | 27    | Payload round trips, unknown fields, clocks, merging                      |
-| import         | 11+   | RDCMan versions, credential profiles, inheritance, `.rdp` encodings       |
-| desktop, setup | —     | Commands, updater feeds, install paths                                    |
+| Crate / area   | Tests  | What they cover                                                               |
+| -------------- | ------ | ----------------------------------------------------------------------------- |
+| `uwurdp-store` | 80     | Schema migrations, logins and inheritance, export files, sync plumbing        |
+| `uwurdp-sync`  | 51     | Two real devices against an in-memory server, a lying server, pairing         |
+| `uwurdp-core`  | 127+10 | Dirty regions, frames, input, flow control, clipboard; 10 end-to-end sessions |
+| `uwurdp-vault` | 35     | Key derivation, wrapping, record encryption                                   |
+| `uwurdp-proto` | 27     | Payload round trips, unknown fields, clocks, merging                          |
+| import         | 11+    | RDCMan versions, credential profiles, inheritance, `.rdp` encodings           |
+| desktop, setup | —      | Commands, updater feeds, install paths                                        |
 
-The seven end-to-end tests in `uwurdp-core` run real sessions against an
+The end-to-end tests in `uwurdp-core` run real sessions against an
 in-process `ironrdp-server`: certificate pinning, NLA, frames, input, resize,
-disconnect.
+disconnect. The clipboard tests run both ends of CLIPRDR in-process too (our
+client with its worker against IronRDP's server): text, HTML and files in
+both directions, without echo.
 
 Then `node apps/desktop/e2e/run.mjs` drives **the real app** over WebView2's
 DevTools protocol:

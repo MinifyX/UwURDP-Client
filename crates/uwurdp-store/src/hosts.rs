@@ -15,7 +15,7 @@ use crate::{now_ms, tick, vault_id, Result, Store, StoreError};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use uwurdp_proto::RdpSettings;
+use uwurdp_proto::{DriveRedirection, RdpSettings, SharedDrive, ALL_DRIVES};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -158,7 +158,88 @@ pub fn normalize_rdp(mut rdp: RdpSettings) -> RdpSettings {
     {
         rdp.gateway = None;
     }
+    rdp.drives = rdp.drives.map(normalize_drives);
     rdp
+}
+
+/// At most this many shared folders per host or group.
+pub const MAX_SHARED_DRIVES: usize = 32;
+/// The longest share name; Windows shows it in Explorer.
+const MAX_SHARE_NAME: usize = 32;
+
+/// Drive redirection brought into shape: paths trimmed, entries without one
+/// dropped, every share name one the server accepts and unique, the list
+/// capped. The paths themselves are not checked here — they belong to the
+/// device that added them, and connecting skips what this one lacks.
+pub fn normalize_drives(mut drives: DriveRedirection) -> DriveRedirection {
+    let mut seen_paths = std::collections::HashSet::new();
+    let mut names = std::collections::HashSet::new();
+    let mut kept = Vec::new();
+    for drive in std::mem::take(&mut drives.drives) {
+        let path = drive.path.trim().to_string();
+        if path.is_empty() || path.chars().any(char::is_control) || path.len() > 4096 {
+            continue;
+        }
+        if !seen_paths.insert(path.clone()) {
+            continue;
+        }
+        let name = if path == ALL_DRIVES {
+            ALL_DRIVES.to_string()
+        } else {
+            let mut name = share_name(&drive.name);
+            if name.is_empty() {
+                name = default_share_name(&path);
+            }
+            let base = name.clone();
+            let mut n = 2;
+            while names.contains(&name.to_lowercase()) {
+                name = format!("{base} {n}");
+                n += 1;
+            }
+            names.insert(name.to_lowercase());
+            name
+        };
+        kept.push(SharedDrive {
+            name,
+            path,
+            extra: drive.extra,
+        });
+        if kept.len() == MAX_SHARED_DRIVES {
+            break;
+        }
+    }
+    drives.drives = kept;
+    drives
+}
+
+/// A share name with what Windows refuses in one taken out.
+pub fn share_name(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .filter(|c| !c.is_control() && !r#"\/:*?"<>|"#.contains(*c))
+        .collect();
+    clean
+        .trim()
+        .chars()
+        .take(MAX_SHARE_NAME)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// What a folder is called on the server unless the user says otherwise: its
+/// own name, or the letter for a drive like `C:\`, like mstsc.
+pub fn default_share_name(path: &str) -> String {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    let bytes = trimmed.as_bytes();
+    if bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        return (bytes[0] as char).to_ascii_uppercase().to_string();
+    }
+    let last = trimmed.rsplit(['/', '\\']).next().unwrap_or_default();
+    match share_name(last) {
+        name if name.is_empty() => "Root".to_string(),
+        name => name,
+    }
 }
 
 fn rdp_to_text(rdp: &RdpSettings) -> Result<String> {
@@ -720,6 +801,54 @@ pub(crate) mod tests {
             gateway_domain: String::new(),
             gateway_password: PasswordChange::Keep,
         }
+    }
+
+    #[test]
+    fn shared_folders_get_names_the_server_takes() {
+        let drive = |name: &str, path: &str| SharedDrive {
+            name: name.into(),
+            path: path.into(),
+            ..SharedDrive::default()
+        };
+        let drives = normalize_drives(DriveRedirection {
+            enabled: true,
+            drives: vec![
+                drive("", "C:\\"),
+                drive("", "  /home/uwu/Projects/ "),
+                drive("Pro:jects?", "/srv/projects"),
+                drive("ignored", "*"),
+                drive("dup", "/home/uwu/Projects"),
+                drive("x", "   "),
+                drive("", "/"),
+                drive("", "bad\npath"),
+            ],
+            ..DriveRedirection::default()
+        });
+        let pairs: Vec<(&str, &str)> = drives
+            .drives
+            .iter()
+            .map(|d| (d.name.as_str(), d.path.as_str()))
+            .collect();
+        assert_eq!(
+            pairs,
+            [
+                ("C", "C:\\"),
+                ("Projects", "/home/uwu/Projects/"),
+                ("Projects 2", "/srv/projects"),
+                ("*", "*"),
+                ("dup", "/home/uwu/Projects"),
+                ("Root", "/"),
+            ]
+        );
+
+        let many = DriveRedirection {
+            enabled: true,
+            drives: (0..100).map(|i| drive("", &format!("/d/{i}"))).collect(),
+            ..DriveRedirection::default()
+        };
+        assert_eq!(normalize_drives(many).drives.len(), MAX_SHARED_DRIVES);
+        assert_eq!(default_share_name("d:"), "D");
+        assert_eq!(default_share_name("\\\\nas\\share\\"), "share");
     }
 
     pub(crate) fn set(value: &str) -> PasswordChange {

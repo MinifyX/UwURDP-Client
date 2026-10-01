@@ -7,7 +7,7 @@ use crate::{Result, StoreError};
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 
 /// The sync header (`id`, `vault_id`, clock, `rev`, `deleted`) is on every
 /// syncable table from the start; see the crate docs for why.
@@ -371,6 +371,19 @@ CREATE TABLE lock_accounts (
 );
 "#;
 
+/// Drive redirection a group hands to its hosts (`DriveRedirection` as JSON,
+/// NULL for none). A host's own lives in its `rdp` JSON. A build before this
+/// one kept a group's `drives` as an unknown field in `sync_extra`; it moves
+/// into the column, or the next push would write it twice.
+const V9: &str = r#"
+ALTER TABLE host_groups ADD COLUMN drives TEXT;
+UPDATE host_groups
+   SET drives = json_extract(sync_extra, '$.drives'),
+       sync_extra = nullif(json_remove(sync_extra, '$.drives'), '{}')
+ WHERE sync_extra IS NOT NULL AND json_valid(sync_extra)
+   AND json_type(sync_extra, '$.drives') = 'object';
+"#;
+
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
 
@@ -559,6 +572,14 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
         tx.pragma_update(None, "user_version", 8)?;
         tx.commit()?;
         tracing::info!("store migrated to schema 8");
+    }
+
+    if version < 9 {
+        let tx = conn.transaction()?;
+        tx.execute_batch(V9)?;
+        tx.pragma_update(None, "user_version", 9)?;
+        tx.commit()?;
+        tracing::info!("store migrated to schema 9");
     }
 
     Ok(())
@@ -877,6 +898,51 @@ mod tests {
         assert_eq!(active, 0, "nothing switches to UwULock by itself");
         assert_eq!(url, None);
         assert!(Uuid::parse_str(&identifier).is_ok());
+    }
+
+    #[test]
+    fn a_v8_group_keeps_drives_an_older_build_kept_as_unknown() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for batch in [V1, V2, V3, V4, V4_DROP_GROUP_PATH, V5, V6, V7, V8] {
+            conn.execute_batch(batch).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO meta (id, device_id, vault_id) VALUES (1, 1, 'v')",
+            [],
+        )
+        .unwrap();
+        let insert = "INSERT INTO host_groups
+            (id, vault_id, workspace, name, position, hlc_wall_ms, hlc_counter, hlc_device,
+             sync_extra)
+            VALUES (?1, 'v', 'private', ?1, 0, 0, 0, 0, ?2)";
+        conn.execute(
+            insert,
+            params![
+                "a",
+                r#"{"drives":{"enabled":true,"drives":[]},"tags":["x"]}"#
+            ],
+        )
+        .unwrap();
+        conn.execute(insert, params!["b", r#"{"drives":{"enabled":false}}"#])
+            .unwrap();
+        conn.execute(insert, params!["c", r#"{"tags":["y"]}"#])
+            .unwrap();
+        conn.pragma_update(None, "user_version", 8).unwrap();
+        migrate(&mut conn).unwrap();
+
+        let row = |id: &str| -> (Option<String>, Option<String>) {
+            conn.query_row(
+                "SELECT drives, sync_extra FROM host_groups WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+        };
+        let (drives, extra) = row("a");
+        assert_eq!(drives.as_deref(), Some(r#"{"enabled":true,"drives":[]}"#));
+        assert_eq!(extra.as_deref(), Some(r#"{"tags":["x"]}"#));
+        assert_eq!(row("b"), (Some(r#"{"enabled":false}"#.into()), None));
+        assert_eq!(row("c"), (None, Some(r#"{"tags":["y"]}"#.into())));
     }
 
     #[test]

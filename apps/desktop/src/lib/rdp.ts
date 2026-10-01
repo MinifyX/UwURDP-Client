@@ -20,8 +20,10 @@
  * - `3` pointer bitmap: u16 hot x, hot y, w, h, then w·h·4 bytes RGBA
  * - `4` default pointer, `5` hidden pointer, `6` pointer position u16 x, y
  * - `7` closed: UTF-8 JSON `{reason, message}`
+ * - `8` clipboard: UTF-8 JSON `{state, …}` about files (see `clipboard.ts`)
  */
 
+import { ClipboardNotes, type ClipboardStatus } from './clipboard';
 import { scancodeFor } from './keymap';
 import {
   clipboardChanged,
@@ -82,6 +84,8 @@ export class RdpDriver {
    * notice or dialog that was there while it connected goes away after.
    */
   private settleUntil = 0;
+  /** Notes about files through the clipboard, and files dropped on the desktop. */
+  private readonly notes: ClipboardNotes;
 
   constructor(container: HTMLElement, fit: Fit) {
     this.container = container;
@@ -99,8 +103,10 @@ export class RdpDriver {
     this.ctx.fillStyle = '#0c1030';
     this.ctx.fillRect(0, 0, 1, 1);
 
+    this.notes = new ClipboardNotes(container, this.canvas, () => this.session);
     this.observer = new ResizeObserver(() => this.onContainerResize());
     this.observer.observe(container);
+    this.watchPixelRatio();
     this.bindInput();
   }
 
@@ -123,11 +129,7 @@ export class RdpDriver {
         };
       }
     }
-    return {
-      width: clampSize(Math.round(rect.width * scale)),
-      height: clampSize(Math.round(rect.height * scale)),
-      scale: Math.round(scale * 100),
-    };
+    return { ...desktopSize(rect.width, rect.height, scale), scale: Math.round(scale * 100) };
   }
 
   setFit(fit: Fit) {
@@ -194,6 +196,7 @@ export class RdpDriver {
     if (this.disposed) return;
     this.disposed = true;
     this.observer.disconnect();
+    this.notes.dispose();
     for (const undo of this.cleanup) undo();
     if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
     if (this.moveFrame !== null) window.cancelAnimationFrame(this.moveFrame);
@@ -284,6 +287,11 @@ export class RdpDriver {
           };
           break;
         }
+        case 8:
+          this.notes.show(
+            JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as ClipboardStatus,
+          );
+          break;
       }
     } catch {
       // A damaged message is dropped; the next full update repairs the picture.
@@ -301,22 +309,58 @@ export class RdpDriver {
     return { width: rect.width, height: rect.height };
   }
 
-  /** Puts the canvas where it belongs: 1:1, scaled down, or scrollable. */
+  /**
+   * Puts the canvas where it belongs: 1:1, scaled down, or scrollable.
+   *
+   * At 1:1 every desktop pixel has to land on exactly one device pixel, or
+   * the browser resamples the picture and it goes soft. So the canvas is
+   * only scaled when it is more than a device pixel too large (a rounding
+   * sliver is cut off instead), its CSS size is a whole number of device
+   * pixels, and its corner is moved onto the device pixel grid: centring
+   * alone can leave it half a pixel off.
+   */
   private layout() {
-    const scale = window.devicePixelRatio || 1;
+    const dpr = window.devicePixelRatio || 1;
     const rect = this.container.getBoundingClientRect();
-    const width = this.canvas.width / scale;
-    const height = this.canvas.height / scale;
-    let cssWidth = width;
-    let cssHeight = height;
+    const { width, height } = this.canvas;
+    let factor = 1;
     if (this.fit.smartSizing && rect.width > 0 && rect.height > 0) {
-      const factor = Math.min(1, rect.width / width, rect.height / height);
-      cssWidth = width * factor;
-      cssHeight = height * factor;
+      const roomWidth = rect.width * dpr;
+      const roomHeight = rect.height * dpr;
+      if (width > roomWidth + 1 || height > roomHeight + 1) {
+        factor = Math.min(roomWidth / width, roomHeight / height);
+      }
     }
-    this.canvas.style.width = `${cssWidth}px`;
-    this.canvas.style.height = `${cssHeight}px`;
+    const deviceWidth = Math.max(1, Math.round(width * factor));
+    const deviceHeight = Math.max(1, Math.round(height * factor));
+    this.canvas.style.width = `${deviceWidth / dpr}px`;
+    this.canvas.style.height = `${deviceHeight / dpr}px`;
+    this.canvas.dataset.scaled = factor < 1 ? 'yes' : 'no';
     this.container.dataset.scroll = this.fit.smartSizing ? 'no' : 'yes';
+    this.snapToDevicePixels(dpr);
+  }
+
+  /** Shifts the canvas by the fraction of a device pixel it is off the grid. */
+  private snapToDevicePixels(dpr: number) {
+    this.canvas.style.transform = '';
+    const box = this.canvas.getBoundingClientRect();
+    const dx = snapOffset(box.left, dpr);
+    const dy = snapOffset(box.top, dpr);
+    this.canvas.style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : '';
+  }
+
+  /** Lays out again when the window moves to a screen with another scale. */
+  private watchPixelRatio() {
+    const query = window.matchMedia?.(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    if (!query) return;
+    const changed = () => {
+      query.removeEventListener('change', changed);
+      if (this.disposed) return;
+      this.layout();
+      this.watchPixelRatio();
+    };
+    query.addEventListener('change', changed);
+    this.cleanup.push(() => query.removeEventListener('change', changed));
   }
 
   private onContainerResize() {
@@ -465,6 +509,27 @@ function windowSize() {
 
 function clampSize(value: number): number {
   return Math.max(200, Math.min(8192, value));
+}
+
+/**
+ * The tab's size in device pixels, as the server will take it: rounded down
+ * so the desktop never comes out larger than the tab (that would mean
+ * scaling it), and the width even, which DisplayControl requires (the
+ * engine would round it down anyway).
+ */
+export function desktopSize(cssWidth: number, cssHeight: number, dpr: number) {
+  const width = clampSize(Math.floor(cssWidth * dpr + 0.01));
+  return {
+    width: width - (width % 2),
+    height: clampSize(Math.floor(cssHeight * dpr + 0.01)),
+  };
+}
+
+/** How far to move a CSS position so it falls on a whole device pixel. */
+export function snapOffset(position: number, dpr: number): number {
+  const device = position * dpr;
+  const offset = (Math.round(device) - device) / dpr;
+  return Math.abs(offset) < 1e-6 ? 0 : offset;
 }
 
 /** A pointer bitmap as a CSS cursor. */

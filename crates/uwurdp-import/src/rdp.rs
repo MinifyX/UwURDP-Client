@@ -11,13 +11,45 @@ use std::collections::BTreeMap;
 
 use crate::{
     split_host_port, Decrypt, ImportBundle, ImportError, ImportedAudio, ImportedCredential,
-    ImportedDisplay, ImportedGateway, ImportedHost, ImportedSettings, PasswordOrigin, Source,
+    ImportedDisplay, ImportedDrives, ImportedGateway, ImportedHost, ImportedSettings,
+    PasswordOrigin, Source,
 };
 
 const DEFAULT_PORT: u16 = 3389;
 
 /// Keys that are pure client-window bookkeeping, not settings worth showing.
 const NOISE: &[&str] = &["winposstr"];
+
+/// `drivestoredirect:s:` is a `;`-separated list: `*` for every drive, drive
+/// letters (`C:\`, `D:`), and `DynamicDrives` for drives plugged in later,
+/// which UwURDP has no way to follow and leaves out — as it does names it
+/// cannot map to a local drive.
+fn parse_drives(value: &str) -> ImportedDrives {
+    let mut paths: Vec<String> = Vec::new();
+    for entry in value.split(';').map(str::trim) {
+        let path = if entry == "*" {
+            "*".to_string()
+        } else {
+            let bytes = entry.trim_end_matches('\\').as_bytes();
+            match bytes {
+                [letter, b':'] if letter.is_ascii_alphabetic() => {
+                    format!("{}:\\", char::from(letter.to_ascii_uppercase()))
+                }
+                _ => continue,
+            }
+        };
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    // The list is kept, switched off: an `.rdp` file can come from anyone
+    // (phishing with `drivestoredirect:s:*` hands a stranger every drive), so
+    // sharing is something to turn on knowingly, in the host's settings.
+    ImportedDrives {
+        enabled: false,
+        paths,
+    }
+}
 
 /// Parse one `.rdp` file. `file_stem` names the host, since the file itself has
 /// no display name.
@@ -95,6 +127,7 @@ pub fn parse_rdp_file(
         }),
         clipboard: map.get("redirectclipboard").map(|v| v == "1"),
         gateway: parse_gateway(&map),
+        drives: map.get("drivestoredirect").map(|v| parse_drives(v)),
     };
 
     // Everything recognised as a line but not mapped becomes an extra, minus
@@ -114,6 +147,7 @@ pub fn parse_rdp_file(
         "administrative session",
         "audiomode",
         "redirectclipboard",
+        "drivestoredirect",
         "gatewayhostname",
         "gatewayusagemethod",
     ];

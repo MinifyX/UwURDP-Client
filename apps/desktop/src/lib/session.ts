@@ -109,6 +109,16 @@ export function clipboardChanged(id: SessionId): Promise<void> {
   return invoke('clipboard_changed', { id });
 }
 
+/** Files dropped on the desktop: onto the server's clipboard, to paste there. */
+export function clipboardOfferFiles(id: SessionId, paths: string[]): Promise<void> {
+  return invoke('clipboard_offer_files', { id, paths });
+}
+
+/** Fetch the files the server copied that were too big to fetch on their own. */
+export function clipboardDownload(id: SessionId): Promise<void> {
+  return invoke('clipboard_download', { id });
+}
+
 export function closeSession(id: SessionId): Promise<void> {
   return invoke('close_session', { id });
 }
@@ -129,6 +139,18 @@ export type GatewaySettings = {
   bypassLocal: boolean;
 };
 
+/** A local folder the server sees as `\\tsclient\<name>`. */
+export type SharedDrive = { name: string; path: string };
+
+/** The path that stands for every fixed drive of the computer that connects. */
+export const ALL_DRIVES = '*';
+
+/**
+ * Drive redirection. The paths belong to the device that added them: on
+ * another one, a folder that isn't there is skipped when connecting.
+ */
+export type DriveRedirection = { enabled: boolean; drives: SharedDrive[] };
+
 /** Mirrors `uwurdp_proto::RdpSettings`. */
 export type RdpSettings = {
   display: DisplayMode;
@@ -146,6 +168,8 @@ export type RdpSettings = {
   /** Offer the graphics pipeline (RDPEGFX): much faster on current Windows. */
   graphicsPipeline: boolean;
   gateway?: GatewaySettings | null;
+  /** Its own drive redirection; absent takes the group's. */
+  drives?: DriveRedirection | null;
 };
 
 export const DEFAULT_RDP: RdpSettings = {
@@ -235,6 +259,8 @@ export type GroupRecord = {
   username: string;
   domain: string;
   hasPassword: boolean;
+  /** The drive redirection the group hands to its hosts; null for none. */
+  drives: DriveRedirection | null;
 };
 
 export function listGroups(): Promise<GroupRecord[]> {
@@ -262,6 +288,20 @@ export function setGroupLogin(
   password: PasswordChange,
 ): Promise<void> {
   return invoke('set_group_login', { workspace, name, username, domain, password });
+}
+
+/** The drive redirection a group hands down; null removes it. */
+export function setGroupDrives(
+  workspace: Workspace,
+  name: string,
+  drives: DriveRedirection | null,
+): Promise<void> {
+  return invoke('set_group_drives', { workspace, name, drives });
+}
+
+/** Asks for a folder to share; null when the dialog was closed. */
+export function pickSharedFolder(): Promise<SharedDrive | null> {
+  return invoke<SharedDrive | null>('pick_shared_folder');
 }
 
 export function moveGroup(

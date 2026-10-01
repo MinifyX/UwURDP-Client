@@ -60,6 +60,20 @@ Done, in 0.1.0-beta.1:
 - **0.1.0-beta.8**: the UwULock sync reads with limits, checks every entry it
   moved, trusts the system's certificate authorities, and tells a server with
   app sync switched off apart from a broken one.
+- **0.1.0-beta.9: a sharp picture, the whole clipboard, drives.**
+  - With H.264, **AVC444** like mstsc: full colour resolution, so text stays
+    sharp; the canvas sits on whole device pixels and is never resampled at
+    1:1. See [architecture](architecture.md#the-graphics-pipeline).
+  - **The whole clipboard.** Text that arrives every time, HTML and pictures
+    both ways, and **files through the clipboard**: copied or dropped on the
+    desktop, they paste on the server; the server's land on the local
+    clipboard. See [architecture](architecture.md#clipboard-and-sound).
+  - **Drive redirection**, off by default: local folders, or every fixed
+    drive, as `\\tsclient\<name>` under "This PC", per host or handed down
+    by the group, synced, imported from RDCMan and `.rdp`. The file system
+    behind it is UwURDP's own, confined to the shared folder. See
+    [architecture](architecture.md#drive-redirection).
+  - **macOS** gets the system's traffic lights instead of Windows buttons.
 - **The installer with Nyu** and signed updates on Windows (x64 and ARM),
   macOS and Linux.
 
@@ -78,8 +92,7 @@ Next, roughly in this order:
 - **Kerberos**, for domains where NTLM is switched off. Needs a KDC client
   without dragging a second TLS stack into the app.
 - **Several monitors.**
-- **Drive redirection**, then printers and smart cards.
-- **Files through the clipboard.**
+- **Printers and smart cards**, now that the RDPDR channel is there.
 - **RDCMan smart groups**, which the import skips today.
 - **Display settings per group**, like RDCMan's inherited display settings,
   instead of per host only.

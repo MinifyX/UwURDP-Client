@@ -19,8 +19,8 @@ use roxmltree::{Document, Node};
 
 use crate::{
     split_host_port, Decrypt, ImportBundle, ImportError, ImportedAudio, ImportedCredential,
-    ImportedDisplay, ImportedGateway, ImportedGroup, ImportedHost, ImportedSettings,
-    NamedCredential, PasswordOrigin, Source,
+    ImportedDisplay, ImportedDrives, ImportedGateway, ImportedGroup, ImportedHost,
+    ImportedSettings, NamedCredential, PasswordOrigin, Source,
 };
 
 /// The default RDP port, used when neither the address nor the connection
@@ -384,7 +384,16 @@ impl<'a, 'input> EffNodes<'a, 'input> {
         if let Some(lr) = self.local_resources {
             settings.audio = parse_audio(lr);
             settings.clipboard = find_bool(lr, "redirectClipboard");
-            dump_extras(lr, &["audioRedirection", "redirectClipboard"], &mut extras);
+            // RDCMan shares every drive or none.
+            settings.drives = find_bool(lr, "redirectDrives").map(|all| ImportedDrives {
+                enabled: all,
+                paths: if all { vec!["*".into()] } else { Vec::new() },
+            });
+            dump_extras(
+                lr,
+                &["audioRedirection", "redirectClipboard", "redirectDrives"],
+                &mut extras,
+            );
         }
         if let Some(gw) = self.gateway {
             settings.gateway = parse_gateway(gw, ctx);

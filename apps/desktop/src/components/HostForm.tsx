@@ -15,6 +15,7 @@ import {
   type Workspace,
 } from '../lib/session';
 import { useCloseGuard } from './CloseGuard';
+import { DriveList, drivesSummary } from './DrivesEditor';
 import { splitLogin } from './ConnectDialogs';
 import { useSettings, workspaceName } from '../lib/settings';
 import { Icon } from './Icon';
@@ -349,6 +350,27 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
   const groupLogin = groups.find(
     (g) => g.workspace === space && g.name === groupPath.trim() && g.username,
   );
+  const groupDrives = groups.find(
+    (g) => g.workspace === space && g.name === groupPath.trim(),
+  )?.drives;
+  const drivesMode: 'group' | 'off' | 'on' = !rdp.drives
+    ? 'group'
+    : rdp.drives.enabled
+      ? 'on'
+      : 'off';
+  const setDrivesMode = (mode: 'group' | 'off' | 'on') => {
+    if (mode === 'group') patch({ drives: null });
+    else if (mode === 'off')
+      patch({ drives: { enabled: false, drives: rdp.drives?.drives ?? [] } });
+    else
+      patch({
+        // Starting from the group's list saves picking the same folders again.
+        drives: {
+          enabled: true,
+          drives: rdp.drives?.drives.length ? rdp.drives.drives : (groupDrives?.drives ?? []),
+        },
+      });
+  };
   const sizeValue = `${rdp.width}x${rdp.height}`;
   const knownSize = SIZES.some(([w, h]) => `${w}x${h}` === sizeValue);
 
@@ -619,10 +641,53 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
             </fieldset>
             <Check
               label={t('Zwischenablage teilen')}
-              hint={t('Text kopieren und einfügen, in beide Richtungen.')}
+              hint={t(
+                'Text, Bilder und Dateien in beide Richtungen; Dateien auch per Drag & Drop auf den Desktop.',
+              )}
               checked={rdp.clipboard}
               onChange={(clipboard) => patch({ clipboard })}
             />
+            <fieldset className="field">
+              <span>{t('Lokale Laufwerke/Ordner')}</span>
+              <div
+                className="segmented"
+                role="radiogroup"
+                aria-label={t('Lokale Laufwerke/Ordner')}
+              >
+                {(
+                  [
+                    ['group', groupPath.trim() ? t('Wie die Gruppe') : t('Standard')],
+                    ['off', t('Aus')],
+                    ['on', t('Freigeben')],
+                  ] as ['group' | 'off' | 'on', string][]
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={drivesMode === value}
+                    onClick={() => setDrivesMode(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {drivesMode === 'group' && (
+                <em className="field-hint">
+                  {groupPath.trim()
+                    ? t('Von der Gruppe: {summary}', { summary: drivesSummary(groupDrives) })
+                    : t('Ohne Gruppe: keine Ordner freigegeben.')}
+                </em>
+              )}
+            </fieldset>
+            {drivesMode === 'on' && rdp.drives && (
+              <div className="gateway-block">
+                <DriveList
+                  drives={rdp.drives.drives}
+                  onChange={(drives) => patch({ drives: { enabled: true, drives } })}
+                />
+              </div>
+            )}
           </Section>
 
           <Section title={t('Erweitert')}>

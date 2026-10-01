@@ -42,6 +42,7 @@
 //! | 5    | `POINTER_HIDDEN`   | — |
 //! | 6    | `POINTER_POSITION` | u16 x, u16 y |
 //! | 7    | `CLOSED`           | UTF-8 JSON `{"reason":"logoff\|disconnect\|server\|error","message":"…"}`, sent once, right before [`FrameSink::finish`] |
+//! | 8    | `CLIPBOARD`        | UTF-8 JSON `{"state":"downloading\|ready\|offered\|sent\|failed",…}`: files through the clipboard |
 //!
 //! `BITMAPS` count against the ack window; everything else goes out at once.
 //! A single `BITMAPS` message is capped at [`frame::MAX_BITMAPS_BYTES`]
@@ -56,16 +57,20 @@
 //! - **Certificates**: trust on first use by SHA-256 fingerprint of the leaf
 //!   certificate (`SHA256:<base64>`, like `ssh-keygen`). Handshake
 //!   signatures are verified; the chain and host name are not.
-//! - **Clipboard**: plain text both ways (`arboard`).
+//! - **Clipboard**: text, HTML, pictures and files both ways (`arboard`).
+//! - **Drives** ([`SessionSettings::drives`]): local folders as
+//!   `\\tsclient\<name>` over RDPDR, served by our own file system backend
+//!   (`drive.rs`) with `std::fs`, every path confined to its shared folder.
+//!   Change notifications are never answered, as in FreeRDP.
 //! - **Audio**: with the `audio` feature (default), [`AudioMode::Local`]
 //!   plays through cpal as PCM. `Remote` and `Off` both tell the server not
 //!   to redirect audio: IronRDP cannot send the "leave it on the server" flag.
 //! - **Graphics pipeline** (RDPEGFX, [`SessionSettings::graphics_pipeline`],
 //!   on by default): what current Windows servers are fast with. Progressive,
 //!   ClearCodec, planar, RemoteFX and uncompressed are decoded here; H.264
-//!   (AVC420) with the `h264` feature and Cisco's OpenH264 binary, which the
-//!   app downloads and names in [`SessionSettings::h264_library`]. AVC444 is
-//!   not offered.
+//!   (AVC420, AVC444 and AVC444v2) with the `h264` feature and Cisco's
+//!   OpenH264 binary, which the app downloads and names in
+//!   [`SessionSettings::h264_library`].
 //! - **Resize**: through the DisplayControl channel; servers without it keep
 //!   their size and the page scales. With the graphics pipeline the server
 //!   answers with a `ResetGraphics`.
@@ -91,6 +96,7 @@ mod clipboard;
 mod config;
 mod connect;
 pub mod dirty;
+mod drive;
 mod error;
 pub mod frame;
 mod gfx;
@@ -100,7 +106,7 @@ mod session;
 mod sink;
 mod tls;
 
-pub use config::{AudioMode, GatewayTarget, RdpTarget, SessionSettings};
+pub use config::{AudioMode, DriveShare, GatewayTarget, RdpTarget, SessionSettings};
 pub use connect::{CONNECT_TIMEOUT, HANDSHAKE_TIMEOUT};
 pub use error::{ObservedCertificate, RdpError, SessionError};
 pub use frame::CloseReason;

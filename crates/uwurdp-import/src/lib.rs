@@ -162,6 +162,19 @@ pub struct ImportedSettings {
     pub audio: Option<ImportedAudio>,
     pub clipboard: Option<bool>,
     pub gateway: Option<ImportedGateway>,
+    /// Local drives to share; `None` when the source didn't say.
+    #[serde(default)]
+    pub drives: Option<ImportedDrives>,
+}
+
+/// Drive redirection as a source had it. A path is a drive (`C:\`) or `*`
+/// for every fixed drive, which UwURDP resolves on the computer that
+/// connects.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedDrives {
+    pub enabled: bool,
+    pub paths: Vec<String>,
 }
 
 /// One host, with its group, credentials and settings fully resolved.

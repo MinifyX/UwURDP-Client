@@ -17,11 +17,13 @@ releasing renames it to the version's file. The text appears under "Was ist neu?
    and the `package.json` files.
 2. Rename `release-notes/unreleased.json` to `release-notes/<version>.json` (or add it), and write the
    first line of each language as the release's headline.
-3. Commit, tag `v<version>` and push both. The tag starts `.github/workflows/installers.yml`, which
-   checks the workspace on macOS and Linux and builds every setup — unsigned, since CI holds no key.
+3. Merge it to main, tag the merge commit `v<version>` and push the tag. The push to main starts
+   `.github/workflows/installers.yml`, which checks the workspace on macOS and builds every setup —
+   unsigned, since CI holds no key. (A main commit that changed only docs gets no run; start one by
+   hand with `gh workflow run installers.yml --ref main`.)
 4. Run `pnpm release` on the machine with the signing key (any system), with the tag checked out.
 
-`pnpm release` waits for the tag's CI run and downloads what it built: the Windows setups for x64
+`pnpm release` waits for the Installers run of the tagged commit and downloads what it built: the Windows setups for x64
 (`UwURDP-windows-x64-setup.exe`) and ARM, the universal macOS disk image and its update program, and
 for Linux x64 and arm64 the `.deb`, `.rpm` and portable `.tar.gz`, plus the x64 setup AppImage for
 copies the old Linux setup installed. With `--build-windows` it builds the Windows x64 setup on this
@@ -40,7 +42,7 @@ builds Windows x64 on this machine (on Windows) and publishes it alone.
 `pnpm release --dry-run` does everything up to publishing — waits for CI, downloads, signs, checks the
 signatures, builds the checksums, feeds and AUR package — and stops, publishing nothing. It runs on any
 commit with a green Installers run, no tag needed: push the commit to a `ci/…` branch, which starts
-that run.
+that run (it reads main's caches but saves none).
 
 It needs the update signing key, either as `TAURI_SIGNING_PRIVATE_KEY` +
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` or as a folder with `uwurdp-update.key` and `PASSWORT.txt` in

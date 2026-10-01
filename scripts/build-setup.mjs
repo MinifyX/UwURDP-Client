@@ -167,10 +167,12 @@ if (process.platform === 'win32') {
   // names the package after productName in kebab case, which would make
   // "UwURDP" `uw-urdp`; the menu entry keeps saying UwURDP through the
   // template in tauri.conf.json. The app looks for `uwurdp` when it checks that
-  // dpkg or rpm owns it (apps/desktop/src-tauri/src/updates.rs).
+  // dpkg or rpm owns it (apps/desktop/src-tauri/src/updates.rs). `tauri
+  // bundle` packs the binary just built: with `tauri build`, the other
+  // productName rebuilt and re-linked the whole app.
   console.log(`\n▸ Packaging UwURDP ${version} as .deb and .rpm`);
   run(
-    `pnpm --filter @uwurdp/desktop tauri build --bundles deb,rpm${targetArg} --config "${configFile('packages', { productName: 'uwurdp' })}"`,
+    `pnpm --filter @uwurdp/desktop tauri bundle --bundles deb,rpm${targetArg} --config "${configFile('packages', { productName: 'uwurdp' })}"`,
   );
   const deb = join(out, `UwURDP-linux-${arch()}.deb`);
   copyFileSync(

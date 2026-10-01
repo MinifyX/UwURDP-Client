@@ -62,8 +62,10 @@ opt-level = 3
 debug = false
 
 [profile.release]
-codegen-units = 1
-lto = true
+# Thin LTO with the default 16 codegen units: fat LTO on one unit took 4 to 8
+# minutes per binary in CI (two or three per installer job) for a few percent
+# of size and speed.
+lto = "thin"
 opt-level = 3
 # Unwinding, not abort: a panic in one session's task must end that session,
 # not the app with every other desktop in it (see uwurdp-core's manager).

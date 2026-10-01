@@ -1,18 +1,28 @@
 name: Installers
 
-# The workspace checks on macOS and Linux, and next to them, not after them,
-# every file `pnpm release` publishes: the Windows setups for x64 and ARM, the
-# universal macOS disk image, and .deb, .rpm and portable folder for Linux x64
-# and arm64. `pnpm release` only takes a run where all of it finished green.
-# All unsigned: nothing here holds the update signing key or any other secret.
-# The files the updater runs are signed by `pnpm release`, next to the key,
-# after it downloads them from here.
+# The workspace checks on macOS (ci.yml covers Windows and Linux), and next to
+# them, not after them, every file `pnpm release` publishes: the Windows setups
+# for x64 and ARM, the universal macOS disk image, and .deb, .rpm and portable
+# folder for Linux x64 and arm64. `pnpm release` takes the run for the commit
+# it releases, once all of it finished green. All unsigned: nothing here holds
+# the update signing key or any other secret. The files the updater runs are
+# signed by `pnpm release`, next to the key, after it downloads them from here.
+#
+# On main, not on the tag: a tag's run can only read main's caches, so a
+# tag-only workflow compiled every dependency from scratch for every release.
+# Building on main keeps the caches warm, and by the time the release commit
+# is tagged its setups are mostly built.
 
 on:
   push:
-    tags: ['v*']
-    # A branch to try the builds on before a release is tagged.
-    branches: ['ci/**']
+    branches:
+      - main
+      # A branch to try the builds on before merging.
+      - 'ci/**'
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  # A release from a commit main didn't build (docs only): run it by hand.
   workflow_dispatch:
 
 permissions:
@@ -34,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       # Every `uses:` is pinned to a commit, with the version in the comment: a
@@ -42,15 +52,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-
-      - name: Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          # libasound2-dev: the ALSA headers cpal builds against, for the remote
-          # session's sound. The arm64 runner is native, so the same package.
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-            librsvg2-dev libdbus-1-dev libssl-dev libasound2-dev pkg-config patchelf file libfuse2
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -69,6 +70,10 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Only main saves: the 10 GB the repository gets would otherwise
+          # fill with branch caches nobody reads again.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -138,6 +143,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build the setup
         shell: bash

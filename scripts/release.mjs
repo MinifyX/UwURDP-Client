@@ -22,7 +22,7 @@
 // (default: Documents\UwURDP-Update-Schluessel).
 //
 // The key never leaves this machine: CI (.github/workflows/installers.yml)
-// builds everything unsigned when the tag is pushed, and this script
+// builds everything unsigned on every push to main, and this script
 // downloads it and signs the files the updater runs here. Only a Windows x64
 // setup built here (--build-windows, --windows-only) needs Windows.
 //

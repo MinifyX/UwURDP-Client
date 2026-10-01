@@ -10,9 +10,11 @@ members = [
   "apps/desktop/src-tauri",
   "apps/setup/src-tauri",
 ]
+# Patched third-party crates (see vendor/README.md); not ours to lint or test.
+exclude = ["vendor"]
 
 [workspace.package]
-version = "0.1.0-beta.9"
+version = "0.1.0-beta.10"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/MinifyX/UwURDP-Client"
@@ -67,3 +69,8 @@ opt-level = 3
 # not the app with every other desktop in it (see uwurdp-core's manager).
 panic = "unwind"
 strip = true
+
+# IronRDP's Progressive decoder with refinement passes decoded the way Windows
+# sends them (vendor/README.md).
+[patch."https://github.com/Devolutions/IronRDP"]
+ironrdp-graphics = { path = "vendor/ironrdp-graphics" }

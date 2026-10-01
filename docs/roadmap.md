@@ -74,6 +74,10 @@ Done, in 0.1.0-beta.1:
     behind it is UwURDP's own, confined to the shared folder. See
     [architecture](architecture.md#drive-redirection).
   - **macOS** gets the system's traffic lights instead of Windows buttons.
+- **0.1.0-beta.10: sharp text.** Progressive's refinement passes decode the
+  way Windows writes them (vendored `ironrdp-graphics`, see
+  [architecture](architecture.md#the-graphics-pipeline)), so tiles no longer
+  stay at their coarse first pass; the log counts failed updates per codec.
 - **The installer with Nyu** and signed updates on Windows (x64 and ARM),
   macOS and Linux.
 

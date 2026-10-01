@@ -32,7 +32,7 @@ pub(crate) struct Codecs {
     progressive: ProgressiveDecoder,
     remotefx: RemoteFx,
     #[cfg(feature = "h264")]
-    pub h264: Option<super::h264::H264Decoder>,
+    pub h264: Option<super::avc::Avc>,
 }
 
 impl Codecs {
@@ -157,6 +157,10 @@ impl Codecs {
 
     pub fn delete_surface(&mut self, surface_id: u16) {
         self.progressive.delete_surface(surface_id);
+        #[cfg(feature = "h264")]
+        if let Some(avc) = self.h264.as_mut() {
+            avc.delete_surface(surface_id);
+        }
     }
 
     /// RemoteFX (`CAVIDEO`, MS-RDPRFX messages): tiles and region rectangles
@@ -170,47 +174,12 @@ impl Codecs {
         self.remotefx.decode(data, dest, surface)
     }
 
-    /// H.264 in an `RFX_AVC420_BITMAP_STREAM`: the picture covers `dest`,
-    /// but only the region rectangles (surface coordinates, exclusive
-    /// edges) hold new pixels.
+    /// The H.264 codecs, AVC420 and AVC444 (see [`super::avc`]).
     #[cfg(feature = "h264")]
-    pub fn avc420(
-        &mut self,
-        data: &[u8],
-        dest: Rect,
-        surface: &mut Pixels,
-    ) -> CodecResult<Vec<Rect>> {
-        use ironrdp_egfx::pdu::Avc420BitmapStream;
-
-        let stream = Avc420BitmapStream::decode(&mut ReadCursor::new(data))
-            .map_err(|e| format!("AVC420: {e}"))?;
-        let Some(decoder) = self.h264.as_mut() else {
-            return Err("AVC420 without an H.264 decoder".into());
-        };
-        let Some(picture) = decoder
-            .decode(stream.data)
-            .map_err(|e| format!("H.264: {e}"))?
-        else {
-            return Ok(Vec::new());
-        };
-        let mut clip: Vec<Rect> = stream
-            .rectangles
-            .iter()
-            .map(|r| intersect(&from_edges(r.left, r.top, r.right, r.bottom), &dest))
-            .filter(|r| !r.is_empty())
-            .collect();
-        if stream.rectangles.is_empty() {
-            clip.push(dest);
-        }
-        Ok(surface.write_clipped(
-            dest.x,
-            dest.y,
-            dest.w.min(picture.width),
-            dest.h.min(picture.height),
-            picture.rgba,
-            usize::from(picture.width) * 4,
-            &clip,
-        ))
+    pub fn avc(&mut self) -> CodecResult<&mut super::avc::Avc> {
+        self.h264
+            .as_mut()
+            .ok_or_else(|| "H.264 without a decoder".to_owned())
     }
 }
 

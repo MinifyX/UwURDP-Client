@@ -63,9 +63,9 @@
 //! - **Graphics pipeline** (RDPEGFX, [`SessionSettings::graphics_pipeline`],
 //!   on by default): what current Windows servers are fast with. Progressive,
 //!   ClearCodec, planar, RemoteFX and uncompressed are decoded here; H.264
-//!   (AVC420) with the `h264` feature and Cisco's OpenH264 binary, which the
-//!   app downloads and names in [`SessionSettings::h264_library`]. AVC444 is
-//!   not offered.
+//!   (AVC420, AVC444 and AVC444v2) with the `h264` feature and Cisco's
+//!   OpenH264 binary, which the app downloads and names in
+//!   [`SessionSettings::h264_library`].
 //! - **Resize**: through the DisplayControl channel; servers without it keep
 //!   their size and the page scales. With the graphics pipeline the server
 //!   answers with a `ResetGraphics`.

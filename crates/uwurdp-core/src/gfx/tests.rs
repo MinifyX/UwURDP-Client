@@ -331,19 +331,64 @@ fn capabilities_depend_on_h264() {
         .all(|c| !matches!(c, CapabilitySet::V8_1 { flags } if flags.contains(CapabilitiesV81Flags::AVC420_ENABLED))));
 }
 
+#[test]
+fn the_confirmed_version_decides_which_avc_codecs_are_taken() {
+    let mut p = desktop(16, 16);
+    let confirm = |set: CapabilitySet| {
+        GfxPdu::CapabilitiesConfirm(ironrdp_egfx::pdu::CapabilitiesConfirmPdu::from_typed(&set))
+    };
+    assert_eq!(p.allowed, Allowed::default(), "nothing before the confirm");
+    p.handle(confirm(CapabilitySet::V10_7 {
+        flags: CapabilitiesV107Flags::SMALL_CACHE,
+    }));
+    assert!(p.allowed.avc420 && p.allowed.avc444);
+    p.handle(confirm(CapabilitySet::V10_7 {
+        flags: CapabilitiesV107Flags::AVC_DISABLED,
+    }));
+    assert_eq!(p.allowed, Allowed::default());
+    p.handle(confirm(CapabilitySet::V8_1 {
+        flags: CapabilitiesV81Flags::AVC420_ENABLED,
+    }));
+    assert!(p.allowed.avc420 && !p.allowed.avc444);
+    p.handle(confirm(CapabilitySet::V10_4 {
+        flags: CapabilitiesV104Flags::SMALL_CACHE,
+    }));
+    assert!(p.allowed.avc444);
+}
+
 #[cfg(feature = "h264")]
 mod avc {
     use super::*;
-    use ironrdp_egfx::pdu::{encode_avc420_bitmap_stream, Avc420Region};
-    use openh264::encoder::Encoder;
-    use openh264::formats::{RgbSliceU8, YUVBuffer};
+    use crate::gfx::avc::Avc;
+    use crate::gfx::avc444_split::Yuv444;
+    use ironrdp_core::encode_vec;
+    use ironrdp_egfx::pdu::{
+        encode_avc420_bitmap_stream, Avc420BitmapStream, Avc420Region, Avc444BitmapStream,
+        CapabilitiesConfirmPdu, Encoding,
+    };
+    use openh264::encoder::{BitRate, Encoder, EncoderConfig, QpRange};
+    use openh264::formats::YUVBuffer;
+    use openh264::OpenH264API;
+
+    /// An encoder at the quality Windows uses for a desktop that stands
+    /// still, and that never skips a picture.
+    fn encoder() -> Encoder {
+        let config = EncoderConfig::new()
+            .skip_frames(false)
+            .bitrate(BitRate::from_bps(50_000_000))
+            .qp(QpRange::new(0, 12));
+        Encoder::with_api_config(OpenH264API::from_source(), config).expect("encoder")
+    }
+
+    fn encode(encoder: &mut Encoder, i420: Vec<u8>, width: usize, height: usize) -> Vec<u8> {
+        let yuv = YUVBuffer::from_vec(i420, width, height);
+        encoder.encode(&yuv).expect("encode").to_vec()
+    }
 
     /// An H.264 access unit showing a flat colour, Annex B, as Windows sends it.
     fn encoded(width: usize, height: usize, rgb: [u8; 3]) -> Vec<u8> {
-        let frame = rgb.repeat(width * height);
-        let yuv = YUVBuffer::from_rgb_source(RgbSliceU8::new(&frame, (width, height)));
-        let mut encoder = Encoder::new().expect("encoder");
-        encoder.encode(&yuv).expect("encode").to_vec()
+        let picture = Yuv444::from_rgb(&rgb.repeat(width * height), width, height);
+        encode(&mut encoder(), picture.main_view(), width, height)
     }
 
     fn close_to(actual: [u8; 4], expected: [u8; 3]) -> bool {
@@ -353,17 +398,53 @@ mod avc {
             .all(|(a, e)| a.abs_diff(e) <= 12)
     }
 
+    /// A desktop whose server confirmed 10.7 with AVC on, decoding with
+    /// OpenH264 built from source.
+    fn h264_desktop(width: u16, height: u16) -> Pipeline {
+        let mut p = desktop(width, height);
+        p.codecs.h264 = Some(Avc::new(h264::Library::source()));
+        p.handle(GfxPdu::CapabilitiesConfirm(
+            CapabilitiesConfirmPdu::from_typed(&CapabilitySet::V10_7 {
+                flags: CapabilitiesV107Flags::SMALL_CACHE,
+            }),
+        ));
+        p
+    }
+
+    fn whole(width: u16, height: u16) -> Avc420Region {
+        // Exclusive edges, as Windows sends them.
+        Avc420Region::new(0, 0, width, height, 10, 100)
+    }
+
     #[test]
-    fn avc420_draws_only_its_regions() {
-        let mut p = desktop(64, 64);
-        p.codecs.h264 = Some(h264::H264Decoder::from_source().expect("decoder"));
+    fn with_h264_every_version_offers_avc() {
+        let mut p = Pipeline::default();
+        p.codecs.h264 = Some(Avc::new(h264::Library::source()));
         let caps = p.capabilities();
         assert!(
-            matches!(caps[0], CapabilitySet::V8_1 { flags } if flags.contains(CapabilitiesV81Flags::AVC420_ENABLED))
+            matches!(caps[0], CapabilitySet::V10_7 { flags } if !flags.contains(CapabilitiesV107Flags::AVC_DISABLED) && !flags.contains(CapabilitiesV107Flags::AVC_THIN_CLIENT))
         );
+        for version in [
+            CapabilitySet::V10_6 {
+                flags: CapabilitiesV104Flags::SMALL_CACHE,
+            },
+            CapabilitySet::V10_1,
+            CapabilitySet::V8_1 {
+                flags: CapabilitiesV81Flags::AVC420_ENABLED | CapabilitiesV81Flags::SMALL_CACHE,
+            },
+        ] {
+            assert!(caps.contains(&version), "{version:?} missing");
+        }
+        assert!(caps
+            .iter()
+            .all(|c| Allowed::from_confirmed(c).avc420 || matches!(c, CapabilitySet::V8 { .. })));
+    }
 
+    #[test]
+    fn avc420_draws_only_its_regions() {
+        let mut p = h264_desktop(64, 64);
         let h264 = encoded(64, 64, [200, 40, 90]);
-        // Exclusive edges, as Windows sends them: the left half only.
+        // The left half only.
         let region = Avc420Region::new(0, 0, 32, 64, 22, 100);
         p.handle(GfxPdu::WireToSurface1(WireToSurface1Pdu {
             surface_id: 1,
@@ -381,6 +462,137 @@ mod avc {
         assert_eq!(pixel(&p, 40, 10), [0, 0, 0, 255], "outside the region");
     }
 
+    /// Coloured strokes one and two pixels wide on white, like ClearType
+    /// text: what 4:2:0 smears.
+    fn text_like(width: usize, height: usize) -> Vec<u8> {
+        let mut rgb = Vec::with_capacity(width * height * 3);
+        for y in 0..height {
+            for x in 0..width {
+                let px: [u8; 3] = match (x % 6, y % 8) {
+                    (_, 7) => [255, 255, 255],
+                    (0, _) => [200, 20, 20],
+                    (1, _) | (4, 2..=5) => [255, 255, 255],
+                    (2, _) => [20, 40, 210],
+                    (3, _) => [20, 150, 40],
+                    _ => [255, 255, 255],
+                };
+                rgb.extend_from_slice(&px);
+            }
+        }
+        rgb
+    }
+
+    /// The average and the largest difference of any channel between the
+    /// desktop and `rgb`.
+    fn error(p: &Pipeline, rgb: &[u8]) -> (f64, u8) {
+        let out = p.output().expect("output");
+        let mut sum = 0u64;
+        let mut worst = 0u8;
+        for (px, expected) in out.data.chunks(4).zip(rgb.chunks(3)) {
+            for c in 0..3 {
+                let d = px[c].abs_diff(expected[c]);
+                sum += u64::from(d);
+                worst = worst.max(d);
+            }
+        }
+        (sum as f64 / rgb.len() as f64, worst)
+    }
+
+    fn avc444_pdu(codec_id: Codec1Type, encoding: Encoding, streams: &[&[u8]]) -> GfxPdu {
+        let region = whole(64, 64);
+        let stream = |data| Avc420BitmapStream {
+            rectangles: vec![region.to_rectangle()],
+            quant_qual_vals: vec![region.to_quant_quality()],
+            data,
+        };
+        GfxPdu::WireToSurface1(WireToSurface1Pdu {
+            surface_id: 1,
+            codec_id,
+            pixel_format: PixelFormat::XRgb,
+            destination_rectangle: rect(0, 0, 64, 64),
+            bitmap_data: encode_vec(&Avc444BitmapStream {
+                encoding,
+                stream1: stream(streams[0]),
+                stream2: streams.get(1).map(|data| stream(data)),
+            })
+            .expect("encode"),
+        })
+    }
+
+    #[test]
+    fn avc444_keeps_the_colour_of_thin_strokes() {
+        let (w, h) = (64, 64);
+        let rgb = text_like(w, h);
+        let picture = Yuv444::from_rgb(&rgb, w, h);
+
+        // AVC420 for comparison: the same main view on its own.
+        let mut plain = h264_desktop(64, 64);
+        let main = encode(&mut encoder(), picture.main_view(), w, h);
+        plain.handle(GfxPdu::WireToSurface1(WireToSurface1Pdu {
+            surface_id: 1,
+            codec_id: Codec1Type::Avc420,
+            pixel_format: PixelFormat::XRgb,
+            destination_rectangle: rect(0, 0, 64, 64),
+            bitmap_data: encode_avc420_bitmap_stream(&[whole(64, 64)], &main),
+        }));
+        let (smeared, _) = error(&plain, &rgb);
+
+        for (codec, aux) in [
+            (Codec1Type::Avc444, picture.aux_view_v1()),
+            (Codec1Type::Avc444v2, picture.aux_view_v2()),
+        ] {
+            // Both views through one encoder, one after the other.
+            let mut encoder = encoder();
+            let luma = encode(&mut encoder, picture.main_view(), w, h);
+            let chroma = encode(&mut encoder, aux, w, h);
+            let mut p = h264_desktop(64, 64);
+            p.handle(avc444_pdu(
+                codec,
+                Encoding::LUMA_AND_CHROMA,
+                &[&luma, &chroma],
+            ));
+            assert_eq!(p.stats.errors, 0);
+            let (average, worst) = error(&p, &rgb);
+            assert!(
+                average < 6.0 && worst < 100,
+                "{codec:?}: average {average:.2}, worst {worst}, 4:2:0 {smeared:.2}"
+            );
+            assert!(
+                average * 4.0 < smeared,
+                "{codec:?}: {average:.2} against AVC420's {smeared:.2}"
+            );
+
+            // Luma alone first, as for something moving, then the chroma
+            // on its own: the same picture in the end.
+            let mut q = h264_desktop(64, 64);
+            q.handle(avc444_pdu(codec, Encoding::LUMA, &[&luma]));
+            assert!(error(&q, &rgb).0 > average * 2.0, "luma alone is 4:2:0");
+            q.handle(avc444_pdu(codec, Encoding::CHROMA, &[&chroma]));
+            assert_eq!(q.stats.errors, 0);
+            assert_eq!(q.output(), p.output());
+        }
+    }
+
+    #[test]
+    fn avc444_is_refused_when_the_server_confirmed_8_1() {
+        let mut p = desktop(16, 16);
+        p.codecs.h264 = Some(Avc::new(h264::Library::source()));
+        p.handle(GfxPdu::CapabilitiesConfirm(
+            CapabilitiesConfirmPdu::from_typed(&CapabilitySet::V8_1 {
+                flags: CapabilitiesV81Flags::AVC420_ENABLED,
+            }),
+        ));
+        p.handle(GfxPdu::WireToSurface1(WireToSurface1Pdu {
+            surface_id: 1,
+            codec_id: Codec1Type::Avc444,
+            pixel_format: PixelFormat::XRgb,
+            destination_rectangle: rect(0, 0, 16, 16),
+            bitmap_data: vec![0; 8],
+        }));
+        assert_eq!(p.stats.errors, 1);
+        assert_eq!(p.stats.avc444, 0);
+    }
+
     /// Cisco's binary itself, when `UWURDP_OPENH264` names a downloaded copy
     /// (the app never gets it from anywhere else, so neither do the tests).
     #[test]
@@ -389,16 +601,17 @@ mod avc {
             eprintln!("UWURDP_OPENH264 not set; skipping");
             return;
         };
-        let mut p = desktop(64, 64);
-        p.codecs.h264 = Some(h264::H264Decoder::load(path.as_ref()).expect("Cisco's OpenH264"));
+        let mut p = h264_desktop(64, 64);
+        p.codecs.h264 = Some(Avc::new(
+            h264::Library::load(path.as_ref()).expect("Cisco's OpenH264"),
+        ));
         let h264 = encoded(64, 64, [30, 180, 220]);
-        let region = Avc420Region::new(0, 0, 64, 64, 22, 100);
         p.handle(GfxPdu::WireToSurface1(WireToSurface1Pdu {
             surface_id: 1,
             codec_id: Codec1Type::Avc420,
             pixel_format: PixelFormat::XRgb,
             destination_rectangle: rect(0, 0, 64, 64),
-            bitmap_data: encode_avc420_bitmap_stream(&[region], &h264),
+            bitmap_data: encode_avc420_bitmap_stream(&[whole(64, 64)], &h264),
         }));
         assert_eq!(p.stats.errors, 0);
         for (x, y) in [(0, 0), (32, 32), (63, 63)] {
@@ -413,6 +626,7 @@ mod avc {
     #[test]
     fn avc420_without_a_decoder_is_an_error_not_a_crash() {
         let mut p = desktop(16, 16);
+        p.allowed.avc420 = true;
         p.handle(GfxPdu::WireToSurface1(WireToSurface1Pdu {
             surface_id: 1,
             codec_id: Codec1Type::Avc420,

@@ -107,14 +107,15 @@ without it gets the old bitmap path, which current Windows serves slowly and
 tile by tile: the desktop builds up from the top left like an old CRT. With
 it, the server picks a codec per region and has cheap commands for the rest:
 
-| What the server sends              | Used for                           | Decoded by                       |
-| ---------------------------------- | ---------------------------------- | -------------------------------- |
-| AVC420 (H.264)                     | video, scrolling, the whole screen | Cisco's OpenH264, when installed |
-| RemoteFX Progressive               | photos, gradients                  | `ironrdp-graphics`               |
-| ClearCodec                         | text, UI (lossless)                | `ironrdp-graphics`               |
-| Planar, uncompressed               | everything else                    | `ironrdp-graphics`, ours         |
-| RemoteFX (CAVIDEO)                 | older servers                      | ours, on IronRDP's primitives    |
-| SolidFill, SurfaceToSurface, cache | fills, scrolling, repeats          | ours                             |
+| What the server sends              | Used for                         | Decoded by                       |
+| ---------------------------------- | -------------------------------- | -------------------------------- |
+| AVC444, AVC444v2 (H.264, 4:4:4)    | the whole screen, text in colour | Cisco's OpenH264, ours on top    |
+| AVC420 (H.264, 4:2:0)              | video, scrolling, older servers  | Cisco's OpenH264, when installed |
+| RemoteFX Progressive               | photos, gradients                | `ironrdp-graphics`               |
+| ClearCodec                         | text, UI (lossless)              | `ironrdp-graphics`               |
+| Planar, uncompressed               | everything else                  | `ironrdp-graphics`, ours         |
+| RemoteFX (CAVIDEO)                 | older servers                    | ours, on IronRDP's primitives    |
+| SolidFill, SurfaceToSurface, cache | fills, scrolling, repeats        | ours                             |
 
 `uwurdp-core::gfx` is the client side. IronRDP 0.17 only has the pipeline's
 PDUs (`ironrdp-egfx`); surfaces, the bitmap cache, composing and codec
@@ -148,10 +149,21 @@ DVC ──zgfx──▶ GfxChannel ──▶ Pipeline: surfaces ──(mapped)�
   ClearCodec's short V-bars in the wrong bit order, so text and UI tiles stay
   flat or black. Back to a release once one has IronRDP #1443, #1694, #1696,
   #1698 and #1728.
-- What we advertise: with H.264, version 8.1 with AVC420 (AVC444 would need a
-  second decoding pass); without, 10.7 with AVC off. Both with the small
-  cache. A host can turn the pipeline off (`graphicsPipeline` in its RDP
-  settings); the session then uses the old path.
+- What we advertise: with H.264, every version from 10.7 down to 8.1 with
+  AVC on, like mstsc; Windows then sends AVC444. Without, 10.7 with AVC off.
+  Both with the small cache. The server's CapabilitiesConfirm decides which
+  AVC codecs we take: 8.1 allows AVC420 only, 10.x both unless AVC is off.
+  A host can turn the pipeline off (`graphicsPipeline` in its RDP settings);
+  the session then uses the old path.
+- AVC420 gives every 2×2 block one colour, which smears coloured text and
+  ClearType edges. AVC444 sends two 4:2:0 pictures through one H.264
+  stream: the main view (luma, averaged chroma) and the auxiliary view
+  with the chroma samples the main view left out (v1 and v2 lay them out
+  differently, MS-RDPEGFX 3.3.8.3). `gfx::avc` puts them back together into
+  4:4:4 like FreeRDP's `prim_YUV.c`, inside the region rectangles, and
+  converts with BT.709 at full range. A server may send luma and chroma
+  apart (luma while something moves, the chroma once it stands still), so
+  each surface keeps its own decoder and the 4:4:4 picture built so far.
 - The log says which codecs a server used: the line `graphics pipeline done`
   with its counters is the first thing to look at when a server draws slowly.
 
@@ -175,9 +187,11 @@ UwURDP would have no such license. So:
 - The About page carries Cisco's conditions.
 
 The tests encode and decode with OpenH264 built from source (a dev-dependency,
-never in the app), and the dev server speaks the pipeline too (H.264 to
-clients that offer it, uncompressed otherwise), so the whole path runs in
-`cargo test` and in the end-to-end run.
+never in the app): `tests/support/avc444.rs` splits a picture into the two
+views like a server, and the unit tests decode them and check that thin
+coloured strokes keep their colour. The dev server speaks the pipeline too
+(AVC444 or AVC420 to clients that offer H.264, uncompressed otherwise), so
+the whole path runs in `cargo test` and in the end-to-end run.
 
 ## The frame path
 
@@ -287,6 +301,12 @@ lesson in from the start:
   bar at the top.
 - A desktop that doesn't fit the tab is **scaled down** (smart sizing, the
   default) or **scrolled**.
+- At 1:1 the picture is pixel-exact: the size asked for is the tab's in
+  device pixels, rounded down (and the width even, as DisplayControl wants),
+  the canvas's CSS size is its pixel size over `devicePixelRatio`, and its
+  corner is moved onto the device pixel grid, since centring can leave it
+  half a pixel off and the browser would resample. It is only scaled when
+  it is more than a device pixel too large; scaled, it is smoothed.
 
 ## Clipboard and sound
 

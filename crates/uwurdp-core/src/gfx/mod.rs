@@ -26,6 +26,12 @@
 //! Nothing a server sends can take the session down: a PDU or codec payload
 //! that does not decode is logged and skipped, sizes and memory are capped.
 
+#[cfg(feature = "h264")]
+mod avc;
+/// The server side of AVC444's split, shared with the dev server.
+#[cfg(test)]
+#[path = "../../tests/support/avc444.rs"]
+mod avc444_split;
 mod codecs;
 #[cfg(feature = "h264")]
 pub(crate) mod h264;
@@ -36,8 +42,9 @@ use codecs::Codecs;
 use ironrdp_core::{decode, impl_as_any};
 use ironrdp_dvc::{DvcClientProcessor, DvcMessage, DvcProcessor};
 use ironrdp_egfx::pdu::{
-    CapabilitiesAdvertisePdu, CapabilitiesV107Flags, CapabilitiesV81Flags, CapabilitiesV8Flags,
-    CapabilitySet, Codec1Type, FrameAcknowledgePdu, GfxPdu, QueueDepth,
+    CapabilitiesAdvertisePdu, CapabilitiesV103Flags, CapabilitiesV104Flags, CapabilitiesV107Flags,
+    CapabilitiesV10Flags, CapabilitiesV81Flags, CapabilitiesV8Flags, CapabilitySet, Codec1Type,
+    FrameAcknowledgePdu, GfxPdu, QueueDepth,
 };
 use ironrdp_graphics::zgfx;
 use ironrdp_pdu::geometry::ExclusiveRectangle;
@@ -68,9 +75,9 @@ pub(crate) type Shared = Arc<Mutex<Pipeline>>;
 
 /// Creates the channel and the handle the session reads from.
 #[cfg(feature = "h264")]
-pub(crate) fn channel(h264: Option<h264::H264Decoder>) -> (GfxChannel, Shared) {
+pub(crate) fn channel(h264: Option<h264::Library>) -> (GfxChannel, Shared) {
     let mut pipeline = Pipeline::default();
-    pipeline.codecs.h264 = h264;
+    pipeline.codecs.h264 = h264.map(avc::Avc::new);
     wrap(pipeline)
 }
 
@@ -115,6 +122,7 @@ struct Stats {
     progressive: u32,
     remotefx: u32,
     avc420: u32,
+    avc444: u32,
     other: u32,
     fills: u32,
     copies: u32,
@@ -138,7 +146,49 @@ pub(crate) struct Pipeline {
     pending: BTreeMap<u16, DirtyRegion>,
     in_frame: bool,
     frames_decoded: u32,
+    /// What the server's CapabilitiesConfirm allows it to send.
+    allowed: Allowed,
     stats: Stats,
+}
+
+/// The H.264 codecs the confirmed capability set allows; nothing before
+/// the confirmation.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct Allowed {
+    avc420: bool,
+    avc444: bool,
+}
+
+impl Allowed {
+    /// Like MS-RDPEGFX 2.2.3: 8.1 has AVC420 behind a flag, every 10.x
+    /// has both AVC codecs unless AVC_DISABLED is set.
+    fn from_confirmed(set: &CapabilitySet) -> Self {
+        let avc = match set {
+            CapabilitySet::V8 { .. } => false,
+            CapabilitySet::V8_1 { flags } => {
+                return Self {
+                    avc420: flags.contains(CapabilitiesV81Flags::AVC420_ENABLED),
+                    avc444: false,
+                };
+            }
+            CapabilitySet::V10 { flags } | CapabilitySet::V10_2 { flags } => {
+                !flags.contains(CapabilitiesV10Flags::AVC_DISABLED)
+            }
+            CapabilitySet::V10_1 => true,
+            CapabilitySet::V10_3 { flags } => !flags.contains(CapabilitiesV103Flags::AVC_DISABLED),
+            CapabilitySet::V10_4 { flags }
+            | CapabilitySet::V10_5 { flags }
+            | CapabilitySet::V10_6 { flags }
+            | CapabilitySet::V10_6Err { flags } => {
+                !flags.contains(CapabilitiesV104Flags::AVC_DISABLED)
+            }
+            CapabilitySet::V10_7 { flags } => !flags.contains(CapabilitiesV107Flags::AVC_DISABLED),
+        };
+        Self {
+            avc420: avc,
+            avc444: avc,
+        }
+    }
 }
 
 impl Pipeline {
@@ -161,17 +211,34 @@ impl Pipeline {
         false
     }
 
-    /// What we tell the server we can do. With H.264 that is AVC420 in
-    /// version 8.1 (AVC444 would need a second decoder pass we do not
-    /// have); without, 10.7 with AVC off, which gets us the same codecs
-    /// Windows uses for everything else. The small cache keeps the server's
-    /// bitmap cache at 16 MiB per session.
+    /// What we tell the server we can do. With H.264, every version from
+    /// 10.7 down to 8.1 with AVC on, as mstsc does: Windows then picks the
+    /// newest it knows and sends AVC444 (v2 where it can), full colour
+    /// resolution, instead of AVC420's smeared text. Without, 10.7 with AVC
+    /// off, which gets us the same codecs Windows uses for everything else.
+    /// The small cache keeps the server's bitmap cache at 16 MiB per
+    /// session.
     fn capabilities(&self) -> Vec<CapabilitySet> {
         let v8 = CapabilitySet::V8 {
             flags: CapabilitiesV8Flags::SMALL_CACHE,
         };
         if self.has_h264() {
+            let v104 = CapabilitiesV104Flags::SMALL_CACHE;
+            let v10 = CapabilitiesV10Flags::SMALL_CACHE;
             vec![
+                CapabilitySet::V10_7 {
+                    flags: CapabilitiesV107Flags::SMALL_CACHE
+                        | CapabilitiesV107Flags::SCALEDMAP_DISABLE,
+                },
+                CapabilitySet::V10_6 { flags: v104 },
+                CapabilitySet::V10_5 { flags: v104 },
+                CapabilitySet::V10_4 { flags: v104 },
+                CapabilitySet::V10_3 {
+                    flags: CapabilitiesV103Flags::empty(),
+                },
+                CapabilitySet::V10_2 { flags: v10 },
+                CapabilitySet::V10_1,
+                CapabilitySet::V10 { flags: v10 },
                 CapabilitySet::V8_1 {
                     flags: CapabilitiesV81Flags::AVC420_ENABLED | CapabilitiesV81Flags::SMALL_CACHE,
                 },
@@ -196,9 +263,16 @@ impl Pipeline {
     fn handle(&mut self, pdu: GfxPdu) -> Option<GfxPdu> {
         match pdu {
             GfxPdu::CapabilitiesConfirm(confirm) => {
+                let set = confirm.0.parsed().ok().flatten();
+                self.allowed = set
+                    .as_ref()
+                    .map(Allowed::from_confirmed)
+                    .unwrap_or_default();
                 info!(
                     version = format_args!("{:#x}", confirm.0.version.0),
                     h264 = self.has_h264(),
+                    avc420 = self.allowed.avc420,
+                    avc444 = self.allowed.avc444,
                     "graphics pipeline active"
                 );
             }
@@ -290,9 +364,19 @@ impl Pipeline {
                         self.codecs.remotefx(&pdu.bitmap_data, dest, pixels)
                     }
                     #[cfg(feature = "h264")]
-                    Codec1Type::Avc420 => {
+                    Codec1Type::Avc420 if self.allowed.avc420 => {
                         self.stats.avc420 += 1;
-                        self.codecs.avc420(&pdu.bitmap_data, dest, pixels)
+                        self.codecs.avc().and_then(|avc| {
+                            avc.avc420(pdu.surface_id, &pdu.bitmap_data, dest, pixels)
+                        })
+                    }
+                    #[cfg(feature = "h264")]
+                    Codec1Type::Avc444 | Codec1Type::Avc444v2 if self.allowed.avc444 => {
+                        self.stats.avc444 += 1;
+                        let v2 = pdu.codec_id == Codec1Type::Avc444v2;
+                        self.codecs.avc().and_then(|avc| {
+                            avc.avc444(pdu.surface_id, &pdu.bitmap_data, dest, v2, pixels)
+                        })
                     }
                     // Alpha only matters for surfaces shown with
                     // transparency, which a desktop never is.

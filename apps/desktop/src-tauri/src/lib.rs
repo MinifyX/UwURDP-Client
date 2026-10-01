@@ -12,9 +12,11 @@
 //! - [`lock`] — the same through UwULock: signing in, the move from UwUSync,
 //!   the realtime channel
 //! - [`system`] — updates, links, a fresh start for a reloaded page
+//! - [`deep_link`] — `uwurdp://connect/<host-id>`, and one UwURDP at a time
 //! - [`h264`] — Cisco's OpenH264, fetched when the user turns H.264 on
 
 mod backup;
+mod deep_link;
 mod device;
 mod dialogs;
 mod frames;
@@ -31,6 +33,7 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 use uwurdp_core::{ObservedCertificate, SessionId, SessionManager};
 use uwurdp_store::Store;
 
@@ -58,8 +61,22 @@ pub(crate) fn err(e: impl std::fmt::Display) -> String {
 
 pub fn run() {
     system::restrict_dll_search();
+    updates::wait_for_previous();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // One UwURDP at a time: starting it again, or opening a link, brings the
+    // running one to the front, which then handles the link. It goes first,
+    // so a second start ends before it does anything else. A trial copy with
+    // its own host list (UWURDP_DB) runs beside the real one.
+    if std::env::var_os("UWURDP_DB").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // A link among the arguments reaches `deep_link::received` through
+            // the deep-link plugin; a plain second start just shows the window.
+            deep_link::show(app);
+        }));
+    }
+    builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -102,6 +119,17 @@ pub fn run() {
             app.manage(h264::Codec::new(app.handle()));
             updates::start(app.handle());
             sync::start(app.handle());
+
+            app.manage(deep_link::Pending::default());
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                deep_link::received(&handle, event.urls().iter().map(|url| url.as_str()));
+            });
+            // A link that started UwURDP (Windows and Linux pass it as an
+            // argument; on macOS it arrives through `on_open_url`).
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                deep_link::received(app.handle(), urls.iter().map(|url| url.as_str()));
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -169,6 +197,8 @@ pub fn run() {
             system::open_project_page,
             system::h264_status,
             system::set_h264,
+            deep_link::take_deep_link,
+            deep_link::sync_for_link,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start UwURDP");

@@ -560,6 +560,9 @@ fn install_package(pending: Pending, kind: Install) -> Result<(), String> {
         // Its own process group, so it lives on when this UwURDP quits.
         again.process_group(0);
     }
+    // Only one UwURDP runs at a time: the new one waits for this one to quit
+    // instead of handing itself over to it (see `wait_for_previous`).
+    again.env(AFTER_PID, std::process::id().to_string());
     again
         .spawn()
         .map(|_| ())
@@ -569,6 +572,34 @@ fn install_package(pending: Pending, kind: Install) -> Result<(), String> {
 #[cfg(not(target_os = "linux"))]
 fn install_package(_pending: Pending, _kind: Install) -> Result<(), String> {
     Err("Only Linux packages update this way.".into())
+}
+
+/// Set on the UwURDP a Linux package update starts again: the process id of
+/// the one that is about to quit.
+#[cfg(target_os = "linux")]
+const AFTER_PID: &str = "UWURDP_AFTER_PID";
+
+/// Called before anything else: a UwURDP a package update started again waits
+/// until the old one is gone. Otherwise it would find the old one still
+/// running, hand itself over to it as a second start would, and end — and
+/// then the old one ends too.
+pub fn wait_for_previous() {
+    #[cfg(target_os = "linux")]
+    {
+        let Some(pid) = std::env::var(AFTER_PID)
+            .ok()
+            .and_then(|pid| pid.parse::<u32>().ok())
+        else {
+            return;
+        };
+        // Not for the processes this one starts.
+        std::env::remove_var(AFTER_PID);
+        let gone = || !std::path::Path::new(&format!("/proc/{pid}")).exists();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !gone() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
 }
 
 /// Called first thing on start: installs a waiting update, or cleans up after

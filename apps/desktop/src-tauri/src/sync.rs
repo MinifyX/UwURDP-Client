@@ -309,7 +309,7 @@ pub(crate) fn pass(app: &AppHandle, store: &Arc<Store>, sync: &Sync) -> SyncResu
     outcome
 }
 
-fn describe(failure: &SyncFailure) -> String {
+pub(crate) fn describe(failure: &SyncFailure) -> String {
     match failure {
         SyncFailure::VaultLocked => "the vault is locked".into(),
         SyncFailure::PasswordWrong => "wrong password".into(),

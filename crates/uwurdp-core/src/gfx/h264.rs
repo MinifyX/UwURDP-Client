@@ -9,19 +9,71 @@
 use openh264::decoder::{Decoder, DecoderConfig};
 use openh264::formats::YUVSource as _;
 use openh264::OpenH264API;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-/// A decoded picture: `width`×`height` straight RGBA.
-pub(crate) struct Picture<'a> {
-    pub width: u16,
-    pub height: u16,
-    pub rgba: &'a [u8],
+/// A decoded picture: `width`×`height` YUV 4:2:0 planes, straight from the
+/// decoder. RDP's AVC codecs need the planes, not RGB: AVC444 builds one
+/// 4:4:4 picture out of two of them.
+pub(crate) struct Yuv420<'a> {
+    pub width: usize,
+    pub height: usize,
+    pub y: &'a [u8],
+    pub u: &'a [u8],
+    pub v: &'a [u8],
+    pub y_stride: usize,
+    pub uv_stride: usize,
+}
+
+/// Where decoders come from: every surface gets its own, since each
+/// surface's H.264 stream stands on its own.
+pub(crate) struct Library {
+    origin: Origin,
+    /// The decoder loading the library made, handed to the first surface.
+    spare: Option<H264Decoder>,
+}
+
+enum Origin {
+    Cisco(PathBuf),
+    #[cfg(test)]
+    Source,
+}
+
+impl Library {
+    /// Loads Cisco's OpenH264 library at `path` once, so a file that is not
+    /// a known Cisco release fails here and not in the middle of a session.
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let spare = H264Decoder::load(path)?;
+        Ok(Self {
+            origin: Origin::Cisco(path.to_owned()),
+            spare: Some(spare),
+        })
+    }
+
+    /// The decoder compiled from source, for tests only: a source build does
+    /// not carry Cisco's patent license, so the app never uses it.
+    #[cfg(test)]
+    pub fn source() -> Self {
+        Self {
+            origin: Origin::Source,
+            spare: None,
+        }
+    }
+
+    pub fn decoder(&mut self) -> Result<H264Decoder, String> {
+        if let Some(decoder) = self.spare.take() {
+            return Ok(decoder);
+        }
+        match &self.origin {
+            Origin::Cisco(path) => H264Decoder::load(path),
+            #[cfg(test)]
+            Origin::Source => H264Decoder::with_api(OpenH264API::from_source()),
+        }
+    }
 }
 
 pub(crate) struct H264Decoder {
     decoder: Decoder,
     annex_b: Vec<u8>,
-    rgba: Vec<u8>,
 }
 
 impl H264Decoder {
@@ -32,27 +84,24 @@ impl H264Decoder {
         Self::with_api(api)
     }
 
-    /// The decoder compiled from source, for tests only: a source build does
-    /// not carry Cisco's patent license, so the app never uses it.
-    #[cfg(test)]
-    pub fn from_source() -> Result<Self, String> {
-        Self::with_api(OpenH264API::from_source())
-    }
-
     fn with_api(api: OpenH264API) -> Result<Self, String> {
         let decoder =
             Decoder::with_api_config(api, DecoderConfig::new()).map_err(|e| e.to_string())?;
         Ok(Self {
             decoder,
             annex_b: Vec::new(),
-            rgba: Vec::new(),
         })
     }
 
     /// Decodes one access unit. RDP carries H.264 in Annex B form (start
     /// codes); some servers (IronRDP's) send 4-byte length prefixes instead,
-    /// which are rewritten first. `None` when the data held no picture.
-    pub fn decode(&mut self, data: &[u8]) -> Result<Option<Picture<'_>>, String> {
+    /// which are rewritten first. Hands the picture to `use_picture`;
+    /// `None` when the data held no picture.
+    pub fn decode<R>(
+        &mut self,
+        data: &[u8],
+        use_picture: impl FnOnce(&Yuv420<'_>) -> R,
+    ) -> Result<Option<R>, String> {
         let stream = if is_annex_b(data) {
             data
         } else {
@@ -63,16 +112,19 @@ impl H264Decoder {
             return Ok(None);
         };
         let (width, height) = yuv.dimensions();
-        let (Ok(w), Ok(h)) = (u16::try_from(width), u16::try_from(height)) else {
+        if width > usize::from(super::MAX_EDGE) || height > usize::from(super::MAX_EDGE) {
             return Err(format!("picture too large: {width}x{height}"));
-        };
-        self.rgba.resize(width * height * 4, 0);
-        yuv.write_rgba8(&mut self.rgba);
-        Ok(Some(Picture {
-            width: w,
-            height: h,
-            rgba: &self.rgba,
-        }))
+        }
+        let (y_stride, uv_stride, _) = yuv.strides();
+        Ok(Some(use_picture(&Yuv420 {
+            width,
+            height,
+            y: yuv.y(),
+            u: yuv.u(),
+            v: yuv.v(),
+            y_stride,
+            uv_stride,
+        })))
     }
 }
 
@@ -124,6 +176,7 @@ mod tests {
         let fake = dir.join("openh264.dll");
         std::fs::write(&fake, b"not a library").expect("write");
         assert!(H264Decoder::load(&fake).is_err());
+        assert!(Library::load(&fake).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

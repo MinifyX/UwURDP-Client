@@ -30,8 +30,8 @@ const CRASHED: &str =
 #[cfg(feature = "h264")]
 fn graphics_channel(target: &RdpTarget) -> (gfx::GfxChannel, gfx::Shared) {
     let decoder = target.settings.h264_library.as_deref().and_then(|path| {
-        match gfx::h264::H264Decoder::load(path) {
-            Ok(decoder) => Some(decoder),
+        match gfx::h264::Library::load(path) {
+            Ok(library) => Some(library),
             Err(error) => {
                 warn!(%error, path = %path.display(), "OpenH264 could not be loaded; no H.264 for this session");
                 None

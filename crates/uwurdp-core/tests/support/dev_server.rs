@@ -10,17 +10,22 @@
 //!
 //! With `graphics` on it also serves the graphics pipeline, the way current
 //! Windows servers do: once a client opens it, every picture goes through it
-//! — H.264 (OpenH264 built from source) when the client offers AVC420,
-//! uncompressed otherwise — and nothing through the old bitmap path.
+//! — H.264 (OpenH264 built from source) when the client offers it: AVC444
+//! when it offers a 10.x version with AVC on and the height is a multiple of
+//! 16, AVC420 otherwise; uncompressed without H.264 — and nothing through
+//! the old bitmap path.
 //!
 //! `ironrdp-server` handles one connection at a time; a second client waits
 //! until the first one leaves.
 
 #![allow(dead_code)] // Each includer uses a different subset.
 
+#[path = "avc444.rs"]
+mod avc444;
+
 use ironrdp_egfx::pdu::{
-    Avc420Region, CapabilitiesAdvertisePdu, CapabilitiesV107Flags, CapabilitiesV81Flags,
-    CapabilitySet,
+    Avc420Region, CapabilitiesAdvertisePdu, CapabilitiesV104Flags, CapabilitiesV107Flags,
+    CapabilitiesV81Flags, CapabilitySet,
 };
 use ironrdp_egfx::server::{GraphicsPipelineHandler, GraphicsPipelineServer};
 use ironrdp_server::tokio_rustls::rustls;
@@ -131,6 +136,8 @@ struct Gfx {
     /// Whether the client offered H.264. ironrdp-egfx's server confirms its
     /// own preferred flags and would send H.264 to a client that said no.
     client_h264: bool,
+    /// Whether it offered a version with AVC444.
+    client_avc444: bool,
     uncompressed_frames: u32,
     h264_frames: u32,
 }
@@ -359,11 +366,26 @@ impl Shared {
 
         let bgra = render(scene);
         let h264 = server.supports_avc420() && gfx.client_h264;
+        let avc444 = server.supports_avc444() && gfx.client_avc444 && height % 16 == 0;
+        // Exclusive edges, as Windows sends them.
+        let region = Avc420Region::new(0, 0, width, height, 22, 100);
         let sent = if h264 && width % 2 == 0 && height % 2 == 0 {
-            let h264 = gfx.encode(&bgra, width, height);
-            // Exclusive edges, as Windows sends them.
-            let region = Avc420Region::new(0, 0, width, height, 22, 100);
-            let sent = server.send_avc420_frame(surface, &h264, &[region], 0);
+            let picture = gfx.picture(&bgra, width, height);
+            let luma = gfx.encode(picture.main_view(), width, height);
+            let sent = if avc444 {
+                // Both views through the one encoder, as Windows does.
+                let chroma = gfx.encode(picture.aux_view_v1(), width, height);
+                server.send_avc444_frame(
+                    surface,
+                    &luma,
+                    std::slice::from_ref(&region),
+                    Some(&chroma),
+                    Some(std::slice::from_ref(&region)),
+                    0,
+                )
+            } else {
+                server.send_avc420_frame(surface, &luma, std::slice::from_ref(&region), 0)
+            };
             gfx.h264_frames += u32::from(sent.is_some());
             sent
         } else {
@@ -396,20 +418,29 @@ impl Shared {
 }
 
 impl Gfx {
-    /// One H.264 access unit (Annex B) of a BGRA picture.
-    fn encode(&mut self, bgra: &[u8], width: u16, height: u16) -> Vec<u8> {
-        use openh264::formats::{RgbSliceU8, YUVBuffer};
-        let (w, h) = (usize::from(width), usize::from(height));
+    /// A BGRA picture in YUV 4:4:4, BT.709 at full range like Windows.
+    fn picture(&self, bgra: &[u8], width: u16, height: u16) -> avc444::Yuv444 {
         let rgb: Vec<u8> = bgra
             .as_chunks::<4>()
             .0
             .iter()
             .flat_map(|px| [px[2], px[1], px[0]])
             .collect();
-        let yuv = YUVBuffer::from_rgb_source(RgbSliceU8::new(&rgb, (w, h)));
+        avc444::Yuv444::from_rgb(&rgb, usize::from(width), usize::from(height))
+    }
+
+    /// One H.264 access unit (Annex B) of an I420 picture.
+    fn encode(&mut self, i420: Vec<u8>, width: u16, height: u16) -> Vec<u8> {
+        use openh264::encoder::{Encoder, EncoderConfig};
+        use openh264::formats::YUVBuffer;
+        use openh264::OpenH264API;
+        let yuv = YUVBuffer::from_vec(i420, usize::from(width), usize::from(height));
         let fresh = !matches!(&self.encoder, Some((_, ew, eh)) if (*ew, *eh) == (width, height));
         if fresh {
-            self.encoder = openh264::encoder::Encoder::new()
+            // Never skip a picture: with AVC444 every other one is the
+            // chroma of the one before.
+            let config = EncoderConfig::new().skip_frames(false);
+            self.encoder = Encoder::with_api_config(OpenH264API::from_source(), config)
                 .ok()
                 .map(|e| (e, width, height));
         }
@@ -445,6 +476,7 @@ impl GfxServerFactory for GfxFactory {
         gfx.surface = None;
         gfx.encoder = None;
         gfx.client_h264 = false;
+        gfx.client_avc444 = false;
         Some((GfxDvcBridge::new(handle.clone()), handle))
     }
 }
@@ -453,16 +485,25 @@ struct GfxHandler(Arc<Shared>);
 
 impl GraphicsPipelineHandler for GfxHandler {
     fn capabilities_advertise(&mut self, pdu: &CapabilitiesAdvertisePdu) {
-        let h264 = pdu.0.iter().any(|raw| match raw.parsed() {
-            Ok(Some(CapabilitySet::V8_1 { flags })) => {
-                flags.contains(CapabilitiesV81Flags::AVC420_ENABLED)
-            }
+        let avc444 = pdu.0.iter().any(|raw| match raw.parsed() {
             Ok(Some(CapabilitySet::V10_7 { flags })) => {
                 !flags.contains(CapabilitiesV107Flags::AVC_DISABLED)
             }
+            Ok(Some(CapabilitySet::V10_4 { flags } | CapabilitySet::V10_5 { flags })) => {
+                !flags.contains(CapabilitiesV104Flags::AVC_DISABLED)
+            }
             _ => false,
         });
-        self.0.gfx.lock().expect("gfx lock").client_h264 = h264;
+        let h264 = avc444
+            || pdu.0.iter().any(|raw| match raw.parsed() {
+                Ok(Some(CapabilitySet::V8_1 { flags })) => {
+                    flags.contains(CapabilitiesV81Flags::AVC420_ENABLED)
+                }
+                _ => false,
+            });
+        let mut gfx = self.0.gfx.lock().expect("gfx lock");
+        gfx.client_h264 = h264;
+        gfx.client_avc444 = avc444;
     }
 
     fn on_ready(&mut self, _negotiated: &CapabilitySet) {

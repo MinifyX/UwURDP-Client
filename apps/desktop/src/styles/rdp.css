@@ -32,11 +32,22 @@
   place-items: start;
 }
 
+/*
+ * At 1:1 the canvas sits on whole device pixels (rdp.ts lays it out), so
+ * nothing should be resampled; should a browser still be a fraction off, it
+ * copies pixels instead of blurring them. Scaled down, it smooths, with the
+ * better filter where the browser has one.
+ */
 .rdp-canvas {
   display: block;
   outline: none;
-  image-rendering: auto;
+  image-rendering: pixelated;
   touch-action: none;
+}
+
+.rdp-canvas[data-scaled='yes'] {
+  image-rendering: auto;
+  image-rendering: smooth;
 }
 
 /* A session that ended keeps its last picture, dimmed under the overlay. */

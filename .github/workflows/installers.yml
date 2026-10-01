@@ -46,6 +46,7 @@ jobs:
       matrix:
         os: [macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       # Every `uses:` is pinned to a commit, with the version in the comment: a
       # tag can be moved, and `@stable` is a branch.
@@ -112,6 +113,7 @@ jobs:
             target: aarch64-pc-windows-msvc
             rust-targets: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

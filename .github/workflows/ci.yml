@@ -36,6 +36,7 @@ jobs:
   web:
     name: Front end
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       # Every `uses:` is pinned to a commit, with the version in the comment.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,6 +62,9 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
+    # A hung runner (apt once stalled for an hour) fails instead of holding
+    # the release for the default six hours.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

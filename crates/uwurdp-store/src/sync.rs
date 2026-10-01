@@ -704,7 +704,7 @@ fn pending_rows(
             "name, address, port, workspace, position, group_id, identity_id, rdp, comment,
              gateway_identity_id"
         }
-        EntityKind::Group => "workspace, name, position, identity_id",
+        EntityKind::Group => "workspace, name, position, identity_id, drives",
         EntityKind::Identity => "label, username, auth_type, key_id, password_secret_id, domain",
         EntityKind::Key => "label, key_type, public_key, private_secret_id, passphrase_secret_id",
         EntityKind::Snippet => "label, body, group_path",
@@ -797,6 +797,7 @@ fn payload_of(
             name: row.get(8)?,
             position: row.get(9)?,
             identity_id: optional_uuid(row.get(10)?)?,
+            drives: crate::groups::drives_from_text(row.get(11)?),
             extra,
         }),
         EntityKind::Identity => serde_json::to_vec(&IdentityPayload {
@@ -1085,11 +1086,12 @@ fn insert_record(
             tx.execute(
                 "INSERT INTO host_groups
                     (id, vault_id, workspace, name, position, hlc_wall_ms, hlc_counter,
-                     hlc_device, deleted, dirty, server_seq, sync_extra, identity_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, 0, ?9, ?10, ?11)
+                     hlc_device, deleted, dirty, server_seq, sync_extra, identity_id, drives)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, 0, ?9, ?10, ?11, ?12)
                  ON CONFLICT (id) DO UPDATE SET
                     workspace = excluded.workspace, name = excluded.name,
                     position = excluded.position, identity_id = excluded.identity_id,
+                    drives = excluded.drives,
                     hlc_wall_ms = excluded.hlc_wall_ms, hlc_counter = excluded.hlc_counter,
                     hlc_device = excluded.hlc_device, deleted = 0, dirty = 0,
                     server_seq = excluded.server_seq, sync_extra = excluded.sync_extra,
@@ -1106,6 +1108,7 @@ fn insert_record(
                     seq,
                     extra,
                     group.identity_id.map(|i| i.to_string()),
+                    crate::groups::drives_to_text(group.drives.as_ref()),
                 ],
             )?;
         }

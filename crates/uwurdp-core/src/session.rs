@@ -20,7 +20,7 @@
 //! output instead of IronRDP's image; after every step the session takes the
 //! pipeline's changes (new size, dirty rectangles) into the same machinery.
 
-use crate::clipboard::{ClipboardHandle, WorkerMsg};
+use crate::clipboard::{self, ClipboardHandle, Outgoing, WorkerMsg};
 use crate::connect::{Established, Stream};
 use crate::dirty::{DirtyRegion, Rect};
 use crate::frame::{self, CloseReason};
@@ -38,8 +38,8 @@ use ironrdp_pdu::rdp::server_error_info::{ErrorInfo, ProtocolIndependentCode};
 use ironrdp_session::image::DecodedImage;
 use ironrdp_session::{fast_path, ActiveStage, ActiveStageBuilder, ActiveStageOutput};
 use ironrdp_session::{GracefulDisconnectReason, SessionResult};
-use ironrdp_svc::SvcProcessorMessages;
 use ironrdp_tokio::{split_tokio_framed, FramedWrite as _};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -63,6 +63,10 @@ pub const RESIZE_DEBOUNCE: Duration = Duration::from_millis(250);
 /// dropping the connection anyway.
 pub const CLOSE_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// How often the clipboard channel's timers run (expired locks, stale
+/// transfers); IronRDP asks for every few seconds.
+const CLIPBOARD_TICK: Duration = Duration::from_secs(5);
+
 /// Fast-path input PDUs can carry up to 255 events; stay well below.
 const MAX_EVENTS_PER_PDU: usize = 64;
 
@@ -77,8 +81,12 @@ pub(crate) enum Command {
     },
     Ack,
     ClipboardChanged,
+    /// Files dropped on the desktop, for the server's clipboard.
+    ClipboardOffer(Vec<PathBuf>),
+    /// The user wants the server's files that were too big to fetch alone.
+    ClipboardDownload,
     /// From the clipboard worker or backend.
-    Clipboard(ClipboardMessage),
+    Clipboard(Outgoing),
     Close,
 }
 
@@ -263,6 +271,8 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
     let mut resize_at = Instant::now();
     let mut close_deadline: Option<Instant> = None;
     let mut commands_open = true;
+    let mut clipboard_tick = tokio::time::interval(CLIPBOARD_TICK);
+    clipboard_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         if out.gone.load(Ordering::Relaxed) && close_deadline.is_none() {
@@ -325,12 +335,29 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                 }
                 Some(Command::ClipboardChanged) => {
                     if let Some(clipboard) = &clipboard {
-                        clipboard.send(WorkerMsg::Reannounce);
+                        clipboard.send(WorkerMsg::Check { deep: true });
                     }
                     Ok(Vec::new())
                 }
-                Some(Command::Clipboard(message)) => Ok(clipboard_message(&mut active_stage, message)),
+                Some(Command::ClipboardOffer(paths)) => {
+                    if let Some(clipboard) = &clipboard {
+                        clipboard.send(WorkerMsg::OfferFiles(paths));
+                    }
+                    Ok(Vec::new())
+                }
+                Some(Command::ClipboardDownload) => {
+                    if let Some(clipboard) = &clipboard {
+                        clipboard.send(WorkerMsg::Download);
+                    }
+                    Ok(Vec::new())
+                }
+                Some(Command::Clipboard(Outgoing::Cliprdr(message))) => Ok(clipboard_message(&mut active_stage, message)),
+                Some(Command::Clipboard(Outgoing::Status(status))) => {
+                    out.send(&frame::clipboard(&status));
+                    Ok(Vec::new())
+                }
             },
+            _ = clipboard_tick.tick(), if clipboard.is_some() => Ok(clipboard_tick_outputs(&mut active_stage)),
             () = sleep_until(flush_at), if can_flush => {
                 screen.flush(out, graphics.as_ref());
                 continue;
@@ -568,28 +595,35 @@ fn clipboard_message(
         debug!("clipboard message without a clipboard channel");
         return Vec::new();
     };
-    let messages: Result<SvcProcessorMessages<CliprdrClient>, _> = match message {
-        ClipboardMessage::SendInitiateCopy(formats) => cliprdr.initiate_copy(&formats),
-        ClipboardMessage::SendFormatData(response) => cliprdr.submit_format_data(response),
-        ClipboardMessage::SendInitiatePaste(format) => cliprdr.initiate_paste(format),
-        ClipboardMessage::Error(e) => {
-            warn!(error = %e, "clipboard error");
-            return Vec::new();
-        }
-        // File transfer is not offered, so nothing ever produces these.
-        other => {
-            debug!(?other, "ignoring an unsupported clipboard message");
-            return Vec::new();
-        }
-    };
-    let messages = match messages {
-        Ok(messages) => messages,
-        Err(e) => {
-            warn!(error = %e, "clipboard message could not be encoded");
-            return Vec::new();
-        }
-    };
-    match active_stage.process_svc_processor_messages(messages) {
+    match clipboard::to_channel(cliprdr, message) {
+        Some(messages) => send_clipboard(active_stage, messages),
+        None => Vec::new(),
+    }
+}
+
+/// Runs the clipboard channel's timers.
+fn clipboard_tick_outputs(active_stage: &mut ActiveStage) -> Vec<ActiveStageOutput> {
+    match active_stage
+        .get_svc_processor_mut::<CliprdrClient>()
+        .and_then(clipboard::tick)
+    {
+        Some(messages) => send_clipboard(active_stage, messages),
+        None => Vec::new(),
+    }
+}
+
+fn send_clipboard(
+    active_stage: &mut ActiveStage,
+    messages: ironrdp_cliprdr::CliprdrSvcMessages<ironrdp_cliprdr::Client>,
+) -> Vec<ActiveStageOutput> {
+    let messages: Vec<ironrdp_svc::SvcMessage> = messages.into();
+    if messages.is_empty() {
+        return Vec::new();
+    }
+    match active_stage.process_svc_processor_messages(ironrdp_svc::SvcProcessorMessages::<
+        CliprdrClient,
+    >::new(messages))
+    {
         Ok(frame) => vec![ActiveStageOutput::ResponseFrame(frame)],
         Err(e) => {
             warn!(error = %e.report(), "clipboard message could not be sent");

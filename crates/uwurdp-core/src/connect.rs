@@ -20,7 +20,7 @@
 //! every Windows host that allows it (the default, including domain members
 //! reached by IP).
 
-use crate::clipboard::TextClipboardBackend;
+use crate::clipboard::ClipboardBackend;
 use crate::config::{AudioMode, RdpTarget, SessionSettings};
 use crate::error::RdpError;
 use crate::tls;
@@ -69,7 +69,7 @@ pub(crate) struct Established {
 /// Optional channels built by the caller (they need the session's channels).
 #[derive(Default)]
 pub(crate) struct Channels {
-    pub clipboard: Option<TextClipboardBackend>,
+    pub clipboard: Option<ClipboardBackend>,
     pub graphics: Option<crate::gfx::GfxChannel>,
 }
 

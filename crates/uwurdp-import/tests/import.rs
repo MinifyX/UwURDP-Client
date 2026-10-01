@@ -7,8 +7,8 @@
 
 use uwurdp_import::{
     parse_rdg, parse_rdp_file, Decrypt, ImportedAudio, ImportedCredential, ImportedDisplay,
-    ImportedGateway, NamedCredential, PasswordOrigin, PasswordRecipient, RecipientKind, Secret,
-    Source,
+    ImportedDrives, ImportedGateway, NamedCredential, PasswordOrigin, PasswordRecipient,
+    RecipientKind, Secret, Source,
 };
 
 /// The fake cipher that mirrors how the fixtures were sealed.
@@ -117,6 +117,16 @@ fn rdg_27_full_tree() {
     // app1: inherits inside a group, so it carries no credential of its own
     // (it will inherit the group's at connect time). Settings fully resolved.
     let app1 = host("app1");
+    // `redirectDrives` inherited from the file: every drive. app1's group
+    // has resources of its own that don't say.
+    assert_eq!(app1.settings.drives, None);
+    assert_eq!(
+        edge.settings.drives,
+        Some(ImportedDrives {
+            enabled: true,
+            paths: vec!["*".into()],
+        })
+    );
     assert_eq!(app1.group_path.as_deref(), Some("Datacenter / Rack A"));
     assert_eq!(app1.credential, None);
     assert_eq!(
@@ -267,6 +277,15 @@ fn rdp_utf8() {
     assert_eq!(host.settings.admin, Some(true));
     assert_eq!(host.settings.audio, Some(ImportedAudio::Remote));
     assert_eq!(host.settings.clipboard, Some(true));
+    // Drive letters map; DynamicDrives and names that aren't drives don't.
+    assert_eq!(
+        host.settings.drives,
+        Some(ImportedDrives {
+            enabled: true,
+            paths: vec!["C:\\".into(), "E:\\".into()],
+        })
+    );
+    assert!(host.extras.iter().all(|(k, _)| k != "drivestoredirect"));
 
     // DOMAIN\user split.
     let cred = &bundle.credentials[host.credential.unwrap()];

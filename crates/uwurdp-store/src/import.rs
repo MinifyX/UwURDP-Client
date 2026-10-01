@@ -22,7 +22,7 @@ use crate::vault::seal_secret;
 use crate::{now_ms, tick, vault_id, Result, Store, StoreError};
 use rusqlite::{params, Transaction};
 use uuid::Uuid;
-use uwurdp_proto::RdpSettings;
+use uwurdp_proto::{DriveRedirection, RdpSettings};
 use uwurdp_vault::UnlockedVault;
 use zeroize::Zeroizing;
 
@@ -60,6 +60,9 @@ pub struct GroupInput {
     pub workspace: Workspace,
     pub name: String,
     pub login: Option<usize>,
+    /// The drive redirection it hands down. A group that already has one
+    /// keeps it, like its login.
+    pub drives: Option<DriveRedirection>,
 }
 
 /// A server certificate already trusted, as an UwURDP export carries it.
@@ -177,6 +180,24 @@ impl Writer<'_> {
             )?;
             if !existed {
                 outcome.groups_added += 1;
+            }
+            if let Some(drives) = &group.drives {
+                let clock = tick(self.tx, self.device)?;
+                self.tx.execute(
+                    "UPDATE host_groups
+                        SET drives = ?2, rev = rev + 1,
+                            dirty = 1, hlc_wall_ms = ?3, hlc_counter = ?4, hlc_device = ?5
+                      WHERE id = ?1 AND drives IS NULL",
+                    params![
+                        id,
+                        crate::groups::drives_to_text(Some(&crate::hosts::normalize_drives(
+                            drives.clone()
+                        ))),
+                        clock.wall_ms as i64,
+                        clock.counter,
+                        clock.device
+                    ],
+                )?;
             }
             let has_login: bool = self.tx.query_row(
                 "SELECT identity_id IS NOT NULL FROM host_groups WHERE id = ?1",
@@ -417,6 +438,7 @@ mod tests {
                 workspace: Workspace::Business,
                 name: "Domain Controllers".into(),
                 login: Some(0),
+                drives: None,
             }],
             logins: vec![
                 LoginInput {

@@ -989,3 +989,57 @@ html[data-dragging] * {
   border: 1px solid var(--uwu-hairline);
   background: var(--uwu-elevated);
 }
+
+/* ── Shared folders (drive redirection) ────────────────── */
+
+.drive-list {
+  display: grid;
+  gap: 8px;
+}
+
+.drive-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--uwu-radius-control);
+  border: 1px solid var(--uwu-hairline);
+  background: var(--uwu-elevated);
+}
+
+.drive-row > .icon {
+  flex: none;
+  color: var(--uwu-muted);
+}
+
+.drive-row .drive-name {
+  flex: 0 0 9rem;
+  min-width: 0;
+}
+
+.drive-row .drive-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--uwu-muted);
+  font-size: 12px;
+}
+
+.drive-row .drive-all {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.drive-row .drive-all small {
+  color: var(--uwu-muted);
+  font-size: 12px;
+}
+
+.drive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -1203,3 +1203,52 @@ fn rdp_settings_a_group_login_and_a_gateway_travel_along() {
     let password = b.reveal_login_password(&login).unwrap().unwrap();
     assert_eq!(&*password, b"group-pw");
 }
+
+#[test]
+fn drive_redirection_travels_with_hosts_and_groups() {
+    use uwurdp_store::{DriveRedirection, SharedDrive};
+    let server = MemoryServer::new();
+    let a = first_device();
+    let b = joined_device(&a);
+    let shared = |path: &str| DriveRedirection {
+        enabled: true,
+        drives: vec![SharedDrive {
+            name: String::new(),
+            path: path.into(),
+            ..SharedDrive::default()
+        }],
+        ..DriveRedirection::default()
+    };
+
+    let mut inherits = draft("web", "web.test");
+    inherits.group_path = Some("Clients".into());
+    let inherits = a.save_host(inherits).unwrap();
+    let mut own = draft("db", "db.test");
+    own.group_path = Some("Clients".into());
+    own.rdp.drives = Some(shared("C:\\"));
+    let own = a.save_host(own).unwrap();
+    a.set_group_drives(
+        Workspace::Private,
+        "Clients",
+        Some(shared("/home/uwu/Projects")),
+    )
+    .unwrap();
+
+    let up = sync_once(&a, &server).unwrap();
+    assert_eq!(up.apply.identical, up.pushed, "{up:?}");
+    sync_once(&b, &server).unwrap();
+
+    let drives = b.host_drives(inherits.id).unwrap();
+    assert_eq!(drives, a.host_drives(inherits.id).unwrap());
+    assert_eq!(drives.drives[0].name, "Projects");
+    let drives = b.host_drives(own.id).unwrap();
+    assert_eq!(drives.drives[0].name, "C", "a drive is named by its letter");
+    assert_eq!(drives.drives[0].path, "C:\\");
+
+    // Switching the group's off on B reaches A.
+    b.set_group_drives(Workspace::Private, "Clients", None)
+        .unwrap();
+    sync_once(&b, &server).unwrap();
+    sync_once(&a, &server).unwrap();
+    assert!(!a.host_drives(inherits.id).unwrap().enabled);
+}

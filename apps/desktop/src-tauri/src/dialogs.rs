@@ -7,7 +7,8 @@
 //! the end-to-end run can export and import without clicking through Windows:
 //! `UWURDP_E2E_SAVE_DIR` (a save goes there, under the suggested name) and
 //! `UWURDP_E2E_OPEN_FILE` (an open picks that file; several, separated by the
-//! system's path separator, for a multi-select). Release builds ignore them.
+//! system's path separator, for a multi-select). `UWURDP_E2E_OPEN_FOLDER`
+//! does the same for a folder. Release builds ignore them.
 
 use std::path::PathBuf;
 use tauri::AppHandle;
@@ -59,6 +60,21 @@ pub(crate) async fn open(app: &AppHandle, title: &str, filter: Filter<'_>) -> Op
         .add_filter(filter.name, filter.extensions)
         .add_filter("Alle Dateien", &["*"]);
     tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
+        .await
+        .ok()
+        .flatten()
+        .and_then(|path| path.into_path().ok())
+}
+
+/// One folder.
+pub(crate) async fn pick_folder(app: &AppHandle, title: &str) -> Option<PathBuf> {
+    if cfg!(debug_assertions) {
+        if let Some(folder) = std::env::var_os("UWURDP_E2E_OPEN_FOLDER") {
+            return Some(PathBuf::from(folder));
+        }
+    }
+    let dialog = app.dialog().file().set_title(title);
+    tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_folder())
         .await
         .ok()
         .flatten()

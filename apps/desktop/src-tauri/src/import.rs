@@ -20,8 +20,8 @@ use tauri::State;
 use uuid::Uuid;
 use uwurdp_import::{Decrypt, ImportBundle, ImportedAudio, ImportedDisplay, ImportedSettings};
 use uwurdp_store::{
-    GatewaySettings, GroupInput, HostInput, ImportSet, LoginInput, RdpSettings, Store, VaultStatus,
-    Workspace,
+    DriveRedirection, GatewaySettings, GroupInput, HostInput, ImportSet, LoginInput, RdpSettings,
+    SharedDrive, Store, VaultStatus, Workspace,
 };
 use zeroize::Zeroizing;
 
@@ -590,6 +590,20 @@ fn rdp_settings(settings: &ImportedSettings) -> RdpSettings {
     if let Some(clipboard) = settings.clipboard {
         rdp.clipboard = clipboard;
     }
+    // The host's own, so it doesn't follow a group it lands in; names come
+    // from the drive letters when the store normalises it.
+    rdp.drives = settings.drives.as_ref().map(|drives| DriveRedirection {
+        enabled: drives.enabled,
+        drives: drives
+            .paths
+            .iter()
+            .map(|path| SharedDrive {
+                path: path.clone(),
+                ..SharedDrive::default()
+            })
+            .collect(),
+        ..DriveRedirection::default()
+    });
     rdp.gateway = settings.gateway.as_ref().map(|gateway| GatewaySettings {
         address: gateway.address.clone(),
         port: gateway.port.unwrap_or(443),
@@ -629,6 +643,7 @@ fn to_import_set(
             workspace,
             name: group_name(&group.path),
             login: group.credential,
+            drives: None,
         })
         .collect();
     let hosts = bundle

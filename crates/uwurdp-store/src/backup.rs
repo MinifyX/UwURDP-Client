@@ -21,7 +21,7 @@ use base64::Engine as _;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use uwurdp_proto::RdpSettings;
+use uwurdp_proto::{DriveRedirection, RdpSettings};
 use uwurdp_vault::{KdfParams, PasswordSealed};
 use zeroize::Zeroizing;
 
@@ -163,6 +163,9 @@ pub struct BackupGroup {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login: Option<BackupLogin>,
+    /// The drive redirection the group hands to its hosts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drives: Option<DriveRedirection>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -283,6 +286,7 @@ impl Store {
                 login: self.backup_login(login, secrets)?,
                 workspace: group.workspace,
                 name: group.name,
+                drives: group.drives,
             });
         }
 
@@ -349,6 +353,7 @@ impl Store {
                 workspace: g.workspace,
                 name: g.name,
                 login: login(g.login),
+                drives: g.drives,
             })
             .collect();
 
@@ -590,6 +595,18 @@ mod tests {
 
     const FAST: KdfParams = KdfParams::INSECURE_FOR_TESTS;
 
+    fn shares(path: &str) -> DriveRedirection {
+        DriveRedirection {
+            enabled: true,
+            drives: vec![uwurdp_proto::SharedDrive {
+                name: String::new(),
+                path: path.into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
     /// A store with a bit of everything: two workspaces, a group with a
     /// login, a host with its own password and a gateway, a trusted
     /// certificate.
@@ -600,6 +617,9 @@ mod tests {
         store.create_group(Workspace::Private, "Empty").unwrap();
         store
             .set_group_login(Workspace::Business, "Clients", "svc", "CORP", &set("grp"))
+            .unwrap();
+        store
+            .set_group_drives(Workspace::Business, "Clients", Some(shares("/srv/clients")))
             .unwrap();
 
         let mut web = draft("web", "10.0.0.5");
@@ -616,6 +636,7 @@ mod tests {
             ..Default::default()
         });
         web.comment = "the shop".into();
+        web.rdp.drives = Some(shares("D:\\"));
         store.save_host(web).unwrap();
 
         let mut inherits = draft("app", "10.0.0.6");
@@ -667,7 +688,14 @@ mod tests {
         assert_eq!(web.gateway_username, "gw");
         assert_eq!(&**other.reveal_host_password(web.id).unwrap(), b"hunter2");
 
+        assert_eq!(other.host_drives(web.id).unwrap().drives[0].name, "D");
+
         let app = hosts.iter().find(|h| h.name == "app").unwrap();
+        assert_eq!(
+            other.host_drives(app.id).unwrap().drives[0].path,
+            "/srv/clients",
+            "the group's shared folders came along"
+        );
         let login = other.host_login(app.id).unwrap().unwrap();
         assert!(login.from_group, "the group's login came along");
         assert_eq!(

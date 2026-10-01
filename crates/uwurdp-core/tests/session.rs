@@ -14,8 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use uwurdp_core::{
-    AudioMode, FrameSink, InputEvent, MouseButton, RdpError, RdpTarget, SessionId, SessionManager,
-    SessionSettings, SinkError,
+    AudioMode, DriveShare, FrameSink, InputEvent, MouseButton, RdpError, RdpTarget, SessionId,
+    SessionManager, SessionSettings, SinkError,
 };
 use zeroize::Zeroizing;
 
@@ -361,6 +361,33 @@ async fn the_graphics_pipeline_carries_the_whole_session() {
         "only {uncompressed} frames through the pipeline"
     );
     assert_eq!(h264, 0, "no H.264 without OpenH264");
+}
+
+/// IronRDP's server has no drive channel, so this only shows that asking for
+/// one (and the sound channel it needs, with sound off) costs the session
+/// nothing; the file system behind it is tested in `drive.rs`.
+#[tokio::test(flavor = "multi_thread")]
+async fn shared_folders_do_not_get_in_the_way_of_a_session() {
+    let server = server();
+    let folder = std::env::temp_dir();
+    let mut page = open_with(
+        &server,
+        SessionSettings {
+            drives: vec![
+                DriveShare {
+                    name: "Temp".into(),
+                    path: folder,
+                },
+                DriveShare {
+                    name: "Gone".into(),
+                    path: "/nowhere/uwurdp-test".into(),
+                },
+            ],
+            ..settings()
+        },
+    )
+    .await;
+    page.until("the first frame", |p| p.bitmaps > 0).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

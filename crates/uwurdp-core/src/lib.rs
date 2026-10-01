@@ -58,6 +58,10 @@
 //!   certificate (`SHA256:<base64>`, like `ssh-keygen`). Handshake
 //!   signatures are verified; the chain and host name are not.
 //! - **Clipboard**: text, HTML, pictures and files both ways (`arboard`).
+//! - **Drives** ([`SessionSettings::drives`]): local folders as
+//!   `\\tsclient\<name>` over RDPDR, served by our own file system backend
+//!   (`drive.rs`) with `std::fs`, every path confined to its shared folder.
+//!   Change notifications are never answered, as in FreeRDP.
 //! - **Audio**: with the `audio` feature (default), [`AudioMode::Local`]
 //!   plays through cpal as PCM. `Remote` and `Off` both tell the server not
 //!   to redirect audio: IronRDP cannot send the "leave it on the server" flag.
@@ -92,6 +96,7 @@ mod clipboard;
 mod config;
 mod connect;
 pub mod dirty;
+mod drive;
 mod error;
 pub mod frame;
 mod gfx;
@@ -101,7 +106,7 @@ mod session;
 mod sink;
 mod tls;
 
-pub use config::{AudioMode, GatewayTarget, RdpTarget, SessionSettings};
+pub use config::{AudioMode, DriveShare, GatewayTarget, RdpTarget, SessionSettings};
 pub use connect::{CONNECT_TIMEOUT, HANDSHAKE_TIMEOUT};
 pub use error::{ObservedCertificate, RdpError, SessionError};
 pub use frame::CloseReason;

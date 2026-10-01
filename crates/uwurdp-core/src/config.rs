@@ -42,6 +42,24 @@ pub struct SessionSettings {
     /// release is refused and the session goes on without H.264.
     #[serde(default)]
     pub h264_library: Option<PathBuf>,
+    /// Local folders the server sees as `\\tsclient\<name>`. Empty: no
+    /// drive redirection at all. A folder that does not exist here is
+    /// skipped with a log line; the session goes on without it.
+    #[serde(default)]
+    pub drives: Vec<DriveShare>,
+}
+
+/// One local folder or drive to share. `path` is [`DriveShare::ALL`] for
+/// every fixed drive of this computer (Windows only).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveShare {
+    pub name: String,
+    pub path: PathBuf,
+}
+
+impl DriveShare {
+    /// mstsc's `drivestoredirect:s:*`.
+    pub const ALL: &'static str = "*";
 }
 
 fn yes() -> bool {
@@ -66,6 +84,7 @@ impl Default for SessionSettings {
             client_name: String::from("UwURDP"),
             graphics_pipeline: true,
             h264_library: None,
+            drives: Vec::new(),
         }
     }
 }

@@ -109,6 +109,16 @@ export function clipboardChanged(id: SessionId): Promise<void> {
   return invoke('clipboard_changed', { id });
 }
 
+/** Files dropped on the desktop: onto the server's clipboard, to paste there. */
+export function clipboardOfferFiles(id: SessionId, paths: string[]): Promise<void> {
+  return invoke('clipboard_offer_files', { id, paths });
+}
+
+/** Fetch the files the server copied that were too big to fetch on their own. */
+export function clipboardDownload(id: SessionId): Promise<void> {
+  return invoke('clipboard_download', { id });
+}
+
 export function closeSession(id: SessionId): Promise<void> {
   return invoke('close_session', { id });
 }

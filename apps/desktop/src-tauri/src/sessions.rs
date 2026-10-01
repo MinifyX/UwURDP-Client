@@ -3,6 +3,7 @@
 //! full screen for the window.
 
 use crate::{err, frames::Endpoint, AppState, CommandResult};
+use std::path::PathBuf;
 use tauri::{Manager, State};
 use uwurdp_core::SessionId;
 
@@ -35,6 +36,22 @@ pub(crate) fn resize_session(
 #[tauri::command]
 pub(crate) fn clipboard_changed(state: State<'_, AppState>, id: SessionId) -> CommandResult<()> {
     state.sessions.clipboard_changed(id).map_err(err)
+}
+
+/// Files dropped on a desktop: onto the server's clipboard, to paste there.
+#[tauri::command]
+pub(crate) fn clipboard_offer_files(
+    state: State<'_, AppState>,
+    id: SessionId,
+    paths: Vec<PathBuf>,
+) -> CommandResult<()> {
+    state.sessions.clipboard_offer_files(id, paths).map_err(err)
+}
+
+/// Fetches the files the server copied that were too big to fetch on their own.
+#[tauri::command]
+pub(crate) fn clipboard_download(state: State<'_, AppState>, id: SessionId) -> CommandResult<()> {
+    state.sessions.clipboard_download(id).map_err(err)
 }
 
 #[tauri::command]

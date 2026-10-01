@@ -619,7 +619,9 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
             </fieldset>
             <Check
               label={t('Zwischenablage teilen')}
-              hint={t('Text kopieren und einfügen, in beide Richtungen.')}
+              hint={t(
+                'Text, Bilder und Dateien in beide Richtungen; Dateien auch per Drag & Drop auf den Desktop.',
+              )}
               checked={rdp.clipboard}
               onChange={(clipboard) => patch({ clipboard })}
             />

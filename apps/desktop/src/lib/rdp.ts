@@ -20,8 +20,10 @@
  * - `3` pointer bitmap: u16 hot x, hot y, w, h, then w·h·4 bytes RGBA
  * - `4` default pointer, `5` hidden pointer, `6` pointer position u16 x, y
  * - `7` closed: UTF-8 JSON `{reason, message}`
+ * - `8` clipboard: UTF-8 JSON `{state, …}` about files (see `clipboard.ts`)
  */
 
+import { ClipboardNotes, type ClipboardStatus } from './clipboard';
 import { scancodeFor } from './keymap';
 import {
   clipboardChanged,
@@ -82,6 +84,8 @@ export class RdpDriver {
    * notice or dialog that was there while it connected goes away after.
    */
   private settleUntil = 0;
+  /** Notes about files through the clipboard, and files dropped on the desktop. */
+  private readonly notes: ClipboardNotes;
 
   constructor(container: HTMLElement, fit: Fit) {
     this.container = container;
@@ -99,6 +103,7 @@ export class RdpDriver {
     this.ctx.fillStyle = '#0c1030';
     this.ctx.fillRect(0, 0, 1, 1);
 
+    this.notes = new ClipboardNotes(container, this.canvas, () => this.session);
     this.observer = new ResizeObserver(() => this.onContainerResize());
     this.observer.observe(container);
     this.bindInput();
@@ -194,6 +199,7 @@ export class RdpDriver {
     if (this.disposed) return;
     this.disposed = true;
     this.observer.disconnect();
+    this.notes.dispose();
     for (const undo of this.cleanup) undo();
     if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
     if (this.moveFrame !== null) window.cancelAnimationFrame(this.moveFrame);
@@ -284,6 +290,11 @@ export class RdpDriver {
           };
           break;
         }
+        case 8:
+          this.notes.show(
+            JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as ClipboardStatus,
+          );
+          break;
       }
     } catch {
       // A damaged message is dropped; the next full update repairs the picture.

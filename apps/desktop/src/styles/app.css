@@ -156,6 +156,11 @@ button.quiet {
   user-select: none;
 }
 
+/* macOS: room for the system's traffic lights, which sit over the bar. */
+.titlebar[data-platform='macos'] {
+  padding-left: 78px;
+}
+
 .titlebar-brand {
   display: flex;
   align-items: center;

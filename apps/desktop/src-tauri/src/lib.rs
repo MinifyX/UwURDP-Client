@@ -108,6 +108,8 @@ pub fn run() {
             sessions::frame_socket,
             sessions::resize_session,
             sessions::clipboard_changed,
+            sessions::clipboard_download,
+            sessions::clipboard_offer_files,
             sessions::close_session,
             sessions::set_fullscreen,
             hosts::list_hosts,

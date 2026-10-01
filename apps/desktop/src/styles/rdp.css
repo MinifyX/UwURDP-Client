@@ -50,6 +50,48 @@
   image-rendering: smooth;
 }
 
+.rdp-view {
+  position: relative;
+}
+
+/* Files dragged over the desktop: it takes them. */
+.rdp-view[data-drop='yes'] {
+  outline: 2px dashed var(--uwu-pink);
+  outline-offset: -4px;
+}
+
+/* About files through the clipboard, over the desktop's bottom edge. */
+.rdp-note {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  border-radius: var(--uwu-radius-pill);
+  border: 1px solid var(--uwu-border);
+  background: var(--uwu-surface);
+  color: var(--uwu-ink);
+  font-size: 13px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+  z-index: 1;
+}
+
+.rdp-note[hidden] {
+  display: none;
+}
+
+.rdp-note[data-tone='error'] {
+  color: var(--uwu-alarm);
+}
+
+.rdp-note button {
+  padding: 3px 12px;
+}
+
 /* A session that ended keeps its last picture, dimmed under the overlay. */
 .session-pane[data-status='ended'] .rdp-canvas,
 .session-pane[data-status='failed'] .rdp-canvas {

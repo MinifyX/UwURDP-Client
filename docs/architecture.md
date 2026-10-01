@@ -248,6 +248,7 @@ One message per send, little-endian, the first byte says what it is:
 | 5    | `POINTER_HIDDEN`   | —                                                               |
 | 6    | `POINTER_POSITION` | u16 x, y                                                        |
 | 7    | `CLOSED`           | JSON `{"reason":"logoff\|disconnect\|server\|error","message"}` |
+| 8    | `CLIPBOARD`        | JSON `{"state":"downloading\|ready\|offered\|sent\|failed",…}`  |
 
 Pixels are straight RGBA, row-major, without padding — exactly what
 `ImageData` wants, so the page copies nothing. One `BITMAPS` message is capped
@@ -310,12 +311,43 @@ lesson in from the start:
 
 ## Clipboard and sound
 
-- **Clipboard:** plain text both ways over CLIPRDR. IronRDP's callbacks run in
-  the middle of processing a PDU, so they never touch the OS clipboard
-  themselves; a small worker thread owns it through `arboard`, notices local
-  changes once a second and when the window gets focus, and answers the
-  server's requests. A broken clipboard is logged and swallowed, never takes
-  the session down. Files through the clipboard aren't supported yet.
+- **Clipboard:** text, HTML and pictures (`CF_UNICODETEXT`, `HTML Format`,
+  `CF_DIB`) and files both ways over CLIPRDR (`uwurdp-core/src/clipboard/`),
+  all behind the host's one clipboard switch. IronRDP's callbacks run in the
+  middle of processing a PDU, so they never touch the OS clipboard or the
+  disk themselves; a worker thread per session owns both through `arboard`.
+  - **Local changes** are seen within a quarter second on Windows and macOS
+    (their change counters, `GetClipboardSequenceNumber` and `changeCount`,
+    are read without opening the clipboard) and within half a second on
+    Linux, which has none, so there text and file lists are compared; a
+    picture replacing a picture shows up when the window gets the focus. The
+    format list goes out only once the channel is ready (an empty one answers
+    the server's first request), and the data is read when the server asks
+    for it. Every request gets an answer, an error if need be.
+  - **No echo:** what the worker put on the local clipboard itself is
+    remembered as it reads back, so it never goes back to the server as a
+    "copy". This used to send the server's own text back on every focus.
+  - **The server's copies** are fetched right away, one request at a time
+    (the channel matches answers by order alone): text with its HTML, else a
+    picture. Text is read up to its first NUL with broken surrogates
+    replaced — Windows sends junk after the terminator, which used to fail
+    the whole paste.
+  - **Files from the server** (`FileGroupDescriptorW`) are locked, downloaded
+    in 1 MiB ranges, four in flight, into a folder of the session's own in
+    the temp directory, then put on the local clipboard as a file list
+    (`CF_HDROP`, file URLs, `text/uri-list`). Up to 256 MB that happens on
+    its own; a bigger set waits for the page's "Fetch". The folder goes when
+    the session does (or the next download replaces it).
+  - **Local files** — copied, or dropped on the desktop through Tauri's
+    drag-and-drop event — become a descriptor list, folders walked
+    recursively, and the server's size and range requests are served from
+    the files, never more than 8 MiB in memory; locked lists stay servable
+    after the clipboard moves on.
+
+  Downloads, the "paste with Ctrl+V" hint after a drop and failures reach the
+  page as `CLIPBOARD` messages. A broken clipboard is logged and swallowed,
+  never takes the session down.
+
 - **Sound:** RDPSND, played locally through `cpal` as PCM. Opus is off. The
   backend is ours (`uwurdp-core/src/audio.rs`), not `ironrdp-rdpsnd-native`'s:
   that one never starts its stream, so on Windows nothing played and every
@@ -636,19 +668,21 @@ has the steps.
 
 About 300 Rust tests:
 
-| Crate / area   | Tests | What they cover                                                           |
-| -------------- | ----- | ------------------------------------------------------------------------- |
-| `uwurdp-store` | 80    | Schema migrations, logins and inheritance, export files, sync plumbing    |
-| `uwurdp-sync`  | 51    | Two real devices against an in-memory server, a lying server, pairing     |
-| `uwurdp-core`  | 64+7  | Dirty regions, frame encoding, input, flow control; 7 end-to-end sessions |
-| `uwurdp-vault` | 35    | Key derivation, wrapping, record encryption                               |
-| `uwurdp-proto` | 27    | Payload round trips, unknown fields, clocks, merging                      |
-| import         | 11+   | RDCMan versions, credential profiles, inheritance, `.rdp` encodings       |
-| desktop, setup | —     | Commands, updater feeds, install paths                                    |
+| Crate / area   | Tests  | What they cover                                                               |
+| -------------- | ------ | ----------------------------------------------------------------------------- |
+| `uwurdp-store` | 80     | Schema migrations, logins and inheritance, export files, sync plumbing        |
+| `uwurdp-sync`  | 51     | Two real devices against an in-memory server, a lying server, pairing         |
+| `uwurdp-core`  | 127+10 | Dirty regions, frames, input, flow control, clipboard; 10 end-to-end sessions |
+| `uwurdp-vault` | 35     | Key derivation, wrapping, record encryption                                   |
+| `uwurdp-proto` | 27     | Payload round trips, unknown fields, clocks, merging                          |
+| import         | 11+    | RDCMan versions, credential profiles, inheritance, `.rdp` encodings           |
+| desktop, setup | —      | Commands, updater feeds, install paths                                        |
 
-The seven end-to-end tests in `uwurdp-core` run real sessions against an
+The end-to-end tests in `uwurdp-core` run real sessions against an
 in-process `ironrdp-server`: certificate pinning, NLA, frames, input, resize,
-disconnect.
+disconnect. The clipboard tests run both ends of CLIPRDR in-process too (our
+client with its worker against IronRDP's server): text, HTML and files in
+both directions, without echo.
 
 Then `node apps/desktop/e2e/run.mjs` drives **the real app** over WebView2's
 DevTools protocol:

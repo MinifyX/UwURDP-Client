@@ -4,7 +4,7 @@
 //! unbounded channel: Tauri runs sync commands on the main thread, where
 //! there is no tokio reactor to await anything on.
 
-use crate::clipboard::{self, TextClipboardBackend};
+use crate::clipboard::{self, ClipboardBackend};
 use crate::config::RdpTarget;
 use crate::connect::{self, Channels};
 use crate::error::{RdpError, SessionError};
@@ -104,7 +104,7 @@ impl SessionManager {
                 let _ = to_session.send(Command::Clipboard(m));
             }));
             let to_session = commands_tx.clone();
-            let backend = TextClipboardBackend::new(
+            let backend = ClipboardBackend::new(
                 worker.clone(),
                 Box::new(move |m| {
                     let _ = to_session.send(Command::Clipboard(m));
@@ -223,9 +223,29 @@ impl SessionManager {
         self.command(id, Command::Ack)
     }
 
-    /// The page regained focus: re-announce the local clipboard.
+    /// The page regained focus: look at the local clipboard now.
     pub fn clipboard_changed(&self, id: SessionId) -> Result<(), SessionError> {
         self.command(id, Command::ClipboardChanged)
+    }
+
+    /// Puts files and folders (dropped on the desktop) on the server's
+    /// clipboard, to be pasted there. The page hears back through a
+    /// `CLIPBOARD` message.
+    pub fn clipboard_offer_files(
+        &self,
+        id: SessionId,
+        paths: Vec<std::path::PathBuf>,
+    ) -> Result<(), SessionError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        self.command(id, Command::ClipboardOffer(paths))
+    }
+
+    /// Downloads the files the server copied that were too big to fetch on
+    /// their own (the page heard `offered`).
+    pub fn clipboard_download(&self, id: SessionId) -> Result<(), SessionError> {
+        self.command(id, Command::ClipboardDownload)
     }
 
     /// Graceful shutdown; the sink gets `CLOSED` and `finish()` at the end.

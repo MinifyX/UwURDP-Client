@@ -60,6 +60,10 @@ Done, in 0.1.0-beta.1:
 - **0.1.0-beta.8**: the UwULock sync reads with limits, checks every entry it
   moved, trusts the system's certificate authorities, and tells a server with
   app sync switched off apart from a broken one.
+- **Next release: the whole clipboard.** Text that arrives every time, HTML
+  and pictures both ways, and **files through the clipboard**: copied or
+  dropped on the desktop, they paste on the server; the server's land on the
+  local clipboard. See [architecture](architecture.md#clipboard-and-sound).
 - **The installer with Nyu** and signed updates on Windows (x64 and ARM),
   macOS and Linux.
 
@@ -79,7 +83,6 @@ Next, roughly in this order:
   without dragging a second TLS stack into the app.
 - **Several monitors.**
 - **Drive redirection**, then printers and smart cards.
-- **Files through the clipboard.**
 - **RDCMan smart groups**, which the import skips today.
 - **Display settings per group**, like RDCMan's inherited display settings,
   instead of per host only.

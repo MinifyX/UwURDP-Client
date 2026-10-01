@@ -42,6 +42,7 @@
 //! | 5    | `POINTER_HIDDEN`   | — |
 //! | 6    | `POINTER_POSITION` | u16 x, u16 y |
 //! | 7    | `CLOSED`           | UTF-8 JSON `{"reason":"logoff\|disconnect\|server\|error","message":"…"}`, sent once, right before [`FrameSink::finish`] |
+//! | 8    | `CLIPBOARD`        | UTF-8 JSON `{"state":"downloading\|ready\|offered\|sent\|failed",…}`: files through the clipboard |
 //!
 //! `BITMAPS` count against the ack window; everything else goes out at once.
 //! A single `BITMAPS` message is capped at [`frame::MAX_BITMAPS_BYTES`]
@@ -56,7 +57,7 @@
 //! - **Certificates**: trust on first use by SHA-256 fingerprint of the leaf
 //!   certificate (`SHA256:<base64>`, like `ssh-keygen`). Handshake
 //!   signatures are verified; the chain and host name are not.
-//! - **Clipboard**: plain text both ways (`arboard`).
+//! - **Clipboard**: text, HTML, pictures and files both ways (`arboard`).
 //! - **Audio**: with the `audio` feature (default), [`AudioMode::Local`]
 //!   plays through cpal as PCM. `Remote` and `Off` both tell the server not
 //!   to redirect audio: IronRDP cannot send the "leave it on the server" flag.

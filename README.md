@@ -88,7 +88,8 @@ density with a calmer face and a sync server that is yours.
 >   scales down or scrolls.
 > - The keyboard works by key position, so the server's keyboard layout
 >   applies, just like in mstsc. Ctrl+Alt+End sends Ctrl+Alt+Del.
-> - Clipboard text both ways, and sound from the server played here.
+> - The clipboard both ways (text, pictures, files — or drop files on the
+>   desktop), and sound from the server played here.
 > - Tabs, several to the same host too; a dropped connection keeps its tab with
 >   the last picture and reconnects once on its own.
 > - Two workspaces, **Private and Business**, groups sorted by drag and drop,
@@ -106,9 +107,8 @@ density with a calmer face and a sync server that is yours.
 >
 > **What doesn't, yet.** RD Gateway (the settings are kept and imported, but
 > connecting through one says "not supported yet"), the console/admin session,
-> Kerberos, drive, printer and smart card redirection, several monitors,
-> copying files through the clipboard. The [roadmap](docs/roadmap.md) has the
-> order.
+> Kerberos, drive, printer and smart card redirection, several monitors. The
+> [roadmap](docs/roadmap.md) has the order.
 
 ## Install
 

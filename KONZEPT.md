@@ -63,7 +63,8 @@ einer RDCMan-Datei, die über Jahre gewachsen ist. Also: ich.
 - Strg+Alt+Ende = Strg+Alt+Entf, Strg+Alt+Pause = Vollbild, Strg+Alt+Pos1 =
   Tastatur zurück an die App, Strg+Alt+Bild↑/↓ = Tabs. Alles andere gehört im
   Desktop dem Server.
-- Zwischenablage (Text) in beide Richtungen, Ton vom Server lokal abgespielt.
+- Zwischenablage in beide Richtungen (Text, Bilder, Dateien – auch per Drag
+  & Drop), Ton vom Server lokal abgespielt.
 
 **Arbeiten wie in RDCMan**
 
@@ -78,9 +79,8 @@ einer RDCMan-Datei, die über Jahre gewachsen ist. Also: ich.
   Verbindung ab, verbindet UwURDP einmal selbst neu.
 
 **Nicht (noch nicht)**: RD-Gateway, Konsolensitzung (`/admin`), Kerberos,
-Laufwerks-/Drucker-/Smartcard-Umleitung, mehrere Monitore, Dateien über die
-Zwischenablage, Hyper-V-Konsole. macOS und Linux baut die CI, von Hand
-getestet sind sie noch nicht.
+Laufwerks-/Drucker-/Smartcard-Umleitung, mehrere Monitore, Hyper-V-Konsole.
+macOS und Linux baut die CI, von Hand getestet sind sie noch nicht.
 
 ## 4. Architektur
 

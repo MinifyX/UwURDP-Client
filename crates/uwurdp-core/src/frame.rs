@@ -12,6 +12,7 @@
 //! | 5    | `POINTER_HIDDEN`  | —                                                                  |
 //! | 6    | `POINTER_POSITION`| u16 x, u16 y                                                       |
 //! | 7    | `CLOSED`          | UTF-8 JSON `{"reason":"logoff|disconnect|server|error","message":…}` |
+//! | 8    | `CLIPBOARD`       | UTF-8 JSON `{"state":"downloading|ready|offered|sent|failed",…}` |
 //!
 //! Pixels are straight (not premultiplied) RGBA, row-major, without padding,
 //! which is exactly what `ImageData` wants. Desktop pixels always have A=255.
@@ -26,6 +27,7 @@ pub const KIND_POINTER_DEFAULT: u8 = 4;
 pub const KIND_POINTER_HIDDEN: u8 = 5;
 pub const KIND_POINTER_POSITION: u8 = 6;
 pub const KIND_CLOSED: u8 = 7;
+pub const KIND_CLIPBOARD: u8 = 8;
 
 const BITMAPS_HEADER: usize = 1 + 2;
 const RECT_HEADER: usize = 4 * 2;
@@ -112,6 +114,17 @@ pub fn closed(reason: CloseReason, message: &str) -> Vec<u8> {
         .unwrap_or_else(|_| br#"{"reason":"error","message":""}"#.to_vec());
     let mut out = Vec::with_capacity(1 + json.len());
     out.push(KIND_CLOSED);
+    out.extend_from_slice(&json);
+    out
+}
+
+/// What the clipboard has to tell the page: downloads of the server's files,
+/// dropped files on the server's clipboard, failures.
+pub(crate) fn clipboard(status: &crate::clipboard::Status) -> Vec<u8> {
+    let json = serde_json::to_vec(status)
+        .unwrap_or_else(|_| br#"{"state":"failed","error":"download","message":""}"#.to_vec());
+    let mut out = Vec::with_capacity(1 + json.len());
+    out.push(KIND_CLIPBOARD);
     out.extend_from_slice(&json);
     out
 }

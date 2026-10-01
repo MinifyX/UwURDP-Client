@@ -10,7 +10,8 @@ rust-version.workspace = true
 [build-dependencies]
 tar = "0.4"
 tauri-build = { version = "2", features = [] }
-zstd = "0.13"
+# zstdmt: the payload compresses on every core (build.rs).
+zstd = { version = "0.13", features = ["zstdmt"] }
 
 [dependencies]
 semver = "1"

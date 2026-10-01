@@ -24,6 +24,12 @@ fn out(name: &str) -> PathBuf {
 
 fn compress(raw: &[u8], long: bool) -> Vec<u8> {
     let mut encoder = zstd::Encoder::new(Vec::new(), 19).expect("a compressor");
+    // On every core: a Linux AppDir took minutes on one, and the workers
+    // compress to the same size (70 MiB of 270 either way).
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
+    encoder
+        .multithread(u32::try_from(workers).unwrap_or(1))
+        .expect("compressor threads");
     if long {
         encoder
             .long_distance_matching(true)

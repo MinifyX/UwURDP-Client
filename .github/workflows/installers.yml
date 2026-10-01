@@ -30,7 +30,9 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Not on main: the next push there would cancel the build of a release
+  # commit, and `pnpm release` needs that run green. Main queues instead.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'

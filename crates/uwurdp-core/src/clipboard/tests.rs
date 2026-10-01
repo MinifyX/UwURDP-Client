@@ -534,9 +534,9 @@ fn small_remote_files_are_downloaded_and_put_on_the_clipboard() {
     r.worker.check(false);
     r.worker.handle(WorkerMsg::Check { deep: true });
     assert_eq!(take(&r.log), vec![]);
-    // The session ending takes them along.
+    // They outlive the session, so pasting after disconnecting still works.
     r.worker.shutdown();
-    assert!(!files[0].exists());
+    assert!(files[0].exists());
 }
 
 #[test]

@@ -42,8 +42,11 @@ fn parse_drives(value: &str) -> ImportedDrives {
             paths.push(path);
         }
     }
+    // The list is kept, switched off: an `.rdp` file can come from anyone
+    // (phishing with `drivestoredirect:s:*` hands a stranger every drive), so
+    // sharing is something to turn on knowingly, in the host's settings.
     ImportedDrives {
-        enabled: !paths.is_empty(),
+        enabled: false,
         paths,
     }
 }

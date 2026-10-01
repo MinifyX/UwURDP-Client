@@ -277,11 +277,11 @@ fn rdp_utf8() {
     assert_eq!(host.settings.admin, Some(true));
     assert_eq!(host.settings.audio, Some(ImportedAudio::Remote));
     assert_eq!(host.settings.clipboard, Some(true));
-    // Drive letters map; DynamicDrives and names that aren't drives don't.
+    // Drive letters map, switched off; DynamicDrives and names that are no drives do not.
     assert_eq!(
         host.settings.drives,
         Some(ImportedDrives {
-            enabled: true,
+            enabled: false,
             paths: vec!["C:\\".into(), "E:\\".into()],
         })
     );

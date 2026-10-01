@@ -563,7 +563,11 @@ impl Worker {
         if entries.is_empty() {
             return;
         }
-        let sizes: Option<u64> = entries.iter().map(|e| e.size).sum();
+        // Sizes come from the server: a sum that overflows counts as unknown,
+        // so the user is asked instead of a wrapped-around small total.
+        let sizes: Option<u64> = entries
+            .iter()
+            .try_fold(0u64, |sum, e| sum.checked_add(e.size?));
         match sizes {
             Some(total) if total <= AUTO_DOWNLOAD_LIMIT => {
                 self.start_download(entries, clip_data_id);
@@ -682,9 +686,13 @@ impl Worker {
         }
     }
 
+    /// The downloaded files stay: the local clipboard may still point at
+    /// them, and pasting after disconnecting should work. A download cut off
+    /// halfway goes; the rest is cleaned up after a day (`remove_stale_folders`).
     fn shutdown(&mut self) {
-        self.download = None;
-        let _ = std::fs::remove_dir_all(&self.folder);
+        if let Some(download) = self.download.take() {
+            let _ = std::fs::remove_dir_all(download.base());
+        }
     }
 }
 

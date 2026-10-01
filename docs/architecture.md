@@ -674,7 +674,9 @@ Credentials are deduplicated: a profile forty hosts share arrives once.
 
 UTF-16 or UTF-8, several at once. `password 51:b:…` is DPAPI too, with the
 same one-account rule. `drivestoredirect:s:` maps `*` and drive letters
-(`C:\`); `DynamicDrives` and names that aren't a drive letter are left out.
+(`C:\`), but switched off: an `.rdp` file can come from anyone, and one with
+`*` would hand a stranger every drive. `DynamicDrives` and names that aren't a
+drive letter are left out.
 
 ### UwURDP's own export
 

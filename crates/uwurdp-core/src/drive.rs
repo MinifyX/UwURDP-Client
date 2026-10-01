@@ -448,6 +448,8 @@ impl FsBackend {
             Err(error) => return Err(io_status(error)),
         };
 
+        // The shared folder itself is never deleted, however it is opened.
+        let delete_on_close = options.contains(CreateOptions::FILE_DELETE_ON_CLOSE) && path != root;
         let id = self.next_free_id();
         self.open.insert(
             id,
@@ -456,7 +458,7 @@ impl FsBackend {
                 path,
                 writable: file.is_some() && writable,
                 file,
-                delete_on_close: options.contains(CreateOptions::FILE_DELETE_ON_CLOSE),
+                delete_on_close,
                 listing: None,
             },
         );
@@ -693,16 +695,16 @@ impl FsBackend {
                 } else {
                     open.path.clone()
                 };
+                open.path = path;
                 if reopen {
                     open.file = Some(
                         OpenOptions::new()
                             .read(true)
                             .write(open.writable)
-                            .open(&path)
+                            .open(&open.path)
                             .map_err(io_status)?,
                     );
                 }
-                open.path = path;
                 renamed.map_err(io_status)
             }
             _ => Err(NtStatus::NOT_SUPPORTED),

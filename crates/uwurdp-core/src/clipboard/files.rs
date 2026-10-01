@@ -266,8 +266,29 @@ fn safe_component(part: &str) -> Option<&str> {
         || part == "."
         || part == ".."
         || part.contains(['/', '\\', '\0', ':'])
-        || part.chars().all(|c| c == '.' || c == ' ');
+        || part.chars().any(char::is_control)
+        || part.ends_with(['.', ' '])
+        || reserved_on_windows(part);
     (!bad).then_some(part)
+}
+
+/// Windows device names (`CON`, `NUL`, `COM1`, …), also with an extension:
+/// written to outside a `\\?\` path they reach the device, not a file. They
+/// are refused on every system, since the files may be copied on to Windows.
+fn reserved_on_windows(part: &str) -> bool {
+    let stem = part.split('.').next().unwrap_or(part).trim_end();
+    let upper = stem.to_ascii_uppercase();
+    if matches!(
+        upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) {
+        return true;
+    }
+    (upper.starts_with("COM") || upper.starts_with("LPT"))
+        && matches!(
+            upper.get(3..),
+            Some("0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³")
+        )
 }
 
 /// Turns the server's descriptors into local relative paths. IronRDP cleans
@@ -345,7 +366,10 @@ pub(crate) struct Download {
 
 impl Download {
     pub(crate) fn new(base: PathBuf, entries: Vec<RemoteEntry>, clip_data_id: Option<u32>) -> Self {
-        let total = entries.iter().filter_map(|e| e.size).sum();
+        let total = entries
+            .iter()
+            .filter_map(|e| e.size)
+            .fold(0u64, u64::saturating_add);
         Self {
             base,
             entries,
@@ -376,7 +400,7 @@ impl Download {
         &mut self,
         next_id: &mut impl FnMut() -> u32,
     ) -> Result<Vec<FileContentsRequest>, Progress> {
-        std::fs::create_dir_all(&self.base).map_err(|e| Progress::Failed(e.to_string()))?;
+        private_dir(&self.base).map_err(|e| Progress::Failed(e.to_string()))?;
         self.pump(next_id)
     }
 
@@ -524,7 +548,7 @@ impl Download {
                     return (Vec::new(), Progress::Failed(format!("no size for {name}")));
                 };
                 let size = u64::from_le_bytes(bytes);
-                self.total += size;
+                self.total = self.total.saturating_add(size);
                 self.size = Some(size);
                 if size == 0 {
                     self.close_current();
@@ -583,6 +607,19 @@ fn set_modified(file: &File, time: Option<SystemTime>) {
     if let Some(time) = time {
         let _ = file.set_modified(time);
     }
+}
+
+/// Creates the download folder readable by this user only: it sits in the
+/// shared temp folder, and what the server copies is nobody else's business.
+fn private_dir(path: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)
 }
 
 #[cfg(test)]

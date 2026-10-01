@@ -1,0 +1,4 @@
+{
+  "de": "UwURDP 0.1.0-beta.11 ✧ Links aus UwULock\n\n- Links: uwurdp://connect/<Host-ID> öffnet den Desktop eines Hosts direkt, etwa über „In UwURDP öffnen“ im UwULock-Tresor. UwURDP kommt nach vorn, entsperrt bei Bedarf erst den Tresor und synchronisiert einmal, wenn der Host noch fehlt. Im Link steht nur die ID, nie Adresse oder Anmeldedaten\n- UwURDP läuft nur noch einmal: ein zweiter Start holt das offene Fenster nach vorn",
+  "en": "UwURDP 0.1.0-beta.11 ✧ links from UwULock\n\n- Links: uwurdp://connect/<host ID> opens a host's desktop directly, for example from “Open in UwURDP” in the UwULock vault. UwURDP comes to the front, unlocks the vault first if needed and syncs once if the host isn't there yet. The link carries only the ID, never an address or login\n- UwURDP runs once: starting it again brings the open window to the front"
+}

@@ -25,6 +25,8 @@ const SHORTCUT: &str = "UwURDP.lnk";
 const HOMEPAGE: &str = "https://github.com/MinifyX/UwURDP-Client";
 const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\UwURDP";
 const SETUP_KEY: &str = r"Software\UwURDP\Setup";
+/// `uwurdp://connect/<host-id>` links open UwURDP. Per user, like the rest.
+const SCHEME_KEY: &str = r"Software\Classes\uwurdp";
 /// What Tauri's standard NSIS installer (0.0.1) called the app and where it
 /// kept its own registry entry.
 const LEGACY_EXE: &str = "uwurdp-desktop.exe";
@@ -401,6 +403,17 @@ fn register(layout: &Layout, dir: &Path, options: &Options, version: &str) -> Re
     write_dword(&entry, "NoModify", 1)?;
     write_dword(&entry, "NoRepair", 1)?;
 
+    // The link handler: Windows starts UwURDP with the link as its argument,
+    // and a running UwURDP takes it over from there.
+    layout.remove_tree(SCHEME_KEY);
+    let scheme = layout.create(SCHEME_KEY)?;
+    write(&scheme, "", "URL:UwURDP")?;
+    write(&scheme, "URL Protocol", "")?;
+    let icon = layout.create(&format!(r"{SCHEME_KEY}\DefaultIcon"))?;
+    write(&icon, "", &format!("{},0", quoted(&app)))?;
+    let open = layout.create(&format!(r"{SCHEME_KEY}\shell\open\command"))?;
+    write(&open, "", &format!("{} \"%1\"", quoted(&app)))?;
+
     let setup = layout.create(SETUP_KEY)?;
     write(&setup, "InstallDir", &dir.display().to_string())?;
     write(&setup, "Version", version)?;
@@ -425,6 +438,7 @@ pub fn uninstall(
 
     progress(Step::Register, 0.0);
     layout.remove_tree(UNINSTALL_KEY);
+    layout.remove_tree(SCHEME_KEY);
     layout.remove_tree(r"Software\UwURDP");
     layout.remove_tree(LEGACY_PRODUCT_KEY);
     layout.remove_empty(r"Software\uwurdp");
@@ -547,6 +561,18 @@ mod tests {
             .get_value("UninstallString")
             .unwrap();
         assert!(command.ends_with("\" --uninstall"));
+        let open: String = layout
+            .open(&format!(r"{SCHEME_KEY}\shell\open\command"))
+            .unwrap()
+            .get_value("")
+            .unwrap();
+        assert_eq!(open, format!("{} \"%1\"", quoted(&dir.join(APP_EXE))));
+        let protocol: String = layout
+            .open(SCHEME_KEY)
+            .unwrap()
+            .get_value("URL Protocol")
+            .unwrap();
+        assert_eq!(protocol, "");
 
         std::fs::create_dir_all(&layout.roaming_data).unwrap();
         std::fs::write(layout.roaming_data.join("uwurdp.db"), b"hosts").unwrap();
@@ -558,6 +584,7 @@ mod tests {
         );
         assert!(layout.open(UNINSTALL_KEY).is_none());
         assert!(layout.open(SETUP_KEY).is_none());
+        assert!(layout.open(SCHEME_KEY).is_none());
 
         std::fs::create_dir_all(&dir).unwrap();
         uninstall(layout, &dir, false, &mut |_, _| {}).unwrap();

@@ -34,8 +34,12 @@ serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
 tauri = { version = "2", features = [] }
+# 2.5+ needs tauri 2.12; stays with the tauri the app is on.
+tauri-plugin-deep-link = "~2.4.10"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# One UwURDP at a time; hands a link opened meanwhile to the running one.
+tauri-plugin-single-instance = { version = "~2.4.5", features = ["deep-link"] }
 tauri-plugin-updater = "2"
 tokio = { workspace = true, features = ["net"] }
 tracing.workspace = true

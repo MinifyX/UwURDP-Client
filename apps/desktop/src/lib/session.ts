@@ -5,6 +5,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import type { DeepLink, LinkSync } from './link';
 
 export type SessionId = string;
 
@@ -609,4 +610,14 @@ export function openProjectPage(page: ProjectPage): Promise<void> {
 /** Full screen for the whole window; the page hides its own chrome. */
 export function setFullscreen(on: boolean): Promise<void> {
   return invoke('set_fullscreen', { on });
+}
+
+/** The `uwurdp://connect/…` link waiting for the page, once (see `lib/link.ts`). */
+export function takeDeepLink(): Promise<DeepLink | null> {
+  return invoke<DeepLink | null>('take_deep_link');
+}
+
+/** One sync pass for a link to a host this device doesn't know yet. */
+export function syncForLink(): Promise<LinkSync> {
+  return invoke<LinkSync>('sync_for_link');
 }

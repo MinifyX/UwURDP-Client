@@ -155,6 +155,17 @@ If the admin of your UwULock Server switches app sync off, UwURDP says so
 under Settings → Sync and keeps your changes on this device until it is on
 again; signing in and the move wait for it too.
 
+## Links to a host
+
+`uwurdp://connect/<host-id>` opens the desktop of the host with that record id,
+as a double click in the list would — UwULock's web vault has an "Open in
+UwURDP" button that uses it. A running UwURDP comes to the front and takes the
+link; a locked vault asks for the master password first; a host this device
+doesn't know yet gets one sync pass to arrive. Only the id travels in the link:
+no address, login or `.rdp` settings, so a link on a web page can't point
+UwURDP at a server of its own. The setups and the `.deb`/`.rpm` register the
+scheme; the portable Linux folder doesn't.
+
 ## The sync server
 
 UwURDP doesn't have a server of its own. It speaks the wire protocol of

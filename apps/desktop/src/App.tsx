@@ -18,6 +18,7 @@ import { TitleBar } from './components/TitleBar';
 import { UpdateHint } from './components/UpdateHint';
 import { VaultDialog } from './components/VaultDialog';
 import { language, t } from './lib/i18n';
+import { resolveLink, type DeepLink, type LinkSync } from './lib/link';
 import type { Closed, RdpDriver } from './lib/rdp';
 import {
   asConnectFailure,
@@ -30,6 +31,8 @@ import {
   setFullscreen,
   setHostLogin,
   setH264,
+  syncForLink,
+  takeDeepLink,
   setUpdateChannel,
   trustCertificate,
   updateStatus,
@@ -117,6 +120,25 @@ function describeFailure(failure: ConnectFailure, host: HostRecord): string {
   }
 }
 
+/** Why a link's host can't be connected, after the sync it got. */
+function describeUnknownHost(sync: LinkSync): string {
+  switch (sync.kind) {
+    case 'done':
+      return t(
+        'Den Host aus dem Link gibt es auf diesem Gerät nicht, auch nach dem Synchronisieren nicht. Vielleicht wurde er gelöscht.',
+      );
+    case 'failed':
+      return t(
+        'Den Host aus dem Link gibt es auf diesem Gerät nicht, und das Synchronisieren hat nicht geklappt: {error}',
+        { error: sync.message },
+      );
+    default:
+      return t(
+        'Den Host aus dem Link gibt es auf diesem Gerät nicht. Er wurde vielleicht gelöscht, oder dieses Gerät synchronisiert nicht mit dem, auf dem er angelegt wurde.',
+      );
+  }
+}
+
 /** What a session that ended says in its tab. */
 function describeEnd(closed: Closed | null, host: HostRecord): string {
   switch (closed?.reason) {
@@ -187,6 +209,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [startupVault, setStartupVault] = useState(false);
+  /** A `uwurdp://` link is being handled: start-up leaves the window to it. */
+  const linkBusy = useRef(false);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const [fullscreen, setFullscreenState] = useState(false);
@@ -659,6 +683,8 @@ export function App() {
       // A vault this device doesn't open on its own asks once, now, instead
       // of on the first host that needs it.
       const vault = await vaultState().catch(() => null);
+      // A link that started UwURDP asks for the vault itself, if it has to.
+      if (linkBusy.current) return;
       if (!cancelled && vault?.status === 'locked' && !vault.remembered) setStartupVault(true);
       // A vault a refused sync connect left stranded gets its password back now.
       if (!cancelled && vault?.stranded && vault.remembered) setStartupVault(true);
@@ -680,6 +706,80 @@ export function App() {
       cancelled = true;
     };
   }, [openTab, refreshHosts]);
+
+  // `uwurdp://connect/<host-id>`: the host's desktop, as a double click would
+  // open it. Rust has already brought the window to the front. Links are
+  // handled one after the other, the waiting one taken when Rust says there
+  // is one and once on start, for the link that started UwURDP.
+  const linkQueue = useRef<Promise<void>>(Promise.resolve());
+  const openLink = useCallback(
+    async (link: DeepLink) => {
+      linkBusy.current = true;
+      try {
+        // Whatever an earlier page left open is closed first; not the new tab.
+        await (boot ?? Promise.resolve());
+        const outcome = await resolveLink(link, {
+          vaultLocked: async () => (await vaultState().catch(() => null))?.status === 'locked',
+          unlock: () => {
+            setStartupVault(false);
+            return unlock(
+              '',
+              t('Ein Link öffnet eine Verbindung – dafür muss der Tresor offen sein.'),
+            );
+          },
+          hosts: listHosts,
+          sync: syncForLink,
+          onSyncing: () =>
+            setAppNotice({
+              tone: 'info',
+              text: t('Der Host aus dem Link ist noch nicht auf diesem Gerät – synchronisiere…'),
+            }),
+        });
+        switch (outcome.kind) {
+          case 'connect':
+            setAppNotice(null);
+            void refreshHosts();
+            connect(outcome.host);
+            break;
+          case 'locked':
+            setAppNotice({ tone: 'info', text: t('Nicht verbunden: Der Tresor ist gesperrt.') });
+            break;
+          case 'unknown':
+            void refreshHosts();
+            setAppNotice({ tone: 'error', text: describeUnknownHost(outcome.sync) });
+            break;
+          case 'invalid':
+            setAppNotice({
+              tone: 'error',
+              text: t(
+                'Diesen Link kann UwURDP nicht öffnen. Ein Link zu einem Host sieht so aus: uwurdp://connect/<Host-ID>',
+              ),
+            });
+            break;
+        }
+      } catch (e) {
+        setAppNotice({ tone: 'error', text: String(e) });
+      } finally {
+        linkBusy.current = false;
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connect, refreshHosts],
+  );
+  const openLinkRef = useRef(openLink);
+  openLinkRef.current = openLink;
+
+  useEffect(() => {
+    const next = () => {
+      linkQueue.current = linkQueue.current.then(async () => {
+        const link = await takeDeepLink().catch(() => null);
+        if (link) await openLinkRef.current(link);
+      });
+    };
+    next();
+    const stop = listen('deep-link', next);
+    return () => void stop.then((unlisten) => unlisten());
+  }, []);
 
   // Another device changed hosts or groups: the list loads again.
   useEffect(() => {

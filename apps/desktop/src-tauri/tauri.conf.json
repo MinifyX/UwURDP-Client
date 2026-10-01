@@ -41,6 +41,9 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["uwurdp"] }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFDQTE4NThFRjg1M0FFMDgKUldRSXJsUDRqb1doclBkVkhLUGZFYUVFbDlXektBRHVpMjlXTjJua0RNbGx2UGM0cU9GK0Q4Q3oK",
       "endpoints": ["https://raw.githubusercontent.com/MinifyX/UwURDP-Client/updates/beta.json"]

@@ -36,6 +36,10 @@ use names::APP;
 
 pub const APP_ID: &str = "app.uwurdp.desktop";
 const SETUP_ID: &str = "app.uwurdp.setup";
+/// The app's links (`uwurdp://connect/<host-id>`). On macOS the app's own
+/// Info.plist declares it; on Linux the menu entry does.
+#[cfg(not(target_os = "macos"))]
+const SCHEME: &str = "uwurdp";
 
 /// The app in a tar archive (see `build.rs`).
 static PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/payload.zst"));
@@ -487,6 +491,15 @@ fn shortcuts(layout: &Layout, dir: &Path, options: &Options) -> Result<(), Strin
             "update-desktop-database",
             &[&layout.applications.to_string_lossy()],
         );
+        // UwURDP opens its own links, also where another app claimed them.
+        system::best_effort(
+            "xdg-mime",
+            &[
+                "default",
+                &desktop_file,
+                &format!("x-scheme-handler/{SCHEME}"),
+            ],
+        );
     }
     Ok(())
 }
@@ -510,7 +523,7 @@ fn desktop_entry(
         .unwrap_or_default();
     let exec = app_dir.join("AppRun");
     format!(
-        "[Desktop Entry]\nType=Application\nName={name}\nComment={comment}\nExec={} %U\nIcon={icon}\nTerminal=false\nCategories={categories}\nStartupWMClass={class}\n",
+        "[Desktop Entry]\nType=Application\nName={name}\nComment={comment}\nExec={} %U\nIcon={icon}\nTerminal=false\nCategories={categories}\nStartupWMClass={class}\nMimeType=x-scheme-handler/{SCHEME};\n",
         quote_exec(&exec.to_string_lossy())
     )
 }
@@ -683,6 +696,14 @@ mod tests {
             desktop_shortcut: true,
         };
         shortcuts(layout, &dir, &options).unwrap();
+        #[cfg(not(target_os = "macos"))]
+        {
+            let entry =
+                std::fs::read_to_string(layout.applications.join(format!("{APP_ID}.desktop")))
+                    .unwrap();
+            assert!(entry.contains("\nMimeType=x-scheme-handler/uwurdp;\n"));
+            assert!(entry.contains("/AppRun\" %U\n"), "links reach the app");
+        }
         std::fs::create_dir_all(layout.state.parent().unwrap()).unwrap();
         std::fs::write(
             &layout.state,

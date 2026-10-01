@@ -47,5 +47,11 @@
   "Wiederherstellungscode (aus dem Recovery-Kit)": "Recovery code (from the recovery kit)",
   "Dieser Tresor wird synchronisiert und braucht neben dem Passwort den Code, den UwURDP beim Verbinden des Servers einmal gezeigt hat.": "This vault is synced and needs, besides the password, the code UwURDP showed once when the server was connected.",
   "„System“ folgt der Einstellung von {system}.": "“System” follows the {system} setting.",
-  "Sync-Einstellungen": "Sync settings"
+  "Sync-Einstellungen": "Sync settings",
+  "Den Host aus dem Link gibt es auf diesem Gerät nicht, auch nach dem Synchronisieren nicht. Vielleicht wurde er gelöscht.": "The host from the link isn't on this device, not even after syncing. Maybe it was deleted.",
+  "Den Host aus dem Link gibt es auf diesem Gerät nicht, und das Synchronisieren hat nicht geklappt: {error}": "The host from the link isn't on this device, and syncing didn't work: {error}",
+  "Den Host aus dem Link gibt es auf diesem Gerät nicht. Er wurde vielleicht gelöscht, oder dieses Gerät synchronisiert nicht mit dem, auf dem er angelegt wurde.": "The host from the link isn't on this device. Maybe it was deleted, or this device doesn't sync with the one it was created on.",
+  "Ein Link öffnet eine Verbindung – dafür muss der Tresor offen sein.": "A link opens a connection – the vault has to be open for that.",
+  "Der Host aus dem Link ist noch nicht auf diesem Gerät – synchronisiere…": "The host from the link isn't on this device yet – syncing…",
+  "Diesen Link kann UwURDP nicht öffnen. Ein Link zu einem Host sieht so aus: uwurdp://connect/<Host-ID>": "UwURDP can't open this link. A link to a host looks like this: uwurdp://connect/<host ID>"
 }

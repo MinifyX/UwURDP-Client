@@ -17,11 +17,12 @@ use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 use uwurdp_core::{
-    AudioMode, GatewayTarget, ObservedCertificate, RdpError, RdpTarget, SessionId, SessionSettings,
+    AudioMode, DriveShare, GatewayTarget, ObservedCertificate, RdpError, RdpTarget, SessionId,
+    SessionSettings,
 };
 use uwurdp_store::{
-    GroupRecord, HostDraft, HostRecord, PasswordChange, ResolvedLogin, SecretText, StoreError,
-    Workspace,
+    DriveRedirection, GroupRecord, HostDraft, HostRecord, PasswordChange, ResolvedLogin,
+    SecretText, StoreError, Workspace,
 };
 use zeroize::Zeroizing;
 
@@ -134,6 +135,51 @@ pub(crate) fn set_group_login(
     Ok(state
         .store
         .set_group_login(workspace, &name, &username, &domain, &password)?)
+}
+
+/// The drive redirection a group hands to its hosts; `None` removes it.
+#[tauri::command]
+pub(crate) fn set_group_drives(
+    state: State<'_, AppState>,
+    workspace: Workspace,
+    name: String,
+    drives: Option<DriveRedirection>,
+) -> Result<(), SaveFailure> {
+    Ok(state.store.set_group_drives(workspace, &name, drives)?)
+}
+
+/// A folder to share, picked in the system's dialog. Only its path and the
+/// share name it would get come back; `None` when the dialog was closed.
+#[tauri::command]
+pub(crate) async fn pick_shared_folder(app: tauri::AppHandle) -> Option<PickedFolder> {
+    let path = crate::dialogs::pick_folder(&app, "Ordner freigeben").await?;
+    let path = path.to_string_lossy().into_owned();
+    Some(PickedFolder {
+        name: uwurdp_store::default_share_name(&path),
+        path,
+    })
+}
+
+#[derive(Serialize)]
+pub(crate) struct PickedFolder {
+    path: String,
+    name: String,
+}
+
+/// What a host shares when it connects: its own setting or its group's, and
+/// only when switched on.
+fn shared_drives(drives: DriveRedirection) -> Vec<DriveShare> {
+    if !drives.enabled {
+        return Vec::new();
+    }
+    drives
+        .drives
+        .into_iter()
+        .map(|drive| DriveShare {
+            name: drive.name,
+            path: drive.path.into(),
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -433,6 +479,7 @@ pub(crate) async fn connect_host(
         .known_host(&host.address, host.port)
         .map_err(internal)?
         .map(|known| known.fingerprint);
+    let drives = shared_drives(state.store.host_drives(id).map_err(internal)?);
 
     let target = RdpTarget {
         address: host.address.clone(),
@@ -461,6 +508,7 @@ pub(crate) async fn connect_host(
             client_name: client_name(),
             graphics_pipeline: rdp.graphics_pipeline,
             h264_library: rdp.graphics_pipeline.then(|| codec.library()).flatten(),
+            drives,
         },
         gateway,
     };
@@ -561,6 +609,25 @@ mod tests {
         assert!(is_local("nas.local"));
         assert!(!is_local("8.8.8.8"));
         assert!(!is_local("rdp.example.com"));
+    }
+
+    #[test]
+    fn drives_are_shared_only_when_switched_on() {
+        let drives = DriveRedirection {
+            enabled: false,
+            drives: vec![uwurdp_store::SharedDrive {
+                name: "C".into(),
+                path: "C:\\".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(shared_drives(drives.clone()).is_empty());
+        let on = shared_drives(DriveRedirection {
+            enabled: true,
+            ..drives
+        });
+        assert_eq!(on[0].path, std::path::PathBuf::from("C:\\"));
     }
 
     #[test]

@@ -62,6 +62,11 @@ Done, in 0.1.0-beta.1:
   app sync switched off apart from a broken one.
 - **The installer with Nyu** and signed updates on Windows (x64 and ARM),
   macOS and Linux.
+- **Drive redirection** (next release): local folders, or every fixed drive,
+  as `\\tsclient\<name>` under "This PC", per host or handed down by the
+  group, synced, imported from RDCMan and `.rdp`. The file system behind it is
+  UwURDP's own, confined to the shared folder. See
+  [architecture](architecture.md#drive-redirection).
 
 Next, roughly in this order:
 
@@ -78,7 +83,7 @@ Next, roughly in this order:
 - **Kerberos**, for domains where NTLM is switched off. Needs a KDC client
   without dragging a second TLS stack into the app.
 - **Several monitors.**
-- **Drive redirection**, then printers and smart cards.
+- **Printers and smart cards**, now that the RDPDR channel is there.
 - **Files through the clipboard.**
 - **RDCMan smart groups**, which the import skips today.
 - **Display settings per group**, like RDCMan's inherited display settings,

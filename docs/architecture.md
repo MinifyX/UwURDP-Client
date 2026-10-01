@@ -338,6 +338,39 @@ UwURDP treats it the way SSH treats host keys: **trust on first use**.
   can't prove it holds nothing back (see manifests below), certificates that
   came from sync aren't trusted, and UwURDP asks again.
 
+## Drive redirection
+
+Local folders show up on the server under "This PC" and as
+`\\tsclient\<name>`, like mstsc's drives. RDPDR is IronRDP's
+`ironrdp-rdpdr`; the file system behind it is ours
+(`uwurdp-core/src/drive.rs`), because `ironrdp-rdpdr-native` only builds on
+Unix and takes the server's paths as they come.
+
+- **Confined to the shared folder.** A server path is split into names;
+  `..`, drive letters, stream names and anything with a separator of this
+  system in it are refused before a file is touched. What exists is then
+  canonicalised and has to be under the shared folder's canonical path, so a
+  symbolic link (or a Windows device name like `NUL`) out of it is refused like
+  `..`. An entry that links outside isn't listed.
+- **Server input never ends the session.** No panics on what the server
+  sends; a request IronRDP can't decode gets `STATUS_NOT_SUPPORTED` instead of
+  the error that would close the connection. Reads are capped at 1 MiB, open
+  files at 256, a listing at 100 000 entries.
+- Create, read, write, close, rename, delete (on close, as Windows does),
+  file and volume information, directory listings with `*`/`?`. Change
+  notifications stay pending, as in FreeRDP; byte-range locks are accepted and
+  not enforced.
+- **The sound channel comes along.** Windows only serves RDPDR to a client
+  that also announces RDPSND, so with sound off a silent one is announced.
+- **Device-local paths.** The list syncs like every other setting, but a path
+  belongs to the device that added it: a folder that isn't there is skipped
+  at connect time with a log line, the session goes on. `*` stands for every
+  fixed drive of the computer that connects (Windows; elsewhere it shares
+  nothing).
+
+A host has its own setting (off, or a list) or takes its group's, like the
+login. The default is off.
+
 ## Logins and inheritance
 
 A login is its own record — user, domain, and a password sealed in the vault —
@@ -370,7 +403,7 @@ used in RDCMan.
 
 ## Data model
 
-The SQLite schema is UwUSSH's V1–V6 plus one migration of its own, **V7**:
+The SQLite schema is UwUSSH's V1–V6 plus migrations of its own. **V7**:
 
 ```sql
 ALTER TABLE identities  ADD COLUMN domain TEXT NOT NULL DEFAULT '';
@@ -380,14 +413,24 @@ ALTER TABLE hosts       ADD COLUMN gateway_identity_id TEXT REFERENCES identitie
 ALTER TABLE host_groups ADD COLUMN identity_id TEXT REFERENCES identities (id);
 ```
 
+**V8** is UwULock's sync state. **V9** gives a group its drive redirection:
+
+```sql
+ALTER TABLE host_groups ADD COLUMN drives TEXT;          -- DriveRedirection as JSON, NULL = none
+```
+
+It also moves a `drives` an older build kept among a group's unknown fields
+into the column.
+
 The sync payloads grow the same way:
 
 - **HostPayload** gains `rdp: RdpSettings` — `display` (`fit`, `fixed`,
   `fullscreen`), `width`, `height`, `smartSizing`, `colorDepth`, `audio`
-  (`local`, `remote`, `off`), `clipboard`, `admin`, `nla`, `wallpaper`, and
-  `gateway { address, port, useHostLogin, bypassLocal }` — plus `comment` and
-  `gateway_identity_id`.
-- **GroupPayload** gains `identity_id`, the group login.
+  (`local`, `remote`, `off`), `clipboard`, `admin`, `nla`, `wallpaper`,
+  `gateway { address, port, useHostLogin, bypassLocal }` and
+  `drives { enabled, drives: [{ name, path }] }` (absent: the group's) — plus
+  `comment` and `gateway_identity_id`.
+- **GroupPayload** gains `identity_id`, the group login, and `drives`.
 - **IdentityPayload** gains `domain`.
 
 Every field has a default, and modes are strings rather than enums, so a record
@@ -566,7 +609,8 @@ Credentials are deduplicated: a profile forty hosts share arrives once.
   `.rdg`) and Local scope (in `RDCMan.settings`), with RDCMan's inheritance
   resolved down the tree.
 - **Settings:** display size, colour depth, console session, sound,
-  clipboard, gateway, and comments. Settings UwURDP has no field for are
+  clipboard, drives (`redirectDrives` shares every fixed drive, `*`), gateway,
+  and comments. Settings UwURDP has no field for are
   appended to the host's comment rather than lost. Smart groups are skipped.
 - **Passwords** are DPAPI-decrypted, which only works on the Windows account
   that saved them. Files encrypted with a certificate keep their users and
@@ -577,15 +621,16 @@ Credentials are deduplicated: a profile forty hosts share arrives once.
 ### mstsc `.rdp`
 
 UTF-16 or UTF-8, several at once. `password 51:b:…` is DPAPI too, with the
-same one-account rule.
+same one-account rule. `drivestoredirect:s:` maps `*` and drive letters
+(`C:\`); `DynamicDrives` and names that aren't a drive letter are left out.
 
 ### UwURDP's own export
 
-Everything — hosts, groups, logins, trusted certificates — in one `.uwurdp`
-file. Without passwords it's plain JSON, readable and diffable. With passwords
-the whole file is sealed under a password of its own (Argon2id,
-XChaCha20-Poly1305), not the master password, because the file may go to
-another device or another person. Reading it back adds nothing twice, and it
+Everything — hosts, groups (with their login and shared folders), logins,
+trusted certificates — in one `.uwurdp` file. Without passwords it's plain
+JSON, readable and diffable. With passwords the whole file is sealed under a
+password of its own (Argon2id, XChaCha20-Poly1305), not the master password,
+because the file may go to another device or another person. Reading it back adds nothing twice, and it
 only trusts certificates for hosts the file brings.
 
 ## Installer and updates

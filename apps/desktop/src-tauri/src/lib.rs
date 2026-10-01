@@ -119,6 +119,8 @@ pub fn run() {
             hosts::rename_group,
             hosts::delete_group,
             hosts::set_group_login,
+            hosts::set_group_drives,
+            hosts::pick_shared_folder,
             hosts::move_group,
             hosts::move_host,
             hosts::connect_host,

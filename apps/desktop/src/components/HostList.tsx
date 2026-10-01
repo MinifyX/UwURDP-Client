@@ -39,6 +39,7 @@ type Props = {
   onConnectGroup: (workspace: Workspace, group: string) => void;
   onDisconnectGroup: (workspace: Workspace, group: string) => void;
   onGroupLogin: (group: GroupRecord) => void;
+  onGroupDrives: (group: GroupRecord) => void;
   onAdd: (workspace: Workspace, group: string | null) => void;
   onEdit: (host: HostRecord) => void;
   onImport: () => void;
@@ -268,6 +269,7 @@ export function HostList(props: Props) {
       username: '',
       domain: '',
       hasPassword: false,
+      drives: null,
     };
 
   const groupMenu = (x: number, y: number, name: string) =>
@@ -301,6 +303,11 @@ export function HostList(props: Props) {
           label: t('Anmeldung der Gruppe…'),
           icon: 'user',
           onSelect: () => props.onGroupLogin(groupRecord(name)),
+        },
+        {
+          label: t('Lokale Ordner der Gruppe…'),
+          icon: 'folder',
+          onSelect: () => props.onGroupDrives(groupRecord(name)),
         },
         {
           label: t('Host hier hinzufügen'),

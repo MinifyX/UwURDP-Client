@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CertificateChanged, LoginPrompt, TrustCertificate } from './components/ConnectDialogs';
 import { GroupLoginDialog } from './components/GroupLoginDialog';
+import { GroupDrivesDialog } from './components/DrivesEditor';
 import { HostForm } from './components/HostForm';
 import { HostList } from './components/HostList';
 import { Icon } from './components/Icon';
@@ -181,6 +182,7 @@ export function App() {
     group?: string | null;
   } | null>(null);
   const [groupLogin, setGroupLogin] = useState<GroupRecord | null>(null);
+  const [groupDrives, setGroupDrives] = useState<GroupRecord | null>(null);
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
@@ -792,7 +794,14 @@ export function App() {
   );
   const dialog = dialogs[0] ?? null;
   const modalOpen = Boolean(
-    dialog || form || groupLogin || importing || settingsOpen || confirmClose || startupVault,
+    dialog ||
+    form ||
+    groupLogin ||
+    groupDrives ||
+    importing ||
+    settingsOpen ||
+    confirmClose ||
+    startupVault,
   );
   const modalRef = useRef(false);
   modalRef.current = modalOpen;
@@ -1024,6 +1033,7 @@ export function App() {
               onConnectGroup={connectGroup}
               onDisconnectGroup={disconnectGroup}
               onGroupLogin={setGroupLogin}
+              onGroupDrives={setGroupDrives}
               onAdd={(workspace, group) => setForm({ host: null, workspace, group })}
               onEdit={(host) => setForm({ host })}
               onImport={() => setImporting(true)}
@@ -1211,6 +1221,17 @@ export function App() {
           onCancel={() => setGroupLogin(null)}
           onSaved={() => {
             setGroupLogin(null);
+            void refreshHosts();
+          }}
+        />
+      )}
+
+      {groupDrives && (
+        <GroupDrivesDialog
+          group={groupDrives}
+          onCancel={() => setGroupDrives(null)}
+          onSaved={() => {
+            setGroupDrives(null);
             void refreshHosts();
           }}
         />

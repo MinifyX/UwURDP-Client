@@ -135,6 +135,8 @@ fn build_connector(
         )));
     }
 
+    crate::drive::attach(&mut connector, &target.settings);
+
     connector
 }
 

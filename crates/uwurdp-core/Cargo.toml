@@ -13,7 +13,7 @@ default = ["audio", "h264"]
 # Plays remote audio on this machine (RDPSND over cpal). On Linux cpal links
 # against ALSA, so building it needs libasound2-dev (Debian/Ubuntu) or
 # alsa-lib-devel (Fedora). Turn the feature off to build without it.
-audio = ["dep:ironrdp-rdpsnd", "dep:cpal"]
+audio = ["dep:cpal"]
 # H.264 in the graphics pipeline, decoded by Cisco's OpenH264 binary that the
 # app downloads to the user's machine and names in the session settings. No
 # decoder is compiled in: only Cisco's own binary carries their patent license.
@@ -40,7 +40,12 @@ ironrdp-svc = "0.8"
 # Only the framing and the sans-I/O drivers; the `reqwest` feature is left off
 # because we only speak NTLM (see `connect.rs`) and never need a KDC client.
 ironrdp-tokio = "0.10"
-ironrdp-rdpsnd = { version = "0.9", optional = true }
+# Always in: drive redirection needs the sound channel announced too, even
+# with sound off (MS-RDPEFS, appendix A <1>).
+ironrdp-rdpsnd = "0.9"
+# Drive redirection; the file system backend is ours (src/drive.rs), since
+# ironrdp-rdpdr-native only builds on Unix.
+ironrdp-rdpdr = "0.7"
 # Played through our own backend (src/audio.rs), not ironrdp-rdpsnd-native's:
 # that one never starts its stream. Plain PCM only, so no Opus and no CMake.
 cpal = { version = "0.17", optional = true }
@@ -64,6 +69,14 @@ tokio = { version = "1", features = ["rt", "sync", "time", "macros", "net", "io-
 tracing = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 zeroize = "1"
+
+# Free space on a shared folder's volume, for Explorer on the server.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# Free space, and which drives are fixed ones for "all drives".
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 # The toy server behind `examples/dev_rdpd.rs` and the integration tests.

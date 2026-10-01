@@ -3199,6 +3199,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ironrdp-rdpdr"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ece9e67ccf992eb8ce5ec0416d3950e2e199d4b1e2523f91af192205279fc970"
+dependencies = [
+ "bitflags 2.13.2",
+ "ironrdp-core 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ironrdp-error 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ironrdp-pdu 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ironrdp-svc",
+ "tracing",
+]
+
+[[package]]
 name = "ironrdp-rdpsnd"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7632,11 +7646,13 @@ dependencies = [
  "ironrdp-input",
  "ironrdp-pdu 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ironrdp-pdu 0.9.0 (git+https://github.com/Devolutions/IronRDP?rev=9b151c4c2e47c6014e1e8e55909d4180aa8bdb99)",
+ "ironrdp-rdpdr",
  "ironrdp-rdpsnd",
  "ironrdp-server",
  "ironrdp-session",
  "ironrdp-svc",
  "ironrdp-tokio",
+ "libc",
  "openh264",
  "parking_lot",
  "rcgen",
@@ -7649,6 +7665,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "windows-sys 0.61.2",
  "x509-cert 0.2.5",
  "zeroize",
 ]

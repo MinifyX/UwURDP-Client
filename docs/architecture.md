@@ -149,8 +149,18 @@ DVC ──zgfx──▶ GfxChannel ──▶ Pipeline: surfaces ──(mapped)�
   ClearCodec's short V-bars in the wrong bit order, so text and UI tiles stay
   flat or black. Back to a release once one has IronRDP #1443, #1694, #1696,
   #1698 and #1728.
+- On top of that commit, `vendor/ironrdp-graphics` (a `[patch]` in the root
+  `Cargo.toml`) decodes Progressive's refinement passes (SRL) the way FreeRDP
+  does: Windows ends the stream without the trailing zero byte and cuts it off
+  inside the last zero run. Upstream rejects both, and the tile stays at its
+  coarse first pass: text that looks pixelated until it is redrawn. Against
+  Windows 11 this failed a third of all Progressive updates; see
+  `vendor/README.md`.
 - What we advertise: with H.264, every version from 10.7 down to 8.1 with
-  AVC on, like mstsc; Windows then sends AVC444. Without, 10.7 with AVC off.
+  AVC on, like mstsc; a server set up for H.264 then sends AVC444. Without,
+  10.7 with AVC off. A Windows 11 desktop with default settings sends no H.264
+  at all, H.264 offered or not: text and UI come as ClearCodec and
+  Progressive.
   Both with the small cache. The server's CapabilitiesConfirm decides which
   AVC codecs we take: 8.1 allows AVC420 only, 10.x both unless AVC is off.
   A host can turn the pipeline off (`graphicsPipeline` in its RDP settings);

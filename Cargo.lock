@@ -3156,6 +3156,22 @@ source = "git+https://github.com/Devolutions/IronRDP?rev=9b151c4c2e47c6014e1e8e5
 [[package]]
 name = "ironrdp-graphics"
 version = "0.9.0"
+dependencies = [
+ "bit_field",
+ "bitflags 2.13.2",
+ "bitvec",
+ "byteorder",
+ "ironrdp-core 0.2.1 (git+https://github.com/Devolutions/IronRDP?rev=9b151c4c2e47c6014e1e8e55909d4180aa8bdb99)",
+ "ironrdp-pdu 0.9.0 (git+https://github.com/Devolutions/IronRDP?rev=9b151c4c2e47c6014e1e8e55909d4180aa8bdb99)",
+ "num-derive 0.5.1",
+ "num-traits",
+ "wide 0.7.33",
+ "yuv",
+]
+
+[[package]]
+name = "ironrdp-graphics"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7493e426b6a8104cd497e518ba7781a9c7fc9a5f58a9cc0c1111e6d66f63bcc"
 dependencies = [
@@ -3167,23 +3183,6 @@ dependencies = [
  "ironrdp-pdu 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-derive 0.4.2",
  "num-traits",
- "yuv",
-]
-
-[[package]]
-name = "ironrdp-graphics"
-version = "0.9.0"
-source = "git+https://github.com/Devolutions/IronRDP?rev=9b151c4c2e47c6014e1e8e55909d4180aa8bdb99#9b151c4c2e47c6014e1e8e55909d4180aa8bdb99"
-dependencies = [
- "bit_field",
- "bitflags 2.13.2",
- "bitvec",
- "byteorder",
- "ironrdp-core 0.2.1 (git+https://github.com/Devolutions/IronRDP?rev=9b151c4c2e47c6014e1e8e55909d4180aa8bdb99)",
- "ironrdp-pdu 0.9.0 (git+https://github.com/Devolutions/IronRDP?rev=9b151c4c2e47c6014e1e8e55909d4180aa8bdb99)",
- "num-derive 0.5.1",
- "num-traits",
- "wide 0.7.33",
  "yuv",
 ]
 
@@ -7710,7 +7709,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-core"
-version = "0.1.0-beta.9"
+version = "0.1.0-beta.10"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7723,8 +7722,8 @@ dependencies = [
  "ironrdp-displaycontrol",
  "ironrdp-dvc",
  "ironrdp-egfx",
+ "ironrdp-graphics 0.9.0",
  "ironrdp-graphics 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ironrdp-graphics 0.9.0 (git+https://github.com/Devolutions/IronRDP?rev=9b151c4c2e47c6014e1e8e55909d4180aa8bdb99)",
  "ironrdp-input",
  "ironrdp-pdu 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ironrdp-pdu 0.9.0 (git+https://github.com/Devolutions/IronRDP?rev=9b151c4c2e47c6014e1e8e55909d4180aa8bdb99)",
@@ -7756,7 +7755,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-desktop"
-version = "0.1.0-beta.9"
+version = "0.1.0-beta.10"
 dependencies = [
  "base64 0.22.1",
  "bzip2",
@@ -7794,7 +7793,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-import"
-version = "0.1.0-beta.9"
+version = "0.1.0-beta.10"
 dependencies = [
  "base64 0.22.1",
  "roxmltree",
@@ -7806,7 +7805,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-proto"
-version = "0.1.0-beta.9"
+version = "0.1.0-beta.10"
 dependencies = [
  "serde",
  "serde_json",
@@ -7815,7 +7814,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-setup"
-version = "0.1.0-beta.9"
+version = "0.1.0-beta.10"
 dependencies = [
  "libc",
  "semver",
@@ -7833,7 +7832,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-store"
-version = "0.1.0-beta.9"
+version = "0.1.0-beta.10"
 dependencies = [
  "base64 0.22.1",
  "parking_lot",
@@ -7852,7 +7851,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-sync"
-version = "0.1.0-beta.9"
+version = "0.1.0-beta.10"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -7883,7 +7882,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-vault"
-version = "0.1.0-beta.9"
+version = "0.1.0-beta.10"
 dependencies = [
  "argon2",
  "chacha20poly1305",

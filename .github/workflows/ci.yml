@@ -4,8 +4,8 @@ name: CI
 # between two releases: Prettier and the locale check, the type check and the
 # front-end builds once, then rustfmt, clippy and the Rust tests on Windows
 # (where most people run UwURDP) and Linux. macOS is checked by
-# `installers.yml` for every tag. The end-to-end run needs a desktop session
-# and stays on Lorin's machine.
+# `installers.yml` on every push to main. The end-to-end run needs a desktop
+# session and stays on Lorin's machine.
 
 on:
   push:
@@ -36,6 +36,7 @@ jobs:
   web:
     name: Front end
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       # Every `uses:` is pinned to a commit, with the version in the comment.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,6 +62,9 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
+    # A hung runner (apt once stalled for an hour) fails instead of holding
+    # the release for the default six hours.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -92,6 +96,9 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Pull requests read main's cache; only main saves (10 GB per repo).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings

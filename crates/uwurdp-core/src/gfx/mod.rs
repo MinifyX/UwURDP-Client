@@ -52,6 +52,7 @@ use ironrdp_pdu::PduResult;
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use surface::{from_edges, Pixels};
 use tracing::{debug, info, trace, warn};
 
@@ -68,6 +69,9 @@ const MAX_CACHE_BYTES: usize = 64 * 1024 * 1024;
 /// debug level, before they only count towards the stats.
 const LOUD_ERRORS: u32 = 5;
 const LOGGED_ERRORS: u32 = 100;
+/// How often a long session logs its codec counters, so a report has them
+/// even when the app never got to close the session.
+const REPORT_EVERY: Duration = Duration::from_secs(10 * 60);
 
 /// The pipeline, shared by the channel (which fills it) and the session
 /// (which takes the changes out and draws from the output).
@@ -128,6 +132,33 @@ struct Stats {
     copies: u32,
     cache_hits: u32,
     errors: u32,
+    /// Which codec the failed updates were in.
+    failed: Failed,
+}
+
+/// Failed bitmap updates per codec: a codec that keeps failing leaves its
+/// areas stale or (Progressive) stuck at a blurry first pass.
+#[derive(Debug, Default)]
+struct Failed {
+    planar: u32,
+    clear: u32,
+    progressive: u32,
+    remotefx: u32,
+    avc: u32,
+    other: u32,
+}
+
+impl Failed {
+    fn count(&mut self, codec: Codec1Type) {
+        let counter = match codec {
+            Codec1Type::Planar => &mut self.planar,
+            Codec1Type::ClearCodec => &mut self.clear,
+            Codec1Type::RemoteFx => &mut self.remotefx,
+            Codec1Type::Avc420 | Codec1Type::Avc444 | Codec1Type::Avc444v2 => &mut self.avc,
+            _ => &mut self.other,
+        };
+        *counter += 1;
+    }
 }
 
 #[derive(Default)]
@@ -149,6 +180,8 @@ pub(crate) struct Pipeline {
     /// What the server's CapabilitiesConfirm allows it to send.
     allowed: Allowed,
     stats: Stats,
+    /// When the counters were last logged; `None` before the first frame.
+    reported: Option<Instant>,
 }
 
 /// The H.264 codecs the confirmed capability set allows; nothing before
@@ -324,6 +357,7 @@ impl Pipeline {
                 self.compose_pending();
                 self.frames_decoded = self.frames_decoded.wrapping_add(1);
                 self.stats.frames = self.stats.frames.wrapping_add(1);
+                self.report_now_and_then();
                 return Some(GfxPdu::FrameAcknowledge(FrameAcknowledgePdu {
                     queue_depth: QueueDepth::Unavailable,
                     frame_id: end.frame_id,
@@ -386,6 +420,9 @@ impl Pipeline {
                         Err(format!("codec {other:?} was not offered"))
                     }
                 };
+                if result.is_err() {
+                    self.stats.failed.count(pdu.codec_id);
+                }
                 self.updated(pdu.surface_id, result);
             }
             GfxPdu::WireToSurface2(pdu) => {
@@ -403,6 +440,9 @@ impl Pipeline {
                     &pdu.bitmap_data,
                     &mut surface.pixels,
                 );
+                if result.is_err() {
+                    self.stats.failed.progressive += 1;
+                }
                 self.updated(pdu.surface_id, result);
             }
             GfxPdu::DeleteEncodingContext(pdu) => {
@@ -549,6 +589,18 @@ impl Pipeline {
                 }
             }
             Err(message) => self.error(format_args!("{message}")),
+        }
+    }
+
+    fn report_now_and_then(&mut self) {
+        let now = Instant::now();
+        match self.reported {
+            None => self.reported = Some(now),
+            Some(last) if now.duration_since(last) >= REPORT_EVERY => {
+                self.reported = Some(now);
+                info!(stats = ?self.stats, "graphics pipeline so far");
+            }
+            Some(_) => {}
         }
     }
 

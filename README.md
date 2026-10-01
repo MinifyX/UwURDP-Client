@@ -237,7 +237,7 @@ pnpm build:setup                  # target/installers/, for the system it runs o
 ```
 
 Releasing is `pnpm release`, on any system that holds the signing key: it takes
-the setups CI built for the tag (Windows, macOS, Linux), signs what the updater
+the setups CI built for the tagged commit on main (Windows, macOS, Linux), signs what the updater
 runs here, and publishes all of them. [release-notes/README.md](release-notes/README.md) has
 the steps.
 

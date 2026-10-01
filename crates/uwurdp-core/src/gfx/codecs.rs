@@ -421,6 +421,39 @@ mod tests {
         assert_eq!(at(&surface, 150, 10), red, "outside the region");
     }
 
+    /// Progressive refinement (SRL) streams as Windows writes them: no
+    /// trailing zero byte, and cut off inside the last zero run. Upstream
+    /// IronRDP rejected both, which left tiles at their blurry first pass.
+    #[test]
+    fn srl_reads_windows_streams() {
+        use ironrdp_graphics_next::srl::{decode_srl, SrlDecoder, SrlEncoder};
+
+        // Run '1' + 1 bit 0 (no zeros), sign 0, magnitude 5: 0000 1.
+        assert_eq!(decode_srl(&[0x81], 1, 4), Ok(vec![5]));
+        // The zeros after it are not written at all.
+        let mut expected = vec![5];
+        expected.resize(21, 0);
+        assert_eq!(decode_srl(&[0x81], 21, 4), Ok(expected));
+        // An empty stream is all zeros.
+        assert_eq!(decode_srl(&[], 3, 2), Ok(vec![0, 0, 0]));
+
+        // What our own encoder writes (with the terminator) still decodes,
+        // with the run and KP state carried from one band into the next.
+        let bands: [&[i16]; 2] = [&[0, 0, 3, 0, -1, 0, 0], &[0, 0, 0, 0, 2, 0, 0, -7]];
+        let mut encoder = SrlEncoder::new();
+        encoder.encode(bands[0], 2).expect("encode");
+        encoder.encode(bands[1], 3).expect("encode");
+        let mut stream = encoder.finish().expect("finish");
+        // Windows' form of the same: drop the terminator and the zero bytes
+        // the last run ends in.
+        while stream.last() == Some(&0) {
+            stream.pop();
+        }
+        let mut decoder = SrlDecoder::new(&stream).expect("decoder");
+        assert_eq!(decoder.decode(7, 2).as_deref(), Ok(bands[0]));
+        assert_eq!(decoder.decode(8, 3).as_deref(), Ok(bands[1]));
+    }
+
     #[test]
     fn uncompressed_is_blue_first() {
         let codecs = Codecs::default();

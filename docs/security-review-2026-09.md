@@ -128,3 +128,62 @@ Listed, not changed in this round.
 - Comments inherited from UwUSSH that talked about OpenSSH keys now describe
   certificates; the setup's content security policy says `frame-src 'none'`
   like the app's.
+
+## Deep links (2026-10)
+
+A review of `uwurdp://connect/<host-id>` (#12, `46d0b24`): the deep-link and
+single-instance plugins (2.4.10 / 2.4.5, read at source), `deep_link.rs`, the
+page's link queue, `sync_for_link`, `UWURDP_AFTER_PID`, the Windows setup's
+registry entries, the Linux setup's desktop entry and `xdg-mime` call, the
+.deb/.rpm desktop entry, and the `UWURDP_DB` bypass. No Critical, High or
+Medium finding; nothing changed in the code.
+
+### Checked and fine
+
+- **Only an id gets through.** `deep_link::parse` takes exactly
+  `uwurdp://connect/<8-4-4-4-12 hex>` with at most one trailing slash, refuses
+  the nil UUID and any query, fragment, user, port, `.rdp` setting or other id
+  form, and the page gets `{kind, id}` only. Address, login, gateway and
+  redirections come from this device's vault, so a link can't point UwURDP at a
+  server of the sender's choosing. Host ids are random v4 UUIDs.
+- **Arguments.** Windows starts `"…\uwurdp.exe" "%1"`, Linux `Exec=… %u` (deb,
+  rpm) or `%U` (setup). The app reads no command-line flags; the deep-link
+  plugin looks at argv only when there is exactly one argument after the
+  program name and takes it only as a `uwurdp:` URL. A link that breaks out of
+  the `"%1"` quotes gives several arguments and is ignored. WebView2 takes no
+  browser flags from the host's argv.
+- **Second instance.** The single-instance callback ignores argv and cwd; argv
+  goes through the same plugin check and parser. Windows and Linux (session
+  D-Bus) are per user session. Links are handled one after another.
+- **`UWURDP_AFTER_PID`** (Linux, package update) only waits, at most 30 s, for
+  `/proc/<pid>` to disappear: nothing is killed or signalled, a value that isn't
+  a number is ignored, and the variable is removed before anything else starts.
+  Set by someone else it delays the start by 30 s at most.
+- **The page's permissions.** `capabilities/default.json` was not widened; the
+  plugin's `register`/`unregister` commands are not callable from the page.
+- **Uninstall.** The Windows setup removes `HKCU\Software\Classes\uwurdp`
+  (tested); the Linux setup removes the desktop entry; the package manager
+  removes the .deb/.rpm entry.
+- **`UWURDP_DB`** only changes the process it is set for.
+
+### Not fixed: Low and Info
+
+- **DL-L1, Low — any page can make UwURDP ask for the master password.** A link
+  with a random id opens the window and, with the vault locked, the unlock
+  dialog, then one sync pass. The dialog is UwURDP's own and nothing leaves the
+  device; browsers ask before they open an app for a scheme.
+- **DL-L2, Low — macOS: the single-instance socket has a fixed name in `/tmp`.**
+  `/tmp/<identifier>_si.sock`: another local user can listen there first (mode
+  0777), and UwURDP hands over its program path and quits, so it doesn't start.
+  Fix upstream, or skip the plugin on macOS, where LaunchServices keeps one
+  instance and delivers links as Apple Events.
+- **DL-I1, Info — a link connects directly**, as decided: the same questions as
+  a double click (certificate, vault, login) and nothing more. With a remembered
+  vault and a trusted certificate, a page that knows a host id opens the session,
+  with that host's redirections (clipboard, drives), without a click in UwURDP.
+  Host records come from this account's devices and the UwULock web vault.
+- **DL-I2, Info — the Linux setup's `xdg-mime default` stays in
+  `~/.config/mimeapps.list` after uninstall.** It names a desktop file that is
+  gone, so nothing opens; a reinstall uses it again.
+- **DL-I3, Info — the host id is logged** at info level when a link arrives,
+  and travels in browser history. It identifies a record, nothing more.

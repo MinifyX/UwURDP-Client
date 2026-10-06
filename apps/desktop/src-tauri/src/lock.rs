@@ -199,13 +199,12 @@ fn sign_in(
     accept_space: Option<AcceptSpaceInput>,
 ) -> SyncResult<Result<SignedIn, LockOutcome>> {
     let server = lock::normalize_server(server_url).ok();
-    // The token that skips the second step goes only to the server and
-    // account that issued it.
-    let remembered = match (&two_factor, &server) {
-        (None, Some(server)) => {
-            store.lock_remember_token(server, email, crate::device::unprotect_lock)?
-        }
-        _ => None,
+    // The token that skips the second step, on every sign-in without a code:
+    // after the session ended, after a restart, with the vault locked. It
+    // goes only to the server and account that issued it.
+    let remembered = match &two_factor {
+        None => lock::remember_token(store, server_url, email, crate::device::unprotect_lock)?,
+        Some(_) => None,
     };
     let known = lock::known(store, server_url, email)?;
     let request = SignIn {

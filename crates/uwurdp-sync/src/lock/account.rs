@@ -94,6 +94,24 @@ pub fn known(store: &Store, server_url: &str, email: &str) -> Result<Known, Lock
     })
 }
 
+/// The "remember this device" token this device holds for the account of
+/// this server and email, opened with `unprotect`: what lets a sign-in skip
+/// the second step. It is looked up by the server's normalized address, so
+/// it only ever goes back to the server that issued it — never to another,
+/// and none for an address that is none. Kept until the account is signed
+/// out of; a session that ended or a locked vault leaves it as it is.
+pub fn remember_token(
+    store: &Store,
+    server_url: &str,
+    email: &str,
+    unprotect: impl Fn(&[u8]) -> std::io::Result<Zeroizing<Vec<u8>>>,
+) -> Result<Option<Zeroizing<String>>, LockError> {
+    let Ok(server_url) = super::normalize_server(server_url) else {
+        return Ok(None);
+    };
+    Ok(store.lock_remember_token(&server_url, email, unprotect)?)
+}
+
 /// A server that asks for a cheaper key derivation than this account used
 /// last time is refused, as the UwULock app refuses it. A first sign-in
 /// takes what the server says, within the floors and ceilings of the

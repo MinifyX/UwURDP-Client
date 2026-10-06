@@ -170,7 +170,9 @@ fn two_step_login_asks_for_a_code_and_can_remember_this_device() {
         }),
         ..request(&fake)
     };
-    let SignInOutcome::SignedIn(signed) = sign_in(&right, device()).unwrap() else {
+    // The server remembers a device by its identifier.
+    let this = device();
+    let SignInOutcome::SignedIn(signed) = sign_in(&right, this.clone()).unwrap() else {
         panic!("in")
     };
     let remembered = signed.remember_token.unwrap();
@@ -180,8 +182,12 @@ fn two_step_login_asks_for_a_code_and_can_remember_this_device() {
         ..request(&fake)
     };
     assert!(matches!(
-        sign_in(&again, device()).unwrap(),
+        sign_in(&again, this).unwrap(),
         SignInOutcome::SignedIn(_)
+    ));
+    assert!(matches!(
+        sign_in(&again, device()).unwrap(),
+        SignInOutcome::TwoFactor { message: None, .. }
     ));
     send_email_code_works(&fake);
 }
@@ -1044,4 +1050,190 @@ fn the_channel_of_a_switched_off_app_sync_is_refused_not_retried() {
         live::run(&signed.lock, &|| true, &mut |_| {}),
         live::Ended::Refused
     );
+}
+
+// ── Two-step login, once per device ───────────────────────────────────────
+
+/// Sealed as the operating system seals it, for the tests: as it is.
+fn sealed(token: &Zeroizing<String>) -> Vec<u8> {
+    token.as_bytes().to_vec()
+}
+
+fn unsealed(bytes: &[u8]) -> std::io::Result<Zeroizing<Vec<u8>>> {
+    Ok(Zeroizing::new(bytes.to_vec()))
+}
+
+/// A store in a file of its own, to be opened again as a restart opens it.
+struct StoreFile(std::path::PathBuf);
+
+impl StoreFile {
+    fn new() -> Self {
+        Self(std::env::temp_dir().join(format!("uwurdp-lock-{}.db", Uuid::new_v4())))
+    }
+
+    fn open(&self) -> Store {
+        Store::open(&self.0).unwrap()
+    }
+}
+
+impl Drop for StoreFile {
+    fn drop(&mut self) {
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", self.0.display()));
+        }
+    }
+}
+
+/// What the app keeps of a sign-in: the space as its vault, and both
+/// tokens.
+fn keep(store: &Store, signed: &SignedIn) {
+    store
+        .join_space(
+            copy(&signed.space),
+            PASSWORD.as_bytes(),
+            KdfParams::INSECURE_FOR_TESTS,
+            Joining::SignIn,
+            &LockEnrolment {
+                server_url: &signed.server_url,
+                email: &signed.email,
+                protected_refresh_token: signed.refresh_token.as_ref().map(sealed),
+                protected_remember_token: signed.remember_token.as_ref().map(sealed),
+                kdf: &signed.kdf_to_keep(),
+            },
+        )
+        .unwrap();
+}
+
+/// A sign-in as the app makes one, as this install: with a code (and
+/// "remember this device", as the form has it), or else with the token this
+/// device holds for the server and account, if any.
+fn sign_in_as_the_app(store: &Store, server_url: &str, code: Option<&str>) -> SignInOutcome {
+    let remembered = match code {
+        None => remember_token(store, server_url, EMAIL, unsealed).unwrap(),
+        Some(_) => None,
+    };
+    let request = SignIn {
+        server_url,
+        email: EMAIL,
+        password: PASSWORD,
+        two_factor: code.map(|code| TwoFactorAnswer {
+            provider: 0,
+            code: code.into(),
+            remember: true,
+        }),
+        remember_token: remembered.as_deref().map(String::as_str),
+        known: known(store, server_url, EMAIL).unwrap(),
+        accept_space: None,
+    };
+    let device = LockDevice::this_system(store.lock_device_identifier().unwrap());
+    sign_in(&request, device).unwrap()
+}
+
+fn signed(outcome: SignInOutcome) -> SignedIn {
+    match outcome {
+        SignInOutcome::SignedIn(signed) => *signed,
+        _ => panic!("not signed in"),
+    }
+}
+
+fn asked(outcome: SignInOutcome) -> bool {
+    matches!(outcome, SignInOutcome::TwoFactor { message: None, .. })
+}
+
+#[test]
+fn two_step_login_is_asked_once_and_the_device_stays_remembered_through_lock_and_restart() {
+    let fake = Fake::start().with_two_factor();
+    let file = StoreFile::new();
+    let store = file.open();
+    let device = store.lock_device_identifier().unwrap();
+    assert!(asked(sign_in_as_the_app(&store, &fake.url, None)));
+    keep(
+        &store,
+        &signed(sign_in_as_the_app(&store, &fake.url, Some(CODE))),
+    );
+
+    // The session runs out, the vault is locked, the app quits.
+    store.end_lock_session().unwrap();
+    store.lock_vault();
+    drop(store);
+    let store = file.open();
+    assert_eq!(
+        store.lock_device_identifier().unwrap(),
+        device,
+        "the same device to the server"
+    );
+    assert!(!store.lock_state().unwrap().signed_in);
+
+    // Email and master password, nothing else — whichever way the address
+    // and the email are typed.
+    let typed = format!(" {}/ ", fake.url);
+    let remembered = remember_token(&store, &typed, "NYU@example.com", unsealed).unwrap();
+    assert!(remembered.is_some());
+    keep(&store, &signed(sign_in_as_the_app(&store, &typed, None)));
+    let token = fake.account.lock().remembered[&device.to_string()].clone();
+    assert_eq!(
+        fake.account.lock().second_steps.last(),
+        Some(&("5".to_string(), token))
+    );
+    // Signed in once more after that: still remembered.
+    store.end_lock_session().unwrap();
+    signed(sign_in_as_the_app(&store, &fake.url, None));
+}
+
+#[test]
+fn the_remember_token_goes_only_to_the_server_that_issued_it_and_signing_out_forgets_it() {
+    let issuer = Fake::start().with_two_factor();
+    let other = Fake::start().with_two_factor();
+    let store = Store::open_in_memory().unwrap();
+    keep(
+        &store,
+        &signed(sign_in_as_the_app(&store, &issuer.url, Some(CODE))),
+    );
+    assert!(remember_token(&store, &issuer.url, EMAIL, unsealed)
+        .unwrap()
+        .is_some());
+
+    // The same email on another server: nothing of the token goes there.
+    assert!(remember_token(&store, &other.url, EMAIL, unsealed)
+        .unwrap()
+        .is_none());
+    assert!(remember_token(&store, "not an address", EMAIL, unsealed)
+        .unwrap()
+        .is_none());
+    assert!(asked(sign_in_as_the_app(&store, &other.url, None)));
+    assert_eq!(
+        other.account.lock().second_steps,
+        vec![(String::new(), String::new())]
+    );
+
+    // Signing out is where the device is forgotten: the next sign-in asks.
+    store.leave_lock().unwrap();
+    assert!(remember_token(&store, &issuer.url, EMAIL, unsealed)
+        .unwrap()
+        .is_none());
+    assert!(asked(sign_in_as_the_app(&store, &issuer.url, None)));
+    assert_eq!(
+        issuer.account.lock().second_steps.last(),
+        Some(&(String::new(), String::new()))
+    );
+}
+
+#[test]
+fn a_token_the_server_no_longer_takes_asks_for_the_code_again_and_the_new_one_is_kept() {
+    let fake = Fake::start().with_two_factor();
+    let store = Store::open_in_memory().unwrap();
+    let first = signed(sign_in_as_the_app(&store, &fake.url, Some(CODE)));
+    keep(&store, &first);
+
+    // How long the server remembers a device is the server's to say.
+    fake.account.lock().remembered.clear();
+    assert!(asked(sign_in_as_the_app(&store, &fake.url, None)));
+    let second = signed(sign_in_as_the_app(&store, &fake.url, Some(CODE)));
+    keep(&store, &second);
+    let kept = remember_token(&store, &fake.url, EMAIL, unsealed)
+        .unwrap()
+        .unwrap();
+    assert_eq!(kept, *second.remember_token.as_ref().unwrap());
+    assert_ne!(kept, *first.remember_token.as_ref().unwrap());
+    signed(sign_in_as_the_app(&store, &fake.url, None));
 }

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Mac App Store build's entitlements. scripts/build-mas.mjs adds the two
+  that name the team, com.apple.application-identifier and
+  com.apple.developer.team-identifier, from APPLE_TEAM_ID at signing time.
+
+  - app-sandbox: required for the store.
+  - network.client: RDP and RD Gateway connections to the user's own hosts,
+    and sync with the user's UwUSync or UwULock server.
+  - network.server: the loopback WebSocket on 127.0.0.1 that carries a
+    desktop's frames and input between the app and its own window
+    (src-tauri/src/frames.rs). It accepts the page's connection only, with a
+    random token; nothing listens on another interface.
+  - files.user-selected.read-write: folders the user picks to share with a
+    remote desktop (the server may write into them), .rdp / .rdg files to
+    import, .uwurdp files to export and import, files dropped on a desktop.
+  - files.bookmarks.app-scope: security-scoped bookmarks, so a shared folder
+    can be shared again after a restart (src-tauri/src/sandbox_access.rs).
+
+  Deliberately absent: audio-input (remote audio is only played here, nothing
+  is recorded), files.downloads.read-write (files copied on the remote desktop
+  are fetched into the app's own temporary folder), keychain-access-groups
+  (the device key lives in the login keychain, where a sandboxed app reaches
+  the items it created itself), and everything that runs other programs.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <key>com.apple.security.files.bookmarks.app-scope</key>
+  <true/>
+</dict>
+</plist>

@@ -1,3 +1,4 @@
+import { Button, ICONS, Toggle } from '@uwusuite/design';
 import { useState } from 'react';
 import { t, useLanguage } from '../lib/i18n';
 import {
@@ -14,7 +15,6 @@ import {
   type SyncStatus,
   type TwoFactorMethod,
 } from '../lib/sync';
-import { Icon } from './Icon';
 import { NyuScene } from './nyu/scenes';
 import {
   ago,
@@ -180,7 +180,7 @@ export function LockSignInForm({
               )}
         </p>
         <div className="sync-actions">
-          <button
+          <Button
             type="button"
             data-secondary
             onClick={() => {
@@ -189,11 +189,11 @@ export function LockSignInForm({
             }}
           >
             {t('Abbrechen')}
-          </button>
+          </Button>
           <span className="spacer" />
-          <button type="button" className="primary" onClick={agree}>
+          <Button type="button" variant="primary" onClick={agree}>
             {spaceChange.now ? t('Neuen Schlüssel übernehmen') : t('Neu anlegen')}
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -297,22 +297,21 @@ export function LockSignInForm({
             </label>
           )}
           {chosen?.kind === 'email' && (
-            <button type="button" onClick={() => void sendMail()} disabled={busy}>
-              <Icon name={mailed ? 'check' : 'refresh'} size={15} />
+            <Button
+              type="button"
+              onClick={() => void sendMail()}
+              disabled={busy}
+              icon={mailed ? ICONS.done : ICONS.send}
+            >
               {mailed ? t('Code ist unterwegs') : t('Code per E-Mail schicken')}
-            </button>
+            </Button>
           )}
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-            />
-            <span>
-              <b>{t('Dieses Gerät merken')}</b>
-              <small>{t('Beim nächsten Anmelden fragt UwULock hier nicht nach dem Code.')}</small>
-            </span>
-          </label>
+          <Toggle
+            label={t('Dieses Gerät merken')}
+            description={t('Beim nächsten Anmelden fragt UwULock hier nicht nach dem Code.')}
+            checked={remember}
+            onChange={setRemember}
+          />
         </>
       )}
       {error && (
@@ -332,7 +331,7 @@ export function LockSignInForm({
         </p>
       )}
       <div className="sync-actions">
-        <button
+        <Button
           type="button"
           data-secondary
           onClick={() => {
@@ -344,11 +343,11 @@ export function LockSignInForm({
           disabled={busy}
         >
           {t('Zurück')}
-        </button>
+        </Button>
         <span className="spacer" />
-        <button
+        <Button
           type="submit"
-          className="primary"
+          variant="primary"
           disabled={!ready}
           title={appSyncOff ? APP_SYNC_OFF() : undefined}
         >
@@ -359,7 +358,7 @@ export function LockSignInForm({
             : mode === 'move'
               ? t('Umziehen')
               : t('Anmelden')}
-        </button>
+        </Button>
       </div>
       {unlocking && (
         <VaultDialog
@@ -442,9 +441,9 @@ export function MoveDone({
           </p>
           <div className="sync-actions">
             <span className="spacer" />
-            <button className="primary" disabled={busy} onClick={() => void leave(false)}>
+            <Button variant="primary" busy={busy} onClick={() => void leave(false)}>
               {t('Fertig')}
-            </button>
+            </Button>
           </div>
         </>
       ) : leftBehind ? (
@@ -460,21 +459,21 @@ export function MoveDone({
             </p>
           )}
           <div className="sync-actions">
-            <button data-secondary disabled={busy} onClick={() => void leave(false)}>
+            <Button data-secondary disabled={busy} onClick={() => void leave(false)}>
               {t('Eingetragen lassen')}
-            </button>
+            </Button>
             <span className="spacer" />
-            <button className="primary" disabled={busy} onClick={() => void leave(true)}>
+            <Button variant="primary" busy={busy} onClick={() => void leave(true)}>
               {t('Bei UwUSync austragen')}
-            </button>
+            </Button>
           </div>
         </>
       ) : (
         <div className="sync-actions">
           <span className="spacer" />
-          <button className="primary" onClick={onDone}>
+          <Button variant="primary" onClick={onDone}>
             {t('Fertig')}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -544,25 +543,23 @@ export function LockOverview({ status, onChanged }: { status: SyncStatus; onChan
         </div>
         <div className="setting-control">
           {lock.needsSignIn ? (
-            <button className="primary" onClick={() => setSigningIn(true)}>
-              <Icon name="lock" size={15} />
+            <Button variant="primary" onClick={() => setSigningIn(true)} icon={ICONS.signIn}>
               {t('Neu anmelden…')}
-            </button>
+            </Button>
           ) : locked ? (
-            <button onClick={() => setUnlocking(true)}>
-              <Icon name="unlock" size={15} />
+            <Button onClick={() => setUnlocking(true)} icon={ICONS.unlocked}>
               {t('Entsperren')}
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
               onClick={() => {
                 void syncNow().then(() => window.setTimeout(onChanged, 400));
               }}
               disabled={status.running}
+              icon={ICONS.refresh}
             >
-              <Icon name="refresh" size={15} />
               {t('Jetzt synchronisieren')}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -593,9 +590,9 @@ export function LockOverview({ status, onChanged }: { status: SyncStatus; onChan
           </p>
         </div>
         <div className="setting-control">
-          <button className="danger" onClick={() => setLeaving(true)}>
+          <Button variant="danger" onClick={() => setLeaving(true)}>
             {t('Abmelden…')}
-          </button>
+          </Button>
         </div>
       </div>
 

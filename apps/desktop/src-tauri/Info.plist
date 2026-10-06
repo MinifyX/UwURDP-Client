@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged by Tauri into the Info.plist of every macOS build, the DMG's and the
+  Mac App Store's alike: a file named Info.plist next to tauri.conf.json is
+  picked up without being named in any config.
+
+  What Tauri writes itself and is therefore not here: CFBundleIdentifier, the
+  versions, LSApplicationCategoryType (from bundle.category, Utility →
+  public.app-category.utilities), NSHumanReadableCopyright,
+  LSMinimumSystemVersion, NSHighResolutionCapable, and CFBundleURLTypes for
+  uwurdp:// (from plugins.deep-link.desktop.schemes).
+
+  - ITSAppUsesNonExemptEncryption true: UwURDP brings its own encryption, not
+    only Apple's: TLS (rustls) and CredSSP/NTLM for RDP and the gateway,
+    XChaCha20-Poly1305 with Argon2id for the vault, and end-to-end encrypted
+    sync. All of it standard, published algorithms in open source code; the
+    classification and what to answer in App Store Connect are in
+    docs/app-store.md ("Export compliance").
+  - NSLocalNetworkUsageDescription: macOS 15 asks before an app reaches the
+    local network, which is where most RDP hosts are.
+-->
+<plist version="1.0">
+<dict>
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <true/>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>UwURDP connects to the remote desktops and gateways you add, which are often on your local network.</string>
+</dict>
+</plist>

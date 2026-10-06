@@ -1,136 +1,94 @@
 # Design
 
-Clean, bright, soft — with a wink. Same design system as
-[UwUSSH](https://github.com/MinifyX/UwUSSH-Client) and
-[UwUMail](https://github.com/MinifyX/UwUMail-Client), same cat, one confident
-bubblegum pink. The remote desktop is the one place that belongs to someone
-else: UwURDP frames it and otherwise keeps out of its way.
+UwURDP looks like every UwU app because it is built from the suite's design
+package, [@uwusuite/design](https://github.com/MinifyX/UwUSuite-Design): its
+tokens, UwU Sans and the font picker, light, dark and high contrast, the
+motion rules, the icons (Lucide through `Icon` and `ICONS`), the components
+(Button, IconButton, Dialog, Switch, Segmented, SettingRow, StatusDot,
+TitleBar, Wordmark, …) and Nyu. The rules for all of that live there, in its
+`docs/` (color, typography, icons, components, window, motion, nyu, tone), and
+the way an app moves onto it in its
+[docs/migration.md](https://github.com/MinifyX/UwUSuite-Design/blob/main/docs/migration.md).
 
-## Color
+This page is only about what is special about UwURDP. The remote desktop is
+the one place that belongs to someone else: UwURDP frames it and otherwise
+keeps out of its way.
 
-Tokens come from UwUMail unchanged, including the `--uwu-*` naming, and live in
-`apps/desktop/src/styles/tokens.css`. Components never use raw hex values.
+## Where things are
 
-| Token              | Light     | Dark      | Use                                            |
-| ------------------ | --------- | --------- | ---------------------------------------------- |
-| `--uwu-canvas`     | `#f8f4f6` | `#141016` | App background                                 |
-| `--uwu-surface`    | `#ffffff` | `#1c171f` | Host tree, panels, cards                       |
-| `--uwu-elevated`   | `#fcf8fa` | `#241e28` | Hover rows, popovers                           |
-| `--uwu-ink`        | `#1c1420` | `#f8f2f6` | Primary text                                   |
-| `--uwu-muted`      | `#716672` | `#b3a8b3` | Secondary text                                 |
-| `--uwu-hairline`   | `#f2e8ee` | `#2c2430` | Dividers                                       |
-| `--uwu-border`     | `#e9dde4` | `#3a3040` | Control borders                                |
-| `--uwu-pink`       | `#ff4d8d` | `#ff7fac` | **Brand.** Status dots, selection, focus, logo |
-| `--uwu-pink-solid` | `#e11d74` | `#ff7fac` | Filled buttons with text                       |
-| `--uwu-pink-tint`  | `#ffe4ef` | `#3a1a2a` | Selected host, active row                      |
+- `apps/desktop/src/styles/index.css` imports Tailwind, the package's
+  `tailwind.css` and `font-picker.css`, then the app's own sheets into
+  Tailwind's `components` layer (a utility class always wins over them):
+  `app.css` (shell, certificates, import, settings, update hint),
+  `sidebar.css` (host tree, workspaces, groups, dragging), `workspace.css`
+  (tab bar, toolbar, notices, overlays), `forms.css` (the host form and the
+  dialogs' fields), `features.css` (sync, drives, startup hosts) and
+  `rdp.css` (the desktop, full screen, the overview).
+- Theme, contrast and motion: Settings → Darstellung, through the package's
+  `useAppearance()` (`lib/appearance.ts`); `/boot.js` (the package's
+  `bootScript()`, emitted by `vite.config.ts`) puts them on `<html>` before
+  the first paint. UwURDP is dark until the person picks something.
+- The font: Settings → Darstellung → Schrift, the package's choices and
+  `applyUiFont()`, per device. A stored font that is no longer offered falls
+  back to UwU Sans.
+- What a build can do (GitHub download or Mac App Store): `lib/build.ts`
+  hides updates, H.264, "Alle Laufwerke" and the RDCMan scan where the build
+  has none (docs/app-store.md).
 
-**Why two pinks?** White text on `#ff4d8d` reaches only 3.1:1. Filled buttons
-therefore use `#e11d74` (4.5:1, WCAG AA). The brighter brand pink stays for
-everything that is not small text on a pink fill.
+## What is UwURDP's own
 
-Connection state uses semantic color, separate from the brand: online is mint,
-disconnected is muted grey, and a certificate problem is amber — never pink,
-because pink means "selected" everywhere else.
-
-## The desktop is always dark
-
-Whatever the app's theme, the area a remote desktop sits in is dark: the
-letterbox around a scaled desktop, the space a smaller desktop leaves, the
-dimmed last picture of a disconnected session, full screen. A light frame
-around a Windows desktop glares, and the desktop's own colours are the
-server's business — UwURDP never tints, filters or rounds them.
-
-The tiles in the overview follow the same rule: dark tiles with the state of
-the session, the host name and status on the card underneath.
-
-## Type
-
-- **Manrope** (variable, bundled, no network) for the interface.
-- **JetBrains Mono** for fingerprints, addresses and anything to compare
-  character by character.
-- Sizes: 12 caption · 13 meta · 14 body/list · 16 panel body · 18 section ·
-  22 title. Weights 400, 500, 600 for titles and host names, 700 only for the
-  wordmark.
-
-## Shape and space
-
-- Radius: 10px controls, 16px cards and panes, 999px pills and badges. The
-  desktop itself is never rounded.
-- Spacing on a 4px grid.
-- Shadows only for floating layers: menus, dialogs, the connection bar, toasts.
-
-## Layout
-
-```
-┌────────────┬──────────────────────────────────────────────┐
-│ Sidebar    │ Tab bar  [Overview] [dc-01] [sql-02] [+]     │
-│            ├──────────────────────────────────────────────┤
-│ Search     │                                              │
-│ ▸ Kunde A  │          remote desktop (canvas)             │
-│   ● dc-01  │                                              │
-│   ○ fs-01  │                                              │
-│ ▸ Homelab  │                                              │
-└────────────┴──────────────────────────────────────────────┘
-```
-
-- Custom title bar, no OS chrome edge, with its own minimize, maximize/restore
-  and close buttons at Windows' own size; close turns brand pink on hover, as in
-  the installer.
-- The sidebar has two workspaces, **Private** and **Business** (renamable), as
-  pills with a count each. Groups fold; hosts and groups move by dragging.
-  Right-click a group for **Group login…**, **Connect all**, **Disconnect
-  all** and its overview.
-- **Tabs** sit above the desktop, one per session. The active tab has a pink
-  top edge, a status dot says connecting (pulsing pink), online (mint) or
-  disconnected (grey), and a second tab to the same host gets a small number.
-- The **overview** is a tab of its own: a grid of tiles, one per session. A click
-  switches to the session; a host that isn't connected shows a connect button
-  in its place. With nothing open, Nyu naps.
-- **Full screen** hides everything but the desktop and an mstsc-like
-  connection bar at the top edge: host name, Ctrl+Alt+Del, leave full screen,
-  disconnect. Outside full screen the same actions, plus fit/scroll, sit in a
-  quiet toolbar above the desktop.
+- **The desktop is always dark and pixel-exact.** Whatever the app's theme,
+  the area a remote desktop sits in uses the package's `stage-*` tokens: the
+  letterbox around a scaled desktop, the dimmed last picture of a
+  disconnected session, full screen and its connection bar, the overview
+  tiles. The canvas itself is never tinted, filtered, rounded or scaled by
+  CSS at 1:1 (`image-rendering: pixelated`); only "Einpassen" scales it,
+  smoothly.
+- **Tabs** (`TabBar.tsx`) sit above the desktop, one per session: pink top
+  edge on the active one, a status dot (connecting pulses pink, online mint,
+  disconnected grey), a small number on a second tab to the same host. The
+  overview is a tab of its own.
+- **Host tree** (`HostList.tsx`): two workspaces, Privat and Business
+  (renamable), groups that fold, hosts and groups moved by dragging, a
+  context menu (`ContextMenu.tsx`, built like the package's `Menu`).
 - **Disconnect is a state, not a modal.** The tab keeps the last picture,
-  dimmed, with the reason and a reconnect button over it. A modal over a
-  desktop is a UX bug, not a safety feature.
-- Keyboard-first outside the desktop: everything reachable without the mouse,
-  visible focus rings. Inside the desktop, the keyboard belongs to the server.
+  dimmed, with the reason and a reconnect button over it.
+- **Dialogs** are the package's `Dialog` (`components/Modal.tsx`): a click
+  beside a dialog doesn't close it, focus starts on the safe choice
+  (`data-autofocus`, never on a `data-secondary` button). Native checkboxes
+  in the suite's colours where a list is picked from, `Toggle`/`Switch` for
+  on/off settings, native selects in the control look.
+- **Keyboard**: inside the desktop every key belongs to the server, except
+  mstsc's Ctrl+Alt combinations (Ctrl on a Mac too). On a Mac ⌘ is the
+  Windows key there and ⌘ with a key reaches the server as Windows+key, like
+  in Microsoft's Windows App; only the app's own commands stay on the Mac
+  (`lib/mac-keys.ts`): ⌘Q, ⌘W, ⌘,, ⇧⌘1 … 9 and the full screen (⇧⌘↩, ⌃⌘F).
+  A Ctrl tap goes to the server before them, so the Start menu stays shut.
+- **Windows and Linux**: the package's `TitleBar` with the Wordmark and the
+  settings button; a double-click maximizes once (`useTauriWindow`).
+- **macOS** (package `docs/macos.md`): the system's title bar with the
+  traffic lights (`tauri.macos.conf.json`), the title bar's actions in the
+  menu bar (`setMacMenu()` in `App.tsx`): Einstellungen … on ⌘,, Ablage with
+  Host hinzufügen (⌘N), Import, Export and **Tab schließen** (⌘W while a tab
+  is open), Darstellung → Übersicht (⌘⇧O), a **Verbindung** menu (Strg+Alt+Entf,
+  Einpassen, Vollbild, weiterer Tab ⌘⇧D, Trennen/Neu verbinden). With no tab
+  open ⌘W hides the window and a click on the Dock icon brings it back. ⌘Q,
+  the Dock and logging out go through the `uwu-macos` quit guard, which still
+  asks while sessions are open. Tooltips write shortcuts the platform's way
+  (`lib/shortcuts.ts`, `withShortcut()`).
+- **App icons** come from `brand/` through the package's tool:
+  `pnpm --filter @uwurdp/desktop icons` (`uwu-icons`), which also sets the
+  Dock icon into Apple's grid.
 
-## Nyu, the mascot
+## Nyu, the monitor cat
 
-Nyu is the same cat as in UwUMail and UwUSSH — this time her hull is a
-**monitor on a stand**. Ears poking out above the bezel, the screen is the
-face: UwU eyes, `w` mouth, blush.
+Nyu's hull is a **monitor on a stand** here: ears above the bezel, the screen
+is her face. The ears, the face, the sticker edge and the palette are the
+package's (`NyuEars`, `NyuFace`, `Sticker`, `NYU`); the monitor shell is
+`components/nyu/Nyu.tsx`, and the package's catalogue draws the same cat
+(`shell="monitor"`). The installer (`apps/setup`) uses the same cat.
 
-- **Sticker style**, unchanged. Plum outlines `#4B1D3F`, pink body `#FF6FA6`,
-  light screen `#FFB8D3`, pastel props, a white die-cut edge. The colors are
-  fixed artwork and stay the same in dark mode; the white edge keeps the
-  outlines readable on dark backgrounds.
-- **App icon** (website, GitHub, macOS Dock). Built like UwUMail's and
-  UwUSSH's: Nyu as a pink monitor on a stand with cat ears, slightly tilted,
-  the night-blue screen showing the UwU face and a yellow mouse pointer. The
-  heart top left, a small star left, a big star bottom right.
-- **The tile.** Every UwU app's icon for the website and GitHub sits on
-  UwUMail's pastel pink tile (`#FFF3F8` to `#FFD3E5`), never another colour.
-  Each one gets sparkles and a heart, arranged differently around it.
-- **Taskbar icon.** On the Windows taskbar, in the setup and in Linux menus
-  Nyu stands alone: upright, no tile, white die-cut edge. The monitor on its
-  stand shows a window from another computer with the pointer reaching into
-  it, so it reads as remote desktop, not as a terminal; the ears and blush
-  say Nyu (`brand/uwurdp-taskbar-icon.svg`). At 16 and 24 px a simplified cut
-  takes over (`uwurdp-taskbar-icon-small.svg`). `node scripts/icons.mjs`
-  regenerates all desktop icons from these three.
-- **The face.** Wherever Nyu has one, it's UwU: two U eyes and a **round `w`**
-  (two soft arcs, never a zigzag).
-- **Sources** in `brand/` (icon, symbol, mono symbol) and
-  `apps/desktop/src/components/nyu/` (React).
-
-**The installer** (`apps/setup`) is UwUSSH's setup with the monitor cat: the
-same pink gradient window, Nyu waving hello, busy while installing, cheering
-when it's done, and waving goodbye on uninstall. Its scenes share
-`components/nyu/` with the app.
-
-**Scenes** (`NyuScene`, 320 × 220), for the moments an RDP client actually has:
+**Scenes** (`NyuScene`, 320 × 220, the app's own):
 
 | Scene      | When                                                |
 | ---------- | --------------------------------------------------- |
@@ -144,42 +102,12 @@ when it's done, and waving goodbye on uninstall. Its scenes share
 | Keys       | The recovery kit                                    |
 | Goodbye    | Closing with sessions still open                    |
 
-**Motion.** Nyu blinks in scenes and twitches her ears on hover. Settings →
-Appearance → Animations (System / On / Off) resolves to
-`<html data-motion="full|reduced">`; with `reduced`, all animation collapses to
-1 ms and Nyu holds still.
-
 ## Tone of voice
 
-Warm and a little playful: kaomoji now and then, small jokes in empty states,
-soft animation. The interface speaks German and English (following the
-system, switchable under Settings → Appearance → Language); German strings are
-the source and use "du".
-
-Rules:
-
-1. **Information first.** The joke never replaces what happened or what to do.
-2. **Short.** One kaomoji at most, never in buttons that act on data.
-3. **Kind.** Never mock the user; the app laughs at itself.
-4. **Security is never playful.** A changed certificate, a failed vault
-   unlock, a rejected login: no kaomoji, no Nyu. A cute face next to a possible
-   man-in-the-middle warning destroys exactly what the warning is for.
-
-Rule 4 is not negotiable:
-
-```
-⚠  The certificate of dc-01.corp.example changed.
-
-  known        SHA256:nThbg6kX…UmcQ2p4   since 2026-09-14
-  now          SHA256:7Pq1Zx0v…Kd9Lm3s
-  thumbprint   3F 9A 11 C2 … 7E 04
-
-This can be a renewed certificate — or a man in the middle.
-
-              [ Trust new certificate ]  [ Cancel ]   ← focus
-```
-
-RDP certificates renew on their own every few months, so this dialog will be
-seen for harmless reasons. That is exactly why it stays plain: two buttons,
-focus on the safe one, the thumbprint Windows shows so it can be compared with
-the server itself.
+The suite's tone (package `docs/tone.md`), with one rule that is not
+negotiable here: **security is never playful.** A changed certificate, a
+failed vault unlock, a rejected login: no kaomoji, no Nyu. RDP certificates
+renew on their own every few months, so the certificate dialog will be seen
+for harmless reasons — that is exactly why it stays plain: two buttons, focus
+on the safe one, the thumbprint Windows shows so it can be compared with the
+server itself.

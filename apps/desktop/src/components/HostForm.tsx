@@ -1,3 +1,4 @@
+import { Button, Icon, IconButton, ICONS, Segmented, Toggle } from '@uwusuite/design';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { N_, t } from '../lib/i18n';
 import {
@@ -18,7 +19,6 @@ import { useCloseGuard } from './CloseGuard';
 import { DriveList, drivesSummary } from './DrivesEditor';
 import { splitLogin } from './ConnectDialogs';
 import { useSettings, workspaceName } from '../lib/settings';
-import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { VaultDialog } from './VaultDialog';
 
@@ -114,27 +114,27 @@ function PasswordField({
   if (stored && !forget && value === null) {
     return (
       <div className="stored-secret">
-        <Icon name="lock" size={15} />
+        <Icon icon={ICONS.vault} />
         <span>{t('Das Passwort ist im Tresor gespeichert.')}</span>
         <span className="spacer" />
-        <button type="button" className="quiet" onClick={() => onValue('')}>
+        <Button type="button" variant="ghost" size="sm" onClick={() => onValue('')}>
           {t('Ändern')}
-        </button>
-        <button type="button" className="quiet" onClick={() => onForget(true)}>
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => onForget(true)}>
           {t('Entfernen')}
-        </button>
+        </Button>
       </div>
     );
   }
   if (forget) {
     return (
       <div className="stored-secret" data-forgotten>
-        <Icon name="unlock" size={15} />
+        <Icon icon={ICONS.unlocked} />
         <span>{t('Das gespeicherte Passwort wird beim Speichern entfernt.')}</span>
         <span className="spacer" />
-        <button type="button" className="quiet" onClick={() => onForget(false)}>
+        <Button type="button" variant="ghost" size="sm" onClick={() => onForget(false)}>
           {t('Rückgängig')}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -150,14 +150,13 @@ function PasswordField({
           autoComplete="new-password"
           aria-invalid={Boolean(error)}
         />
-        <button
+        <IconButton
           type="button"
-          className="icon-button"
+          size="sm"
+          icon={show ? ICONS.hide : ICONS.show}
           onClick={onShow}
-          aria-label={show ? t('Passwort verbergen') : t('Passwort anzeigen')}
-        >
-          <Icon name="eye" size={15} />
-        </button>
+          label={show ? t('Passwort verbergen') : t('Passwort anzeigen')}
+        />
       </span>
       {error ? <em className="field-error">{t(error)}</em> : <em className="field-hint">{hint}</em>}
     </label>
@@ -176,7 +175,7 @@ function Section({
   return (
     <details className="form-section" open={open}>
       <summary>
-        <Icon name="chevron" size={12} className="group-chevron" />
+        <Icon icon={ICONS.expand} size="xs" className="section-chevron" />
         {title}
       </summary>
       <div className="form-section-body">{children}</div>
@@ -195,15 +194,7 @@ function Check({
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
-  return (
-    <label className="check">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>
-        <b>{label}</b>
-        {hint && <small>{hint}</small>}
-      </span>
-    </label>
-  );
+  return <Toggle label={label} description={hint} checked={checked} onChange={onChange} />;
 }
 
 export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, onCancel }: Props) {
@@ -382,17 +373,17 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
         footer={
           <>
             {host && (
-              <button className="danger" data-secondary onClick={remove} disabled={busy}>
+              <Button variant="danger" data-secondary onClick={remove} disabled={busy}>
                 {confirmDelete ? t('Wirklich löschen') : t('Löschen')}
-              </button>
+              </Button>
             )}
             <span className="spacer" />
-            <button data-secondary onClick={guard.request} disabled={busy}>
+            <Button data-secondary onClick={guard.request} disabled={busy}>
               {t('Abbrechen')}
-            </button>
-            <button className="primary" onClick={() => void submit()} disabled={busy}>
+            </Button>
+            <Button variant="primary" onClick={() => void submit()} busy={busy}>
               {t('Speichern')}
-            </button>
+            </Button>
           </>
         }
       >
@@ -403,7 +394,7 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
               <input
                 value={address}
                 onChange={edit('address', setAddress)}
-                placeholder={t('10.0.0.12 oder dc-1.firma.local')}
+                placeholder={t('192.0.2.12 oder dc-1.example.com')}
                 aria-invalid={Boolean(errors.address)}
                 autoComplete="off"
                 spellCheck={false}
@@ -436,19 +427,16 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
             {settings.workspaces && (
               <fieldset className="field">
                 <span>{t('Bereich')}</span>
-                <div className="segmented" role="radiogroup" aria-label={t('Bereich')}>
-                  {(['private', 'business'] as const).map((id) => (
-                    <button
-                      key={id}
-                      type="button"
-                      role="radio"
-                      aria-checked={space === id}
-                      onClick={() => setSpace(id)}
-                    >
-                      {workspaceName(id, settings)}
-                    </button>
-                  ))}
-                </div>
+                <Segmented
+                  className="justify-self-start"
+                  label={t('Bereich')}
+                  value={space}
+                  onChange={setSpace}
+                  options={(['private', 'business'] as const).map((id) => ({
+                    value: id,
+                    label: workspaceName(id, settings),
+                  }))}
+                />
               </fieldset>
             )}
             <label className="field grow">
@@ -520,7 +508,7 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
               />
             ) : (
               <p className="field-hint login-inherit">
-                <Icon name="user" size={14} />
+                <Icon icon={ICONS.account} size="xs" className="mt-0.5 flex-none" />
                 {groupLogin
                   ? t(
                       'Ohne eigenen Benutzer meldet sich der Host mit dem Login der Gruppe {group} an: {login}.',
@@ -539,31 +527,22 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
           <Section title={t('Anzeige')}>
             <fieldset className="field">
               <span>{t('Größe des Desktops')}</span>
-              <div className="segmented" role="radiogroup" aria-label={t('Größe des Desktops')}>
-                {(
-                  [
-                    ['fit', t('An den Tab anpassen')],
-                    ['fixed', t('Feste Größe')],
-                    ['fullscreen', t('Vollbild')],
-                  ] as [DisplayMode, string][]
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={rdp.display === value}
-                    onClick={() => patch({ display: value })}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <Segmented<DisplayMode>
+                className="justify-self-start"
+                label={t('Größe des Desktops')}
+                value={rdp.display}
+                onChange={(display) => patch({ display })}
+                options={[
+                  { value: 'fit', label: t('An den Tab anpassen') },
+                  { value: 'fixed', label: t('Feste Größe') },
+                  { value: 'fullscreen', label: t('Vollbild') },
+                ]}
+              />
             </fieldset>
             {rdp.display === 'fixed' && (
               <label className="field">
                 <span>{t('Auflösung')}</span>
                 <select
-                  className="select"
                   value={knownSize ? sizeValue : ''}
                   onChange={(e) => {
                     const [w, h] = e.target.value.split('x').map(Number);
@@ -590,7 +569,6 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
             <label className="field">
               <span>{t('Farbtiefe')}</span>
               <select
-                className="select"
                 value={rdp.colorDepth}
                 onChange={(e) => patch({ colorDepth: Number(e.target.value) })}
               >
@@ -619,25 +597,17 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
           <Section title={t('Lokale Ressourcen')}>
             <fieldset className="field">
               <span>{t('Ton')}</span>
-              <div className="segmented" role="radiogroup" aria-label={t('Ton')}>
-                {(
-                  [
-                    ['local', t('Hier abspielen')],
-                    ['remote', t('Auf dem Server')],
-                    ['off', t('Aus')],
-                  ] as [AudioMode, string][]
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={rdp.audio === value}
-                    onClick={() => patch({ audio: value })}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <Segmented<AudioMode>
+                className="justify-self-start"
+                label={t('Ton')}
+                value={rdp.audio}
+                onChange={(audio) => patch({ audio })}
+                options={[
+                  { value: 'local', label: t('Hier abspielen') },
+                  { value: 'remote', label: t('Auf dem Server') },
+                  { value: 'off', label: t('Aus') },
+                ]}
+              />
             </fieldset>
             <Check
               label={t('Zwischenablage teilen')}
@@ -649,29 +619,17 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
             />
             <fieldset className="field">
               <span>{t('Lokale Laufwerke/Ordner')}</span>
-              <div
-                className="segmented"
-                role="radiogroup"
-                aria-label={t('Lokale Laufwerke/Ordner')}
-              >
-                {(
-                  [
-                    ['group', groupPath.trim() ? t('Wie die Gruppe') : t('Standard')],
-                    ['off', t('Aus')],
-                    ['on', t('Freigeben')],
-                  ] as ['group' | 'off' | 'on', string][]
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={drivesMode === value}
-                    onClick={() => setDrivesMode(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <Segmented<'group' | 'off' | 'on'>
+                className="justify-self-start"
+                label={t('Lokale Laufwerke/Ordner')}
+                value={drivesMode}
+                onChange={setDrivesMode}
+                options={[
+                  { value: 'group', label: groupPath.trim() ? t('Wie die Gruppe') : t('Standard') },
+                  { value: 'off', label: t('Aus') },
+                  { value: 'on', label: t('Freigeben') },
+                ]}
+              />
               {drivesMode === 'group' && (
                 <em className="field-hint">
                   {groupPath.trim()
@@ -730,7 +688,7 @@ export function HostForm({ host, workspace, group, groups, onSaved, onDeleted, o
                         patch({ gateway: { ...rdp.gateway!, address: e.target.value } });
                         clear('gatewayAddress');
                       }}
-                      placeholder="gateway.firma.de"
+                      placeholder="gateway.example.com"
                       autoComplete="off"
                       spellCheck={false}
                       aria-invalid={Boolean(errors.gatewayAddress)}

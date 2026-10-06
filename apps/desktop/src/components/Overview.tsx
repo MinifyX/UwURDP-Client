@@ -1,7 +1,7 @@
+import { Button, Icon, IconButton, ICONS, StatusDot } from '@uwusuite/design';
 import { t, useLanguage } from '../lib/i18n';
 import type { HostRecord } from '../lib/session';
 import { hostLine, type Tab } from '../lib/tabs';
-import { Icon } from './Icon';
 import { NyuScene } from './nyu/scenes';
 
 export type OverviewEntry = {
@@ -54,10 +54,9 @@ export function Overview({ entries, group, onShow, onConnect, onConnectAll, onDi
             })}
           </span>
           <span className="spacer" />
-          <button onClick={onConnectAll}>
-            <Icon name="power" size={15} />
+          <Button size="sm" icon={ICONS.connect} onClick={onConnectAll}>
             {t('Alle verbinden')}
-          </button>
+          </Button>
         </div>
       )}
       <ul className="thumbs">
@@ -72,7 +71,10 @@ export function Overview({ entries, group, onShow, onConnect, onConnectAll, onDi
                 title={tab ? t('Zu {name} wechseln', { name: host.name }) : t('Verbinden')}
               >
                 <span className="thumb-idle">
-                  <Icon name={failed ? 'close' : tab ? 'monitor' : 'power'} size={22} />
+                  <Icon
+                    icon={failed ? ICONS.error : tab ? ICONS.computer : ICONS.connect}
+                    size="lg"
+                  />
                   <span>
                     {failed
                       ? t('Nicht verbunden')
@@ -87,10 +89,15 @@ export function Overview({ entries, group, onShow, onConnect, onConnectAll, onDi
                 </span>
               </button>
               <div className="thumb-caption">
-                <i
-                  className="dot"
-                  data-state={
-                    live ? 'online' : tab?.status === 'connecting' ? 'connecting' : 'idle'
+                <StatusDot
+                  state={
+                    live
+                      ? 'online'
+                      : tab?.status === 'connecting'
+                        ? 'connecting'
+                        : failed
+                          ? 'error'
+                          : 'offline'
                   }
                 />
                 <span className="thumb-text">
@@ -98,14 +105,12 @@ export function Overview({ entries, group, onShow, onConnect, onConnectAll, onDi
                   <small>{hostLine(host)}</small>
                 </span>
                 {tab && live && (
-                  <button
-                    className="icon-button"
+                  <IconButton
+                    size="sm"
+                    icon={ICONS.disconnect}
                     onClick={() => onDisconnect(tab.id)}
-                    title={t('Trennen')}
-                    aria-label={t('{name} trennen', { name: host.name })}
-                  >
-                    <Icon name="close" size={14} />
-                  </button>
+                    label={t('{name} trennen', { name: host.name })}
+                  />
                 )}
               </div>
             </li>

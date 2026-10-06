@@ -7114,7 +7114,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -7783,6 +7783,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "uwu-macos"
+version = "1.6.1"
+source = "git+https://github.com/MinifyX/UwUSuite-Design?tag=v1.6.1#73e6c6b0db0e46d8489c8c002315bd437ff65442"
+dependencies = [
+ "objc2",
+]
+
+[[package]]
 name = "uwulock-core"
 version = "0.2.0-beta.3"
 source = "git+https://github.com/MinifyX/UwULock-Client?rev=44078ce82916ae4d7baa84dc2a87deafa71dd38c#44078ce82916ae4d7baa84dc2a87deafa71dd38c"
@@ -7811,7 +7819,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-core"
-version = "0.1.0-beta.11"
+version = "0.1.0-beta.12"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7857,7 +7865,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-desktop"
-version = "0.1.0-beta.11"
+version = "0.1.0-beta.12"
 dependencies = [
  "base64 0.22.1",
  "bzip2",
@@ -7865,6 +7873,8 @@ dependencies = [
  "futures-util",
  "keyring",
  "minisign-verify",
+ "objc2",
+ "objc2-foundation",
  "parking_lot",
  "rand 0.8.8",
  "reqwest 0.13.5",
@@ -7885,6 +7895,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "uwu-macos",
  "uwurdp-core",
  "uwurdp-import",
  "uwurdp-proto",
@@ -7897,7 +7908,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-import"
-version = "0.1.0-beta.11"
+version = "0.1.0-beta.12"
 dependencies = [
  "base64 0.22.1",
  "roxmltree",
@@ -7909,7 +7920,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-proto"
-version = "0.1.0-beta.11"
+version = "0.1.0-beta.12"
 dependencies = [
  "serde",
  "serde_json",
@@ -7918,7 +7929,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-setup"
-version = "0.1.0-beta.11"
+version = "0.1.0-beta.12"
 dependencies = [
  "libc",
  "semver",
@@ -7936,7 +7947,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-store"
-version = "0.1.0-beta.11"
+version = "0.1.0-beta.12"
 dependencies = [
  "base64 0.22.1",
  "parking_lot",
@@ -7955,7 +7966,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-sync"
-version = "0.1.0-beta.11"
+version = "0.1.0-beta.12"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -7986,7 +7997,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-vault"
-version = "0.1.0-beta.11"
+version = "0.1.0-beta.12"
 dependencies = [
  "argon2",
  "chacha20poly1305",

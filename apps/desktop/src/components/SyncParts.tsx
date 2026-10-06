@@ -1,3 +1,4 @@
+import { Button } from '@uwusuite/design';
 import { useEffect, useState, type ReactNode } from 'react';
 import { locale, t, useLanguage } from '../lib/i18n';
 import { asSyncFailure, lockAppSyncOff, type SyncFailure, type SyncStatus } from '../lib/sync';
@@ -229,17 +230,17 @@ export function PasswordConfirm({
       footer={
         <>
           <span className="spacer" />
-          <button data-autofocus onClick={onCancel} disabled={busy}>
+          <Button data-autofocus onClick={onCancel} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button
+          </Button>
+          <Button
             className={tone === 'danger' ? 'danger' : 'primary'}
             data-secondary
             disabled={!password || busy}
             onClick={() => void submit()}
           >
             {busy ? t('Einen Moment…') : action}
-          </button>
+          </Button>
         </>
       }
     >
@@ -265,7 +266,7 @@ export function PasswordConfirm({
             {error}
           </p>
         )}
-        <button type="submit" hidden />
+        <Button type="submit" hidden />
       </form>
     </Modal>
   );

@@ -1,12 +1,13 @@
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { Button, IconButton, ICONS } from '@uwusuite/design';
+import { hideWindowOnClose, onMacQuit, setMacMenu } from '@uwusuite/design/tauri';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CertificateChanged, LoginPrompt, TrustCertificate } from './components/ConnectDialogs';
 import { GroupLoginDialog } from './components/GroupLoginDialog';
 import { GroupDrivesDialog } from './components/DrivesEditor';
 import { HostForm } from './components/HostForm';
 import { HostList } from './components/HostList';
-import { Icon } from './components/Icon';
 import { ImportDialog } from './components/ImportDialog';
 import { Modal } from './components/Modal';
 import { NyuScene } from './components/nyu/scenes';
@@ -16,7 +17,9 @@ import { SettingsDialog, type SettingsSection } from './components/SettingsDialo
 import { TabBar } from './components/TabBar';
 import { TitleBar } from './components/TitleBar';
 import { UpdateHint } from './components/UpdateHint';
+import { buildInfo } from './lib/build';
 import { VaultDialog } from './components/VaultDialog';
+import { useAppAppearance } from './lib/appearance';
 import { language, t } from './lib/i18n';
 import { resolveLink, type DeepLink, type LinkSync } from './lib/link';
 import type { Closed, RdpDriver } from './lib/rdp';
@@ -27,6 +30,7 @@ import {
   connectHost,
   installUpdate,
   listGroups,
+  openProjectPage,
   listHosts,
   setFullscreen,
   setHostLogin,
@@ -47,6 +51,7 @@ import {
   type Workspace,
 } from './lib/session';
 import { getSettings, useSettings } from './lib/settings';
+import { desktop, SHORTCUTS, withKeys } from './lib/shortcuts';
 import type { Withheld } from './lib/sync';
 import {
   createTab,
@@ -168,6 +173,7 @@ let boot: Promise<unknown> | null = null;
 
 export function App() {
   const settings = useSettings();
+  useAppAppearance(settings);
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -847,15 +853,18 @@ export function App() {
   // ── Updates ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    if (!buildInfo().updates) return;
     void setUpdateChannel(settings.updateChannel).catch(() => undefined);
   }, [settings.updateChannel]);
 
   // The H.264 setting lives here; Rust fetches or deletes OpenH264 to match.
   useEffect(() => {
+    if (!buildInfo().h264) return;
     void setH264(settings.h264).catch(() => undefined);
   }, [settings.h264]);
 
   useEffect(() => {
+    if (!buildInfo().updates) return;
     void updateStatus()
       .then((ready) => ready && setUpdate(ready))
       .catch(() => undefined);
@@ -952,6 +961,138 @@ export function App() {
     return rdpTabs.map((other) => ({ host: other.host, tab: other }));
   };
 
+  // ── The macOS menu bar ────────────────────────────────────────────────────
+  //
+  // On a Mac the window has the system's title bar, so what the title bar has
+  // elsewhere lives in the menu bar (package docs/macos.md): Einstellungen …
+  // on ⌘, and the app's own entries. ⌘W closes the tab in front; with no tab
+  // left the entry has no shortcut, and ⌘W reaches "Fenster schließen", which
+  // hides the window (the app stays in the Dock). The menu replaces itself
+  // when an entry changes.
+  const menuState = useRef({ activeTab, modalOpen });
+  menuState.current = { activeTab, modalOpen };
+  const activeRdp = activeTab?.kind === 'rdp' ? activeTab : null;
+  const activeSmart = activeRdp ? (activeRdp.smart ?? activeRdp.host.rdp.smartSizing) : false;
+  useEffect(() => {
+    if (desktop !== 'mac') return;
+    const rdp = () => {
+      const tab = menuState.current.activeTab;
+      return tab?.kind === 'rdp' ? tab : null;
+    };
+    const free = !modalOpen;
+    void setMacMenu({
+      appName: 'UwURDP',
+      lang,
+      onSettings: () => setSettingsOpen('appearance'),
+      app: buildInfo().updates
+        ? [
+            {
+              text: `${t('Nach Updates suchen')} …`,
+              enabled: free,
+              action: () => setSettingsOpen('updates'),
+            },
+          ]
+        : [],
+      file: [
+        {
+          text: `${t('Host hinzufügen')} …`,
+          accelerator: 'CmdOrCtrl+N',
+          enabled: free,
+          action: () => setForm({ host: null }),
+        },
+        {
+          text: `${t('Importieren')} …`,
+          enabled: free,
+          action: () => setImporting(true),
+        },
+        {
+          text: `${t('Exportieren')} …`,
+          enabled: free,
+          action: () => setSettingsOpen('data'),
+        },
+        'separator',
+        {
+          text: t('Tab schließen'),
+          accelerator: activeId ? SHORTCUTS.closeTab : undefined,
+          enabled: Boolean(activeId) && free,
+          action: () => {
+            const id = activeRef.current;
+            if (id) closeTab(id);
+          },
+        },
+      ],
+      view: [
+        {
+          text: t('Übersicht'),
+          accelerator: SHORTCUTS.overview,
+          enabled: free,
+          action: () => showOverview(null, null),
+        },
+      ],
+      menus: [
+        {
+          text: t('Verbindung'),
+          items: [
+            {
+              text: t('Strg+Alt+Entf senden'),
+              enabled: activeRdp?.status === 'live' && free,
+              action: () => {
+                const tab = rdp();
+                if (tab) drivers.current.get(tab.id)?.ctrlAltDel();
+              },
+            },
+            {
+              text: t('Einpassen'),
+              checked: activeSmart,
+              enabled: Boolean(activeRdp) && free,
+              action: () => {
+                const tab = rdp();
+                if (tab) patchTab(tab.id, { smart: !(tab.smart ?? tab.host.rdp.smartSizing) });
+              },
+            },
+            {
+              text: t('Desktop im Vollbild'),
+              accelerator: 'CmdOrCtrl+Shift+Enter',
+              enabled: Boolean(activeRdp) && free,
+              action: () => toggleFullscreen(),
+            },
+            'separator',
+            {
+              text: t('Weiteren Tab öffnen'),
+              accelerator: SHORTCUTS.duplicateTab,
+              enabled: Boolean(activeRdp) && free,
+              action: () => duplicate(activeRef.current),
+            },
+            activeRdp?.status === 'live'
+              ? {
+                  text: t('Trennen'),
+                  enabled: free,
+                  action: () => {
+                    const tab = rdp();
+                    if (tab) disconnectTab(tab.id);
+                  },
+                }
+              : {
+                  text: t('Neu verbinden'),
+                  enabled: Boolean(activeRdp) && activeRdp?.status !== 'connecting' && free,
+                  action: () => {
+                    const tab = rdp();
+                    if (tab) restart(tab.id);
+                  },
+                },
+          ],
+        },
+      ],
+      help: [
+        { text: t('Versionen'), action: () => void openProjectPage('releases') },
+        { text: t('Quellcode auf GitHub'), action: () => void openProjectPage('source') },
+        { text: t('Problem melden'), action: () => void openProjectPage('issues') },
+      ],
+    }).catch(() => undefined);
+    // The handlers read the tabs through refs; the menu changes with what it shows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang, modalOpen, activeId, activeRdp?.status, Boolean(activeRdp), activeSmart]);
+
   // ── Keyboard ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -960,12 +1101,14 @@ export function App() {
       const inDesktop =
         document.activeElement instanceof HTMLCanvasElement &&
         document.activeElement.classList.contains('rdp-canvas');
-      const action = shortcutFor(event, inDesktop);
+      const action = shortcutFor(event, inDesktop, desktop === 'mac');
       if (!action) return;
       event.preventDefault();
       event.stopPropagation();
 
       const id = activeRef.current;
+      // ⇧⌘1 … 9 inside a desktop: ⌘ is down there as the Windows key.
+      if (inDesktop && event.metaKey && id) drivers.current.get(id)?.maskWindowsKey();
       const list = tabsRef.current;
       const index = list.findIndex((tab) => tab.id === id);
       switch (action.kind) {
@@ -1014,26 +1157,53 @@ export function App() {
 
   // ── Closing the window ────────────────────────────────────────────────────
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let stopped = false;
-    void getCurrentWindow()
-      .onCloseRequested((event) => {
-        if (getSettings().confirmCloseWithSessions && liveRef.current > 0) {
-          event.preventDefault();
-          setConfirmClose(true);
-        }
-      })
-      .then((stop) => {
-        if (stopped) stop();
-        else unlisten = stop;
-      })
-      .catch(() => undefined);
-    return () => {
-      stopped = true;
-      unlisten?.();
-    };
+  /**
+   * Asks before open connections end with the window, when the settings say
+   * so: closing it on Windows and Linux, quitting the app on a Mac (⌘Q, the
+   * Dock, logging out — through uwu-macos, which waits for the answer). On a
+   * Mac closing the window only hides it; the sessions go on, and a click on
+   * the Dock icon brings them back.
+   */
+  const askClose = useCallback(async (): Promise<boolean> => {
+    if (!getSettings().confirmCloseWithSessions || liveRef.current === 0) return true;
+    if (desktop === 'mac') {
+      const window = getCurrentWindow();
+      await window.show().catch(() => undefined);
+      await window.setFocus().catch(() => undefined);
+    }
+    return new Promise<boolean>((resolve) => {
+      closeAnswer.current?.(false);
+      closeAnswer.current = resolve;
+      setConfirmClose(true);
+    });
   }, []);
+  const closeAnswer = useRef<((ok: boolean) => void) | null>(null);
+  const answerClose = (ok: boolean) => {
+    setConfirmClose(false);
+    const answer = closeAnswer.current;
+    closeAnswer.current = null;
+    answer?.(ok);
+  };
+
+  useEffect(() => {
+    const stops: Promise<() => void>[] = [];
+    if (desktop === 'mac') {
+      stops.push(hideWindowOnClose(), onMacQuit(askClose));
+    } else {
+      const window = getCurrentWindow();
+      stops.push(
+        window.onCloseRequested(async (event) => {
+          if (getSettings().confirmCloseWithSessions && liveRef.current > 0) {
+            event.preventDefault();
+            if (await askClose()) void window.destroy();
+          }
+        }),
+      );
+    }
+    return () => {
+      for (const stop of stops) void stop.then((unlisten) => unlisten()).catch(() => undefined);
+    };
+  }, [askClose]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1057,18 +1227,22 @@ export function App() {
       </span>
       <span className="spacer" />
       {activeTab.kind === 'rdp' && (
-        <>
-          <button
-            className="quiet toolbar-button"
+        <span className="toolbar-actions">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ICONS.keyboard}
             disabled={activeTab.status !== 'live'}
             onClick={() => drivers.current.get(activeTab.id)?.ctrlAltDel()}
-            title={t('Strg+Alt+Entf an den Server senden (Strg+Alt+Ende)')}
+            title={withKeys(t('Strg+Alt+Entf an den Server senden'), SHORTCUTS.ctrlAltDel)}
           >
-            <Icon name="keyboard" size={15} />
             {t('Strg+Alt+Entf')}
-          </button>
-          <button
-            className="quiet toolbar-button"
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ICONS.fit}
+            className="aria-pressed:bg-pink-tint aria-pressed:text-pink-ink"
             onClick={() =>
               patchTab(activeTab.id, {
                 smart: !(activeTab.smart ?? activeTab.host.rdp.smartSizing),
@@ -1077,37 +1251,39 @@ export function App() {
             aria-pressed={activeTab.smart ?? activeTab.host.rdp.smartSizing}
             title={t('Einen zu großen Desktop einpassen statt scrollen')}
           >
-            <Icon name="scale" size={15} />
             {t('Einpassen')}
-          </button>
-          <button
-            className="quiet toolbar-button"
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ICONS.fullscreen}
             onClick={() => toggleFullscreen()}
-            title={t('Vollbild (Strg+Alt+Pause)')}
+            title={withKeys(t('Vollbild'), SHORTCUTS.fullscreen)}
           >
-            <Icon name="fullscreen" size={15} />
             {t('Vollbild')}
-          </button>
+          </Button>
           {activeTab.status === 'live' ? (
-            <button
-              className="quiet toolbar-button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ICONS.disconnect}
               onClick={() => disconnectTab(activeTab.id)}
               title={t('Sitzung trennen; der Tab bleibt offen')}
             >
-              <Icon name="power" size={15} />
               {t('Trennen')}
-            </button>
+            </Button>
           ) : (
-            <button
-              className="quiet toolbar-button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ICONS.refresh}
               onClick={() => restart(activeTab.id)}
               disabled={activeTab.status === 'connecting'}
             >
-              <Icon name="refresh" size={15} />
               {t('Neu verbinden')}
-            </button>
+            </Button>
           )}
-        </>
+        </span>
       )}
     </div>
   );
@@ -1156,27 +1332,36 @@ export function App() {
             {fullscreen && activeTab?.kind === 'rdp' ? (
               <div className="fullscreen-bar" role="toolbar" aria-label={t('Verbindungsleiste')}>
                 <b>{activeTab.title}</b>
-                <button
-                  className="quiet toolbar-button"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={ICONS.keyboard}
+                  className="text-stage-ink hover:bg-white/10"
                   onClick={() => drivers.current.get(activeTab.id)?.ctrlAltDel()}
                 >
-                  <Icon name="keyboard" size={15} />
                   {t('Strg+Alt+Entf')}
-                </button>
-                <button className="quiet toolbar-button" onClick={() => toggleFullscreen(false)}>
-                  <Icon name="fullscreen" size={15} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={ICONS.exitFullscreen}
+                  className="text-stage-ink hover:bg-white/10"
+                  onClick={() => toggleFullscreen(false)}
+                >
                   {t('Vollbild beenden')}
-                </button>
-                <button
-                  className="quiet toolbar-button"
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={ICONS.disconnect}
+                  className="text-stage-ink hover:bg-white/10"
                   onClick={() => {
                     toggleFullscreen(false);
                     disconnectTab(activeTab.id);
                   }}
                 >
-                  <Icon name="power" size={15} />
                   {t('Trennen')}
-                </button>
+                </Button>
               </div>
             ) : (
               toolbar
@@ -1191,19 +1376,20 @@ export function App() {
                 <span>{notice.text}</span>
                 <span className="spacer" />
                 {notice.action && (
-                  <button onClick={notice.action.run}>{notice.action.label}</button>
+                  <Button size="sm" onClick={notice.action.run}>
+                    {notice.action.label}
+                  </Button>
                 )}
-                <button
-                  className="icon-button"
+                <IconButton
+                  size="sm"
+                  icon={ICONS.close}
                   onClick={() =>
                     activeTab?.notice
                       ? patchTab(activeTab.id, { notice: null })
                       : setAppNotice(null)
                   }
-                  aria-label={t('Hinweis schließen')}
-                >
-                  ×
-                </button>
+                  label={t('Hinweis schließen')}
+                />
               </div>
             ) : null}
 
@@ -1251,17 +1437,25 @@ export function App() {
                     <div className="pane-overlay" data-tone="failed">
                       <NyuScene name="loadError" className="pane-scene" />
                       <p>{t('Nicht verbunden.')}</p>
-                      <button className="primary" onClick={() => restart(tab.id)}>
+                      <Button
+                        variant="primary"
+                        icon={ICONS.refresh}
+                        onClick={() => restart(tab.id)}
+                      >
                         {t('Neu verbinden')}
-                      </button>
+                      </Button>
                     </div>
                   )}
                   {tab.kind === 'rdp' && tab.status === 'ended' && (
                     <div className="pane-overlay" data-tone="ended">
                       <p>{t('Getrennt.')}</p>
-                      <button className="primary" onClick={() => restart(tab.id)}>
+                      <Button
+                        variant="primary"
+                        icon={ICONS.refresh}
+                        onClick={() => restart(tab.id)}
+                      >
                         {t('Neu verbinden')}
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -1276,9 +1470,13 @@ export function App() {
                     )}
                   </p>
                   {hosts.length === 0 && (
-                    <button className="primary" onClick={() => setImporting(true)}>
+                    <Button
+                      variant="primary"
+                      icon={ICONS.import}
+                      onClick={() => setImporting(true)}
+                    >
                       {t('RDCMan-Datei importieren')}
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
@@ -1379,20 +1577,16 @@ export function App() {
       {confirmClose && (
         <Modal
           title={t('UwURDP schließen?')}
-          onCancel={() => setConfirmClose(false)}
+          size="small"
+          onCancel={() => answerClose(false)}
           footer={
             <>
-              <span className="spacer" />
-              <button data-autofocus onClick={() => setConfirmClose(false)}>
+              <Button data-autofocus onClick={() => answerClose(false)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="primary"
-                data-secondary
-                onClick={() => void getCurrentWindow().destroy()}
-              >
-                {t('Schließen')}
-              </button>
+              </Button>
+              <Button variant="primary" data-secondary onClick={() => answerClose(true)}>
+                {desktop === 'mac' ? t('Beenden') : t('Schließen')}
+              </Button>
             </>
           }
         >

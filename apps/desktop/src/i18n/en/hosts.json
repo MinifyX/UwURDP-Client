@@ -101,5 +101,6 @@
   "Freigeben": "Share",
   "Von der Gruppe: {summary}": "From the group: {summary}",
   "Ohne Gruppe: keine Ordner freigegeben.": "No group: no folders shared.",
-  "Lokale Ordner der Gruppe…": "Group's local folders…"
+  "Lokale Ordner der Gruppe…": "Group's local folders…",
+  "192.0.2.12 oder dc-1.example.com": "192.0.2.12 or dc-1.example.com"
 }

@@ -11,6 +11,24 @@ rust-version.workspace = true
 name = "uwurdp_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# What every download from GitHub is: a copy that looks for its own updates and
+# installs them, and fetches Cisco's OpenH264 when the user turns H.264 on.
+default = ["self-update", "h264-download"]
+# The updater plugin, the feed, the signature check and handing over to the
+# setup or the package manager (`updates.rs`). Without it nothing in the app
+# can find, download or start a newer UwURDP.
+self-update = ["dep:tauri-plugin-updater", "dep:minisign-verify", "dep:semver", "dep:tempfile"]
+# Downloading Cisco's OpenH264 binary (`h264.rs`). Without it H.264 reports
+# "unsupported" and no session ever loads a library.
+h264-download = ["dep:bzip2", "dep:reqwest"]
+# The Mac App Store build: `--no-default-features --features mas`. The store
+# updates the app, App Review forbids downloading code (so no OpenH264), the
+# sandbox decides what the app may open, and the folders shared with a server
+# come back through security-scoped bookmarks (`sandbox_access.rs`). See
+# docs/app-store.md.
+mas = ["dep:objc2", "dep:objc2-foundation"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -24,12 +42,12 @@ uwurdp-vault.workspace = true
 
 base64.workspace = true
 # Unpacks Cisco's OpenH264 download (pure Rust, see h264.rs).
-bzip2 = "0.6"
-minisign-verify = "0.2"
+bzip2 = { version = "0.6", optional = true }
+minisign-verify = { version = "0.2", optional = true }
 parking_lot.workspace = true
-semver = "1"
+semver = { version = "1", optional = true }
 # Fetches OpenH264 from Cisco; the same client and TLS setup uwurdp-sync uses.
-reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls-no-provider"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls-no-provider"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
@@ -40,12 +58,16 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 # One UwURDP at a time; hands a link opened meanwhile to the running one.
 tauri-plugin-single-instance = { version = "~2.4.5", features = ["deep-link"] }
-tauri-plugin-updater = "2"
+tauri-plugin-updater = { version = "2", optional = true }
 tokio = { workspace = true, features = ["net"] }
 tracing.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# macOS: ⌘Q, the Dock and logging out quit through the page (`lib.rs`), which
+# asks first while desktops are open. Nothing off macOS; the tag matches the
+# @uwusuite/design version in package.json.
+uwu-macos = { git = "https://github.com/MinifyX/UwUSuite-Design", tag = "v1.6.1" }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
 
@@ -68,4 +90,20 @@ rand.workspace = true
 
 # A package update is handed to the package manager from a private scratch folder.
 [target.'cfg(target_os = "linux")'.dependencies]
-tempfile = "3"
+tempfile = { version = "3", optional = true }
+
+# The Mac App Store build keeps security-scoped bookmarks for the folders a
+# server may see (`sandbox_access.rs`) and asks AppKit for the Mac's name
+# instead of running `scutil` (`sync.rs`). The same objc2 crates Tauri itself
+# compiles on a Mac, so they add no new code, only more of their API.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, default-features = false, features = [
+  "std",
+  "NSArray",
+  "NSData",
+  "NSError",
+  "NSHost",
+  "NSString",
+  "NSURL",
+] }

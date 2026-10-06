@@ -1,3 +1,15 @@
+import {
+  Button,
+  Icon,
+  ICONS,
+  TitleBar,
+  TitleBarAction,
+  Toggle,
+  UwuLabels,
+  Wordmark,
+  type WindowControls,
+} from '@uwusuite/design';
+import { useTauriWindow } from '@uwusuite/design/tauri';
 import clsx from 'clsx';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type Info, type Options } from './api';
@@ -21,32 +33,8 @@ const MIN_WORKING_MS = 1800;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function Icon({ path, className }: { path: string; className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={clsx('size-4', className)}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.2}
-      aria-hidden
-    >
-      <path d={path} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-const ICONS = {
-  soundOn: 'M4 9v6h4l5 4V5L8 9H4Z M16.5 8.5a5 5 0 0 1 0 7 M19 6a8.5 8.5 0 0 1 0 12',
-  soundOff: 'M4 9v6h4l5 4V5L8 9H4Z M17 9l5 6 M22 9l-5 6',
-  minimize: 'M6 12h12',
-  close: 'M7 7l10 10 M17 7L7 17',
-  chevron: 'M9 6l6 6-6 6',
-  folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z',
-  check: 'M5 12.5l4.5 4.5L19 7.5',
-};
-
-function Button({
+/** The installer's pills: the package's Button, the quiet one in plum over the gradient. */
+function SetupButton({
   children,
   onClick,
   variant = 'primary',
@@ -60,24 +48,21 @@ function Button({
   autoFocus?: boolean;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      size="lg"
+      variant={variant === 'primary' ? 'primary' : 'ghost'}
       autoFocus={autoFocus}
       disabled={disabled}
       onClick={onClick}
-      className={clsx(
-        'h-11 rounded-full px-6 text-[15px] font-extrabold transition active:scale-[0.97] disabled:opacity-50',
-        variant === 'primary'
-          ? 'bg-pink-solid hover:bg-pink-solid-hover text-white shadow-[0_10px_22px_-10px_rgb(225_29_116/0.8)]'
-          : 'text-plum-soft hover:text-plum hover:bg-white/70',
-      )}
+      className={clsx('setup-button', variant === 'quiet' && 'setup-quiet')}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
-function Switch({
+/** One setting on the card: the package's Toggle. */
+function SetupToggle({
   checked,
   onChange,
   label,
@@ -89,31 +74,55 @@ function Switch({
   hint?: string;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className="hover:bg-blush/60 flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left"
-    >
-      <span className="min-w-0 flex-1">
-        <span className="block text-[13.5px] font-bold">{label}</span>
-        {hint && <span className="text-plum-soft block text-[12px] leading-snug">{hint}</span>}
-      </span>
-      <span
-        className={clsx(
-          'relative h-6 w-10 shrink-0 rounded-full transition-colors',
-          checked ? 'bg-pink-solid' : 'bg-[#ecd9e3]',
-        )}
-      >
-        <span
-          className={clsx(
-            'absolute top-1 size-4 rounded-full bg-white shadow transition-transform',
-            checked ? 'translate-x-5' : 'translate-x-1',
-          )}
+    <div className="px-2 py-2">
+      <Toggle checked={checked} onChange={onChange} label={label} description={hint} />
+    </div>
+  );
+}
+
+const inTauri = '__TAURI_INTERNALS__' in window;
+
+/** Minimize and close go through the installer (api.ts): closing ends the setup properly. */
+function setupControls(busy: boolean, maximized = false): WindowControls {
+  return {
+    maximized,
+    minimize: () => void api.minimize(),
+    toggleMaximize: () => undefined,
+    close: () => {
+      if (!busy) void api.finish();
+    },
+  };
+}
+
+function TauriBar(props: BarProps) {
+  const win = useTauriWindow();
+  return <Bar {...props} controls={setupControls(props.busy, win.maximized)} />;
+}
+
+type BarProps = { busy: boolean; muted: boolean; onToggleSound: () => void };
+
+/**
+ * The package's title bar, on every system: the installer window has no
+ * system frame anywhere, macOS included (src-tauri/src/app.rs), so it always
+ * draws the Windows-style controls.
+ */
+function Bar({ busy, muted, onToggleSound, controls }: BarProps & { controls: WindowControls }) {
+  return (
+    <div className="setup-titlebar shrink-0" data-busy={busy || undefined}>
+      <UwuLabels labels={{ minimize: t.minimize, close: t.close }}>
+        <TitleBar
+          platform="windows"
+          controls={controls}
+          maximizable={false}
+          brand={<Wordmark product="RDP" shell="monitor" className="text-body" />}
+          actions={
+            <TitleBarAction label={muted ? t.soundOn : t.soundOff} onClick={onToggleSound}>
+              <Icon icon={muted ? ICONS.soundOff : ICONS.sound} size="sm" />
+            </TitleBarAction>
+          }
         />
-      </span>
-    </button>
+      </UwuLabels>
+    </div>
   );
 }
 
@@ -128,43 +137,10 @@ function Window({
   muted: boolean;
   onToggleSound: () => void;
 }) {
-  const control =
-    'grid size-8 place-items-center rounded-full text-plum-soft hover:bg-white/80 hover:text-plum';
+  const bar = { busy, muted, onToggleSound };
   return (
     <div className="setup-sparkles flex h-full flex-col">
-      <header data-tauri-drag-region className="flex h-11 shrink-0 items-center gap-1 px-2">
-        <span
-          data-tauri-drag-region
-          className="mr-auto pl-3 text-[14px] font-extrabold tracking-tight"
-        >
-          <span className="text-pink">UwU</span>RDP
-        </span>
-        <button
-          type="button"
-          className={control}
-          onClick={onToggleSound}
-          aria-label={muted ? t.soundOn : t.soundOff}
-        >
-          <Icon path={muted ? ICONS.soundOff : ICONS.soundOn} />
-        </button>
-        <button
-          type="button"
-          className={control}
-          onClick={() => void api.minimize()}
-          aria-label={t.minimize}
-        >
-          <Icon path={ICONS.minimize} />
-        </button>
-        <button
-          type="button"
-          className={clsx(control, 'hover:bg-pink-solid! hover:text-white!')}
-          disabled={busy}
-          onClick={() => void api.finish()}
-          aria-label={t.close}
-        >
-          <Icon path={ICONS.close} />
-        </button>
-      </header>
+      {inTauri ? <TauriBar {...bar} /> : <Bar {...bar} controls={setupControls(busy)} />}
       <main className="flex min-h-0 flex-1 flex-col items-center px-7 pb-5">{children}</main>
     </div>
   );
@@ -182,7 +158,7 @@ function Stage({
   compact?: boolean;
 }) {
   return (
-    <div className="setup-fade flex w-full flex-col items-center">
+    <div className="animate-slide-up flex w-full flex-col items-center">
       <div
         className={clsx(
           'pt-1 transition-[width] duration-300',
@@ -191,11 +167,11 @@ function Stage({
       >
         {scene}
       </div>
-      <h1 className="pt-3 text-center text-[24px] leading-tight font-extrabold tracking-tight">
+      <h1 className="text-title pt-3 text-center leading-tight font-extrabold tracking-tight">
         {title}
       </h1>
       {body && !compact && (
-        <p className="text-plum-soft max-w-[340px] pt-1.5 text-center text-[14px] leading-relaxed">
+        <p className="text-plum-soft text-body max-w-[340px] pt-1.5 text-center leading-relaxed">
           {body}
         </p>
       )}
@@ -340,35 +316,36 @@ export function App() {
           }
         />
         <div className="flex flex-col items-center gap-2 pt-5">
-          <Button onClick={startInstall} autoFocus disabled={!info.hasPayload}>
+          <SetupButton onClick={startInstall} autoFocus disabled={!info.hasPayload}>
             {actionLabel} ♡
-          </Button>
+          </SetupButton>
           <button
             type="button"
             onClick={() => setShowOptions(!showOptions)}
             aria-expanded={showOptions}
-            className="text-plum-soft hover:text-plum flex items-center gap-1 rounded-full px-3 py-1 text-[13px] font-bold"
+            className="text-plum-soft hover:text-plum text-meta flex items-center gap-1 rounded-full px-3 py-1 font-bold"
           >
             {showOptions ? t.fewerOptions : t.options}
             <Icon
-              path={ICONS.chevron}
-              className={clsx('size-3.5 transition-transform', showOptions && 'rotate-90')}
+              icon={ICONS.expand}
+              size="xs"
+              className={clsx('transition-transform', showOptions && 'rotate-180')}
             />
           </button>
         </div>
         {showOptions && (
-          <div className="setup-card setup-fade mt-1 w-full rounded-[22px] p-3">
+          <div className="setup-card animate-slide-up rounded-dialog mt-1 w-full p-3">
             <div className="flex items-center gap-2 px-2 pb-1">
-              <Icon path={ICONS.folder} className="text-pink size-4 shrink-0" />
+              <Icon icon={ICONS.folder} size="sm" className="text-pink-solid shrink-0" />
               <span className="min-w-0 flex-1">
-                <span className="text-plum-soft block text-[12px] font-bold">{t.folder}</span>
-                <span className="block truncate text-[13px] font-semibold" title={options.dir}>
+                <span className="text-plum-soft text-caption block font-bold">{t.folder}</span>
+                <span className="text-meta block truncate font-semibold" title={options.dir}>
                   {options.dir}
                 </span>
               </span>
               <button
                 type="button"
-                className="hover:bg-blush text-pink-solid shrink-0 rounded-full px-3 py-1 text-[12.5px] font-bold"
+                className="hover:bg-pink-tint text-pink-solid text-caption shrink-0 rounded-full px-3 py-1 font-bold"
                 onClick={async () => {
                   const dir = await api.pickFolder(options.dir);
                   if (dir) setOptions({ ...options, dir });
@@ -378,7 +355,7 @@ export function App() {
               </button>
             </div>
             {info.platform !== 'macos' && (
-              <Switch
+              <SetupToggle
                 checked={options.desktopShortcut}
                 onChange={(desktopShortcut) => setOptions({ ...options, desktopShortcut })}
                 label={t.desktopShortcut}
@@ -398,12 +375,12 @@ export function App() {
                   setScreen('error');
                 })
             }
-            className="text-plum-soft hover:text-plum mt-2 rounded-full px-3 py-1 text-[12.5px] font-bold"
+            className="text-plum-soft hover:text-plum text-caption mt-2 rounded-full px-3 py-1 font-bold"
           >
             {t.removeInstead}
           </button>
         )}
-        <p className="text-plum-soft mt-auto pt-3 text-center text-[11.5px]">
+        <p className="text-plum-soft text-badge mt-auto pt-3 text-center">
           {!info.hasPayload
             ? t.devBuild
             : info.sandbox
@@ -419,7 +396,7 @@ export function App() {
       <div className="my-auto flex w-full flex-col items-center pb-10">
         <Stage scene={<PuzzledScene />} title={t.runningTitle} body={t.runningBody} />
         <div className="flex flex-col items-center gap-1 pt-6">
-          <Button
+          <SetupButton
             autoFocus
             onClick={async () => {
               try {
@@ -432,10 +409,10 @@ export function App() {
             }}
           >
             {t.closeAndContinue}
-          </Button>
-          <Button variant="quiet" onClick={() => setScreen('welcome')}>
+          </SetupButton>
+          <SetupButton variant="quiet" onClick={() => setScreen('welcome')}>
             {t.back}
-          </Button>
+          </SetupButton>
         </div>
       </div>,
     );
@@ -465,8 +442,8 @@ export function App() {
               style={{ width: `${Math.max(6, percent)}%` }}
             />
           </div>
-          <div className="text-plum-soft flex items-center justify-between pt-2.5 text-[13px] font-semibold">
-            <span key={quote} className="setup-fade">
+          <div className="text-plum-soft text-meta flex items-center justify-between pt-2.5 font-semibold">
+            <span key={quote} className="animate-slide-up">
               {t.quotes[quote]}
             </span>
             <span className="tabular-nums">{percent} %</span>
@@ -491,24 +468,24 @@ export function App() {
     return shell(
       <>
         <Stage scene={<DoneScene />} title={t.doneTitle} body={t.doneBody} />
-        <div className="setup-card setup-fade mt-4 w-full rounded-[22px] px-4 py-3">
-          <p className="text-pink-solid pb-1 text-[12px] font-extrabold tracking-wide uppercase">
+        <div className="setup-card animate-slide-up rounded-dialog mt-4 w-full px-4 py-3">
+          <p className="text-pink-solid text-caption pb-1 font-extrabold tracking-wide uppercase">
             {t.tipsTitle}
           </p>
           <ul className="flex flex-col gap-1.5">
             {t.tips.map((tip) => (
-              <li key={tip} className="flex gap-2 text-[13px] leading-snug">
-                <Icon path={ICONS.check} className="text-pink mt-0.5 size-3.5 shrink-0" />
+              <li key={tip} className="text-meta flex gap-2 leading-snug">
+                <Icon icon={ICONS.done} size="xs" className="text-pink-solid mt-0.5 shrink-0" />
                 {tip}
               </li>
             ))}
           </ul>
         </div>
         <div className="mt-auto flex items-center gap-2 pt-3">
-          <Button variant="quiet" onClick={() => void api.finish()}>
+          <SetupButton variant="quiet" onClick={() => void api.finish()}>
             {t.close}
-          </Button>
-          <Button
+          </SetupButton>
+          <SetupButton
             autoFocus
             onClick={async () => {
               await api.launchApp();
@@ -516,7 +493,7 @@ export function App() {
             }}
           >
             {t.start}
-          </Button>
+          </SetupButton>
         </div>
       </>,
     );
@@ -526,11 +503,11 @@ export function App() {
     return shell(
       <>
         <Stage scene={<ErrorScene />} title={t.errorTitle} />
-        <p className="text-plum-soft mt-3 w-full rounded-2xl bg-white/80 px-4 py-3 text-center text-[12.5px] break-words select-text">
+        <p className="text-plum-soft text-caption selectable mt-3 w-full rounded-2xl bg-white/80 px-4 py-3 text-center break-words select-text">
           {error}
         </p>
         <div className="flex items-center gap-2 pt-5">
-          <Button
+          <SetupButton
             variant="quiet"
             onClick={() =>
               void (async () => {
@@ -541,10 +518,10 @@ export function App() {
             }
           >
             {t.close}
-          </Button>
-          <Button autoFocus onClick={() => void run(job, options, info, keepData)}>
+          </SetupButton>
+          <SetupButton autoFocus onClick={() => void run(job, options, info, keepData)}>
             {t.retry}
-          </Button>
+          </SetupButton>
         </div>
       </>,
     );
@@ -558,8 +535,8 @@ export function App() {
           title={t.uninstallTitle}
           body={fill(t.uninstallBody, { computer })}
         />
-        <div className="setup-card mt-5 w-full rounded-[22px] p-2">
-          <Switch
+        <div className="setup-card rounded-dialog mt-5 w-full p-2">
+          <SetupToggle
             checked={keepData}
             onChange={setKeepData}
             label={t.keepData}
@@ -567,12 +544,12 @@ export function App() {
           />
         </div>
         <div className="mt-auto flex items-center gap-2 pt-3">
-          <Button variant="quiet" onClick={() => void api.finish()}>
+          <SetupButton variant="quiet" onClick={() => void api.finish()}>
             {t.keep}
-          </Button>
-          <Button autoFocus onClick={() => void run('uninstall', options, info, keepData)}>
+          </SetupButton>
+          <SetupButton autoFocus onClick={() => void run('uninstall', options, info, keepData)}>
             {t.uninstall}
-          </Button>
+          </SetupButton>
         </div>
       </>,
     );
@@ -582,9 +559,9 @@ export function App() {
     <div className="my-auto flex w-full flex-col items-center pb-10">
       <Stage scene={<GoodbyeScene />} title={t.goodbyeTitle} body={t.goodbyeBody} />
       <div className="pt-6">
-        <Button autoFocus onClick={() => void api.finish()}>
+        <SetupButton autoFocus onClick={() => void api.finish()}>
           {t.close}
-        </Button>
+        </SetupButton>
       </div>
     </div>,
   );

@@ -11,9 +11,16 @@
 //! - [`sync`] — Settings → Sync and the thread that keeps devices in step
 //! - [`lock`] — the same through UwULock: signing in, the move from UwUSync,
 //!   the realtime channel
-//! - [`system`] — updates, links, a fresh start for a reloaded page
+//! - [`system`] — what this build can do, updates, links, a fresh start for
+//!   a reloaded page
 //! - [`deep_link`] — `uwurdp://connect/<host-id>`, and one UwURDP at a time
 //! - [`h264`] — Cisco's OpenH264, fetched when the user turns H.264 on
+//! - [`sandbox_access`] — shared folders through the Mac App Store's sandbox
+//!
+//! Two builds come out of this crate (docs/app-store.md): the default one,
+//! which every download from GitHub is (`self-update`, `h264-download`), and
+//! the Mac App Store's (`--no-default-features --features mas`): sandboxed,
+//! no updater compiled in, no OpenH264 download.
 
 mod backup;
 mod deep_link;
@@ -24,9 +31,11 @@ mod h264;
 mod hosts;
 mod import;
 mod lock;
+mod sandbox_access;
 mod sessions;
 mod sync;
 mod system;
+#[cfg(feature = "self-update")]
 mod updates;
 
 use parking_lot::Mutex;
@@ -51,6 +60,9 @@ pub(crate) struct AppState {
     pub session_hosts: Mutex<HashMap<SessionId, uuid::Uuid>>,
     pub picked_export: backup::PickedExport,
     pub pending_import: import::PendingImport,
+    /// The sandbox's access to each open desktop's shared folders (Mac App
+    /// Store build), switched off when the desktop closes.
+    pub drive_access: Mutex<HashMap<SessionId, Vec<sandbox_access::Access>>>,
 }
 
 pub(crate) type CommandResult<T> = Result<T, String>;
@@ -61,6 +73,7 @@ pub(crate) fn err(e: impl std::fmt::Display) -> String {
 
 pub fn run() {
     system::restrict_dll_search();
+    #[cfg(feature = "self-update")]
     updates::wait_for_previous();
 
     let mut builder = tauri::Builder::default();
@@ -68,22 +81,50 @@ pub fn run() {
     // running one to the front, which then handles the link. It goes first,
     // so a second start ends before it does anything else. A trial copy with
     // its own host list (UWURDP_DB) runs beside the real one.
-    if std::env::var_os("UWURDP_DB").is_none() {
+    //
+    // Not in the Mac App Store build: the plugin's socket lives in /tmp,
+    // which the sandbox closes, and macOS keeps an app to one copy anyway,
+    // handing links to the running one through `on_open_url`.
+    if !cfg!(feature = "mas") && std::env::var_os("UWURDP_DB").is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // A link among the arguments reaches `deep_link::received` through
             // the deep-link plugin; a plain second start just shows the window.
             deep_link::show(app);
         }));
     }
-    builder
+    let builder = builder
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init());
+    // The updater's own commands are in no capability, so the page cannot
+    // reach them; `updates.rs` drives it from here. Not in the Mac App Store
+    // build, which the store updates.
+    #[cfg(feature = "self-update")]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    builder
         .setup(|app| {
             init_logging(app.path().app_log_dir().ok());
-            tracing::info!(version = %app.package_info().version, "UwURDP starting");
+            tracing::info!(
+                version = %app.package_info().version,
+                store = system::BUILD_INFO.store,
+                "UwURDP starting"
+            );
 
+            // macOS ends an app without asking the window; this asks the page
+            // first (`onMacQuit`, answered through `finish_quit`), which asks
+            // the user while desktops are open.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Emitter as _;
+                let handle = app.handle().clone();
+                if let Err(error) = uwu_macos::install_quit_guard(move || {
+                    handle.emit(uwu_macos::QUIT_EVENT, ()).is_ok()
+                }) {
+                    tracing::warn!(%error, "quit guard");
+                }
+            }
+
+            #[cfg(feature = "self-update")]
             if updates::apply_pending_on_start(app.handle()) {
                 // The downloaded setup replaces this version and starts UwURDP again.
                 std::process::exit(0);
@@ -99,6 +140,11 @@ pub fn run() {
             };
             let store = Store::open(&path)?;
             tracing::info!(path = %path.display(), "store open");
+            if let Some(folder) = path.parent() {
+                sandbox_access::configure(folder);
+            }
+            #[cfg(all(target_os = "macos", feature = "mas"))]
+            sync::warm_device_name();
             // A vault this device keeps the key for opens right away, so the
             // master password is a once-per-device thing.
             if let Err(error) = store.unlock_remembered_vault(device::unprotect) {
@@ -115,8 +161,10 @@ pub fn run() {
                 session_hosts: Mutex::new(HashMap::new()),
                 picked_export: backup::PickedExport::default(),
                 pending_import: import::PendingImport::default(),
+                drive_access: Mutex::new(HashMap::new()),
             });
             app.manage(h264::Codec::new(app.handle()));
+            #[cfg(feature = "self-update")]
             updates::start(app.handle());
             sync::start(app.handle());
 
@@ -133,6 +181,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            finish_quit,
+            system::build_info,
             sessions::frame_socket,
             sessions::resize_session,
             sessions::clipboard_changed,
@@ -200,8 +250,34 @@ pub fn run() {
             deep_link::take_deep_link,
             deep_link::sync_for_link,
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to start UwURDP");
+        .build(tauri::generate_context!())
+        .expect("failed to start UwURDP")
+        .run(|app, event| {
+            // macOS: closing the window with no desktop open only hides it
+            // (the page's `hideWindowOnClose`); a click on the Dock icon
+            // brings it back.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
+}
+
+/// The page's answer to a quit from the Dock, ⌘Q or a logout (macOS): go
+/// ahead, or stay because the user kept the open desktops. Does nothing
+/// elsewhere.
+#[tauri::command]
+fn finish_quit(proceed: bool) {
+    uwu_macos::reply_quit(proceed);
 }
 
 /// The log file stops growing here; what matters is usually near the start

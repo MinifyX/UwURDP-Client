@@ -1,0 +1,306 @@
+/*
+ * The right side of the window: tabs, the toolbar of the active tab, notices,
+ * and the area every tab is shown in. The desktop itself and the overview are
+ * in rdp.css.
+ */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── Tabs ──────────────────────────────────────────────── */
+
+.tabbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--uwu-hairline);
+  background: var(--uwu-surface);
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  min-width: 0;
+  max-width: 220px;
+  border-radius: 12px 12px 0 0;
+  color: var(--uwu-muted);
+  transition: background var(--uwu-duration-fast) ease;
+}
+
+.tab:hover {
+  background: color-mix(in srgb, var(--uwu-pink-tint) 45%, transparent);
+}
+
+.tab[data-active='true'] {
+  background: var(--uwu-canvas);
+  color: var(--uwu-ink);
+  box-shadow: inset 0 2px 0 var(--uwu-pink);
+}
+
+.tab-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 4px 8px 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font-size: var(--uwu-text-meta);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-icon {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--uwu-muted);
+}
+
+.tab[data-active='true'] .tab-icon {
+  color: var(--uwu-pink-ink);
+}
+
+.tab-icon .dot {
+  position: absolute;
+  right: -3px;
+  bottom: -2px;
+  box-sizing: content-box;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid var(--uwu-surface);
+  border-radius: 50%;
+  background: var(--uwu-offline);
+}
+
+.tab[data-active='true'] .tab-icon .dot {
+  border-color: var(--uwu-canvas);
+}
+
+.tab-icon .dot[data-state='online'] {
+  background: var(--uwu-success);
+}
+
+.tab-icon .dot[data-state='connecting'] {
+  background: var(--uwu-pink);
+  animation: tab-pulse 1s ease-in-out infinite;
+}
+
+@keyframes tab-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-ordinal {
+  flex: none;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--uwu-radius-pill);
+  background: var(--uwu-pink-tint);
+  color: var(--uwu-pink-ink);
+  font-size: var(--uwu-text-badge);
+  line-height: 18px;
+  text-align: center;
+}
+
+.tab-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--uwu-radius-pill);
+  background: transparent;
+  color: var(--uwu-muted);
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    background var(--uwu-duration-fast) ease,
+    color var(--uwu-duration-fast) ease;
+}
+
+.tab:hover .tab-close,
+.tab[data-active='true'] .tab-close,
+.tab-close:focus-visible {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  background: var(--uwu-pink-tint);
+  color: var(--uwu-pink-ink);
+}
+
+.tab-new {
+  flex: none;
+  align-self: center;
+  margin-bottom: 3px;
+}
+
+/* ── No tab open ───────────────────────────────────────── */
+
+.no-tabs {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  height: 100%;
+  color: var(--uwu-muted);
+  text-align: center;
+}
+
+.no-tabs-scene {
+  width: 240px;
+  margin-bottom: 8px;
+}
+
+.no-tabs-title {
+  margin: 0;
+  color: var(--uwu-ink);
+  font-size: var(--uwu-text-section);
+  font-weight: 700;
+}
+
+.no-tabs-text {
+  max-width: 340px;
+  margin: 0 0 8px;
+  line-height: var(--uwu-leading-reading);
+}
+
+/* ── Toolbar of the active tab ─────────────────────────── */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 48px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--uwu-hairline);
+  background: var(--uwu-surface);
+}
+
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.session-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.session-title .meta {
+  color: var(--uwu-muted);
+  font-family: var(--uwu-mono);
+  font-size: 11.5px;
+}
+
+/* Reconnect is a banner, never a modal: a modal over a desktop is a UX bug. */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 14px 0;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--uwu-border);
+  border-radius: 16px;
+  background: var(--uwu-surface);
+  font-size: var(--uwu-text-meta);
+}
+
+.notice[data-tone='error'] {
+  border-color: color-mix(in srgb, var(--uwu-warning) 60%, transparent);
+  background: var(--uwu-warning-tint);
+  color: var(--uwu-warning-ink);
+}
+
+/* ── The area the tabs are shown in ────────────────────── */
+
+/*
+ * A desktop must never be able to widen the layout: the canvas has the
+ * desktop's size, and a grid item's minimum width would otherwise follow it.
+ * min-width: 0 and overflow: hidden keep the tab the size of the window.
+ */
+.session-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 14px 14px;
+  background: var(--uwu-canvas);
+}
+
+/* Every tab keeps its desktop; only the active one is shown. */
+.session-pane {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+}
+
+.session-pane[hidden] {
+  display: none;
+}
+
+/* Connecting, failed, ended: over the desktop, on the stage's colours. */
+.pane-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  border-radius: var(--uwu-radius-card);
+  background: var(--uwu-stage-overlay);
+  color: var(--uwu-stage-ink);
+  text-align: center;
+  animation: overlay-in 220ms ease both;
+}
+
+.pane-overlay p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.pane-scene {
+  width: 220px;
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+}

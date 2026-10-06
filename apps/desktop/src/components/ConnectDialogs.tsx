@@ -1,7 +1,7 @@
+import { Button, IconButton, ICONS, Toggle } from '@uwusuite/design';
 import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { t, useLanguage } from '../lib/i18n';
 import type { HostRecord, ObservedCertificate, TypedLogin } from '../lib/session';
-import { Icon } from './Icon';
 import { Modal } from './Modal';
 
 /*
@@ -82,12 +82,12 @@ export function LoginPrompt({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onCancel}>
+          <Button data-secondary onClick={onCancel}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" onClick={() => submit()}>
+          </Button>
+          <Button variant="primary" onClick={() => submit()}>
             {t('Verbinden')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -129,14 +129,13 @@ export function LoginPrompt({
               aria-invalid={retry}
               data-autofocus={initialUser ? true : undefined}
             />
-            <button
+            <IconButton
               type="button"
-              className="icon-button"
+              size="sm"
+              icon={show ? ICONS.hide : ICONS.show}
               onClick={() => setShow((v) => !v)}
-              aria-label={show ? t('Passwort verbergen') : t('Passwort anzeigen')}
-            >
-              <Icon name="eye" size={15} />
-            </button>
+              label={show ? t('Passwort verbergen') : t('Passwort anzeigen')}
+            />
           </span>
           {retry && (
             <em className="field-error">
@@ -147,21 +146,18 @@ export function LoginPrompt({
           )}
         </label>
         {canSave ? (
-          <label className="check">
-            <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} />
-            <span>
-              <b>{t('Für diesen Host speichern')}</b>
-              <small>
-                {t(
-                  'Das Passwort liegt dann verschlüsselt im Tresor; beim nächsten Mal verbindet UwURDP ohne zu fragen.',
-                )}
-              </small>
-            </span>
-          </label>
+          <Toggle
+            label={t('Für diesen Host speichern')}
+            description={t(
+              'Das Passwort liegt dann verschlüsselt im Tresor; beim nächsten Mal verbindet UwURDP ohne zu fragen.',
+            )}
+            checked={save}
+            onChange={setSave}
+          />
         ) : (
           <p className="field-hint">{t('Wird nur für diese Verbindung verwendet.')}</p>
         )}
-        <button type="submit" hidden />
+        <Button type="submit" hidden />
       </form>
     </Modal>
   );
@@ -253,12 +249,12 @@ export function TrustCertificate({ host, observed, onTrust, onCancel }: TrustPro
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onCancel}>
+          <Button data-secondary onClick={onCancel}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" data-secondary onClick={onTrust}>
+          </Button>
+          <Button variant="primary" data-secondary onClick={onTrust}>
             {t('Vertrauen und verbinden')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -311,13 +307,13 @@ export function CertificateChanged({ host, expected, observed, onAccept, onRejec
       onCancel={onReject}
       footer={
         <>
-          <button className="danger" data-secondary onClick={onAccept}>
+          <Button variant="danger" data-secondary onClick={onAccept}>
             {t('Neues Zertifikat akzeptieren')}
-          </button>
+          </Button>
           <span className="spacer" />
-          <button className="primary" data-autofocus onClick={onReject}>
+          <Button variant="primary" data-autofocus onClick={onReject}>
             {t('Ablehnen')}
-          </button>
+          </Button>
         </>
       }
     >

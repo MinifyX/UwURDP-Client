@@ -1,6 +1,7 @@
+import { Icon, IconButton, ICONS } from '@uwusuite/design';
 import { t, useLanguage } from '../lib/i18n';
+import { SHORTCUTS, withKeys } from '../lib/shortcuts';
 import type { Tab } from '../lib/tabs';
-import { Icon } from './Icon';
 
 type Props = {
   tabs: Tab[];
@@ -20,6 +21,9 @@ function stateOf(tab: Tab): 'online' | 'connecting' | 'idle' {
  * One tab per session. Every click on a host opens another one, so several
  * connections to the same server sit side by side; the number after a repeated
  * name tells them apart. Middle click closes, like in a browser.
+ *
+ * The suite's tab (package docs/components.md): a device icon with a state
+ * dot, the title, a close button on hover, a pink top inset when active.
  */
 export function TabBar({ tabs, activeId, onSelect, onClose, onOverview }: Props) {
   useLanguage();
@@ -47,40 +51,36 @@ export function TabBar({ tabs, activeId, onSelect, onClose, onOverview }: Props)
                 role="tab"
                 className="tab-select"
                 aria-selected={active}
-                title={
-                  index < 9
-                    ? t('{name} (Strg+Umschalt+{number})', { name, number: index + 1 })
-                    : name
-                }
+                title={index < 9 ? withKeys(name, `CmdOrCtrl+Shift+${index + 1}`) : name}
                 onClick={() => onSelect(tab.id)}
               >
                 <span className="tab-icon" aria-hidden>
-                  <Icon name={tab.kind === 'overview' ? 'grid' : 'monitor'} size={15} />
+                  <Icon icon={tab.kind === 'overview' ? ICONS.overview : ICONS.computer} />
                   <i className="dot" data-state={stateOf(tab)} />
                 </span>
                 <span className="tab-title">{tab.title}</span>
                 {tab.ordinal > 1 && <span className="tab-ordinal">{tab.ordinal}</span>}
               </button>
               <button
+                type="button"
                 className="tab-close"
                 onClick={() => onClose(tab.id)}
-                title={t('Tab schließen (Strg+Umschalt+W)')}
+                title={withKeys(t('Tab schließen'), SHORTCUTS.closeTab)}
                 aria-label={t('{name} schließen', { name: tab.title })}
               >
-                ×
+                <Icon icon={ICONS.close} size="xs" />
               </button>
             </div>
           );
         })}
       </div>
-      <button
-        className="icon-button tab-new"
+      <IconButton
+        size="sm"
+        icon={ICONS.overview}
+        className="tab-new"
         onClick={onOverview}
-        title={t('Übersicht aller Sitzungen (Strg+Umschalt+O)')}
-        aria-label={t('Übersicht')}
-      >
-        <Icon name="grid" size={15} />
-      </button>
+        label={withKeys(t('Übersicht aller Sitzungen'), SHORTCUTS.overview)}
+      />
     </div>
   );
 }

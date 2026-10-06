@@ -25,6 +25,7 @@
 
 import { ClipboardNotes, type ClipboardStatus } from './clipboard';
 import { scancodeFor } from './keymap';
+import { macAppShortcut } from './mac-keys';
 import {
   clipboardChanged,
   closeSession,
@@ -46,6 +47,18 @@ export type Fit = {
   /** A desktop that doesn't fit is scaled down instead of scrolled. */
   smartSizing: boolean;
 };
+
+/** ⌘ is the Windows key on a Mac, and a few ⌘ shortcuts stay the app's (lib/mac-keys.ts). */
+const MAC = /mac/i.test(navigator.platform || navigator.userAgent);
+
+/** What a key sends: a scancode, or a character the keymap doesn't know. */
+type KeyInput = Extract<InputEvent, { type: 'key' | 'unicode' }>;
+
+/** Left Ctrl, tapped while the Windows key is down (see {@link RdpDriver.maskWindowsKey}). */
+const CTRL_TAP: KeyInput[] = [
+  { type: 'key', code: 0x1d, extended: false, down: true },
+  { type: 'key', code: 0x1d, extended: false, down: false },
+];
 
 const RESIZE_DELAY_MS = 450;
 /** How long after connecting the desktop may still take the tab's size. */
@@ -84,6 +97,10 @@ export class RdpDriver {
    * notice or dialog that was there while it connected goes away after.
    */
   private settleUntil = 0;
+  /** Mac only: ⌘ (the Windows key) is down remotely. */
+  private metaDown = false;
+  /** Mac only: keys sent down while ⌘ was held, by code (see `key`). */
+  private heldWithMeta = new Map<string, KeyInput>();
   /** Notes about files through the clipboard, and files dropped on the desktop. */
   private readonly notes: ClipboardNotes;
 
@@ -189,6 +206,16 @@ export class RdpDriver {
   ctrlAltDel() {
     this.send([{ type: 'ctrlAltDel' }]);
     this.focus();
+  }
+
+  /**
+   * A ⌘ shortcut went to the app, not to the desktop, while ⌘ — the Windows
+   * key there — was already down remotely. Windows opens the Start menu when
+   * that key goes up with nothing pressed in between, so a Ctrl tap goes in
+   * between, as AutoHotkey does it.
+   */
+  maskWindowsKey() {
+    if (this.metaDown) this.send(CTRL_TAP);
   }
 
   /** Ends the session and lets go of the canvas. */
@@ -471,6 +498,8 @@ export class RdpDriver {
     this.listen('blur', () => {
       // Whatever was held when the focus left must not stay pressed remotely.
       this.send([{ type: 'releaseAll' }]);
+      this.metaDown = false;
+      this.heldWithMeta.clear();
     });
     this.listen('focus', () => {
       if (this.session) void clipboardChanged(this.session).catch(() => undefined);
@@ -488,18 +517,38 @@ export class RdpDriver {
 
   private key(event: KeyboardEvent, down: boolean) {
     if (event.isComposing) return;
-    const scancode = scancodeFor(event.code);
-    if (scancode) {
-      event.preventDefault();
-      event.stopPropagation();
-      this.send([{ type: 'key', code: scancode.code, extended: scancode.extended, down }]);
+    const meta = event.code.startsWith('Meta');
+    if (MAC && !meta && event.metaKey && macAppShortcut(event)) {
+      // ⌘Q, ⌘W, ⌘, and friends: left alone, so the menu bar gets them.
+      if (down) this.maskWindowsKey();
       return;
     }
-    if (event.key.length > 0 && [...event.key].length === 1) {
-      event.preventDefault();
-      event.stopPropagation();
-      this.send([{ type: 'unicode', ch: event.key, down }]);
+    let message: KeyInput | null = null;
+    const scancode = scancodeFor(event.code);
+    if (scancode) {
+      message = { type: 'key', code: scancode.code, extended: scancode.extended, down };
+    } else if (event.key.length > 0 && [...event.key].length === 1) {
+      message = { type: 'unicode', ch: event.key, down };
     }
+    if (!message) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const events: KeyInput[] = [message];
+    if (MAC && meta) {
+      this.metaDown = down;
+      // macOS sends no keyup for keys pressed while ⌘ is held, so they go up
+      // with ⌘ — otherwise Windows+C would leave C pressed on the server.
+      if (!down) {
+        events.unshift(
+          ...[...this.heldWithMeta.values()].map((held) => ({ ...held, down: false })),
+        );
+        this.heldWithMeta.clear();
+      }
+    } else if (MAC && event.metaKey) {
+      if (down) this.heldWithMeta.set(event.code, message);
+      else this.heldWithMeta.delete(event.code);
+    }
+    this.send(events);
   }
 }
 

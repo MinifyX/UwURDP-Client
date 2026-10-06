@@ -1,3 +1,5 @@
+import { Button, Icon, ICONS, Toggle } from '@uwusuite/design';
+import { buildInfo } from '../lib/build';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   asBackupFailure,
@@ -19,7 +21,6 @@ import {
   type PasswordRecipient,
   type RdcManFile,
 } from '../lib/session';
-import { Icon } from './Icon';
 import { useCloseGuard } from './CloseGuard';
 import { Modal } from './Modal';
 import { NyuScene } from './nyu/scenes';
@@ -62,7 +63,9 @@ export function ImportDialog({ onClose, onImported }: Props) {
 
   useEffect(() => {
     void guard(async () => {
-      const rdcman = await rdcmanFiles().catch(() => [] as RdcManFile[]);
+      const rdcman = buildInfo().rdcmanScan
+        ? await rdcmanFiles().catch(() => [] as RdcManFile[])
+        : [];
       setStep({ kind: 'pick', rdcman });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,7 +199,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
                       )
                     }
                   >
-                    <Icon name="file" size={16} /> {file.name}
+                    <Icon icon={ICONS.file} /> {file.name}
                   </button>
                 ))}
               </>
@@ -207,7 +210,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
               onClick={() => void guard(() => pickFiles('rdg'))}
               title={t('Remote Desktop Connection Manager von Sysinternals, 2.2 bis 2.93')}
             >
-              <Icon name="folder" size={16} /> {t('RDCMan-Datei (.rdg)…')}
+              <Icon icon={ICONS.folder} /> {t('RDCMan-Datei (.rdg)…')}
             </button>
             <button
               className="import-source"
@@ -215,10 +218,10 @@ export function ImportDialog({ onClose, onImported }: Props) {
               onClick={() => void guard(() => pickFiles('rdp'))}
               title={t('Gespeicherte Verbindungen aus mstsc, auch mehrere auf einmal')}
             >
-              <Icon name="monitor" size={16} /> {t('RDP-Dateien (.rdp)…')}
+              <Icon icon={ICONS.computer} /> {t('RDP-Dateien (.rdp)…')}
             </button>
             <button className="import-source" disabled={busy} onClick={() => void guard(pickFile)}>
-              <Icon name="file" size={16} /> {t('UwURDP-Export (.uwurdp)…')}
+              <Icon icon={ICONS.file} /> {t('UwURDP-Export (.uwurdp)…')}
             </button>
             <p className="import-note">
               {t(
@@ -280,7 +283,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
               />
               {step.wrong && <em className="field-error">{t('Das Passwort passt nicht.')}</em>}
             </label>
-            <button type="submit" hidden />
+            <Button type="submit" hidden />
           </form>
         );
       }
@@ -312,16 +315,16 @@ export function ImportDialog({ onClose, onImported }: Props) {
         return (
           <>
             <span className="spacer" />
-            <button data-secondary onClick={closeGuard.request}>
+            <Button data-secondary onClick={closeGuard.request}>
               {t('Abbrechen')}
-            </button>
-            <button
-              className="primary"
+            </Button>
+            <Button
+              variant="primary"
               disabled={busy || nothing}
               onClick={() => void guard(() => writeImport(step.ownPasswords))}
             >
               {busy ? t('Importiere…') : t('Importieren')}
-            </button>
+            </Button>
           </>
         );
       }
@@ -329,16 +332,16 @@ export function ImportDialog({ onClose, onImported }: Props) {
         return (
           <>
             <span className="spacer" />
-            <button data-secondary onClick={closeGuard.request}>
+            <Button data-secondary onClick={closeGuard.request}>
               {t('Abbrechen')}
-            </button>
-            <button
-              className="primary"
+            </Button>
+            <Button
+              variant="primary"
               disabled={busy || !password}
               onClick={() => void guard(() => unlockFile(step.file))}
             >
               {t('Öffnen')}
-            </button>
+            </Button>
           </>
         );
       case 'file-preview': {
@@ -346,16 +349,16 @@ export function ImportDialog({ onClose, onImported }: Props) {
         return (
           <>
             <span className="spacer" />
-            <button data-secondary onClick={closeGuard.request}>
+            <Button data-secondary onClick={closeGuard.request}>
               {t('Abbrechen')}
-            </button>
-            <button
-              className="primary"
+            </Button>
+            <Button
+              variant="primary"
               disabled={busy || nothing}
               onClick={() => void guard(() => importFile(step.file, step.password))}
             >
               {busy ? t('Importiere…') : t('Importieren')}
-            </button>
+            </Button>
           </>
         );
       }
@@ -363,18 +366,18 @@ export function ImportDialog({ onClose, onImported }: Props) {
         return (
           <>
             <span className="spacer" />
-            <button className="primary" onClick={onClose}>
+            <Button variant="primary" onClick={onClose}>
               {t('Fertig')}
-            </button>
+            </Button>
           </>
         );
       default:
         return (
           <>
             <span className="spacer" />
-            <button data-secondary onClick={closeGuard.request}>
+            <Button data-secondary onClick={closeGuard.request}>
               {t('Abbrechen')}
-            </button>
+            </Button>
           </>
         );
     }
@@ -456,22 +459,15 @@ function OwnPasswords({
           </li>
         ))}
       </ul>
-      <label className="check">
-        <input
-          type="checkbox"
-          checked={checked}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        <span>
-          <b>{t('Diese Passwörter übernehmen')}</b>
-          <small>
-            {t(
-              'Ohne Haken kommen nur die Benutzernamen mit, und UwURDP fragt beim Verbinden nach dem Passwort.',
-            )}
-          </small>
-        </span>
-      </label>
+      <Toggle
+        label={t('Diese Passwörter übernehmen')}
+        description={t(
+          'Ausgeschaltet kommen nur die Benutzernamen mit, und UwURDP fragt beim Verbinden nach dem Passwort.',
+        )}
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+      />
     </div>
   );
 }

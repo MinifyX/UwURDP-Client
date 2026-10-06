@@ -1,3 +1,4 @@
+import { Button, ICONS, Segmented, SettingRow, Switch } from '@uwusuite/design';
 import { useEffect, useState, type ReactNode } from 'react';
 import pkg from '../../package.json';
 import { N_, t, useLanguage } from '../lib/i18n';
@@ -18,10 +19,12 @@ import {
 } from '../lib/session';
 import { updateSettings, useSettings, workspaceName, type StartupSetting } from '../lib/settings';
 import { systemName } from '../lib/platform';
+import { buildInfo } from '../lib/build';
+import { keys, SHORTCUTS } from '../lib/shortcuts';
 import { hostLine } from '../lib/tabs';
 import { ExportDialog } from './ExportDialog';
+import { FontPicker } from './FontPicker';
 import { SyncSettings } from './SyncSettings';
-import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { Nyu } from './nyu/Nyu';
 import { VaultDialog } from './VaultDialog';
@@ -51,7 +54,7 @@ type Props = {
   onChanged: () => void;
 };
 
-/** One setting: a label, an optional explanation and its control. */
+/** One setting: a label, an optional explanation and its control (the package's SettingRow). */
 function Row({
   label,
   description,
@@ -62,44 +65,13 @@ function Row({
   children: ReactNode;
 }) {
   return (
-    <div className="setting-row">
-      <div className="setting-text">
-        <p className="setting-label">{label}</p>
-        {description && <p className="setting-description">{description}</p>}
-      </div>
-      <div className="setting-control">{children}</div>
-    </div>
+    <SettingRow label={label} description={description}>
+      {children}
+    </SettingRow>
   );
 }
 
-function Segmented<T extends string | number>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="segmented" role="radiogroup" aria-label={label}>
-      {options.map((option) => (
-        <button
-          key={String(option.value)}
-          type="button"
-          role="radio"
-          aria-checked={option.value === value}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
+/** An on/off setting: the package's Switch, named by its row. */
 function Toggle({
   label,
   checked,
@@ -109,18 +81,7 @@ function Toggle({
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      className="toggle"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="toggle-thumb" />
-    </button>
-  );
+  return <Switch label={label} checked={checked} onChange={onChange} />;
 }
 
 function Appearance() {
@@ -154,6 +115,36 @@ function Appearance() {
           ]}
         />
       </Row>
+      <Row
+        label={t('Kontrast')}
+        description={t('„System“ folgt der Einstellung von {system}.', { system: systemName() })}
+      >
+        <Segmented
+          label={t('Kontrast')}
+          value={settings.contrast}
+          onChange={(contrast) => updateSettings({ contrast })}
+          options={[
+            { value: 'system', label: t('System') },
+            { value: 'normal', label: t('Normal') },
+            { value: 'high', label: t('Hoch') },
+          ]}
+        />
+      </Row>
+      <div className="flex flex-col gap-3 border-b border-hairline py-3.5">
+        <div className="flex flex-col gap-0.5">
+          <p className="text-body font-semibold">{t('Schrift')}</p>
+          <p className="text-caption text-muted">
+            {t('Nur auf diesem Gerät. UwU Sans ist die Schrift aller UwU-Apps.')}
+          </p>
+        </div>
+        <FontPicker
+          label={t('Schrift')}
+          value={settings.font}
+          onChange={(font) => updateSettings({ font })}
+          systemName={t('System')}
+          sample={t('Remotedesktop 0123 Il1 O0')}
+        />
+      </div>
       <Row
         label={t('Animationen')}
         description={t('„System“ folgt der Einstellung von {system}.', { system: systemName() })}
@@ -226,7 +217,7 @@ function Sessions() {
           onChange={(autoReconnect) => updateSettings({ autoReconnect })}
         />
       </Row>
-      <H264Row />
+      {buildInfo().h264 && <H264Row />}
       <Row
         label={t('Vor dem Schließen nachfragen')}
         description={t('Wenn noch Sitzungen offen sind.')}
@@ -253,15 +244,15 @@ function Sessions() {
           <dd>{t('Tastatur zurück an UwURDP')}</dd>
           <dt>{t('Strg+Alt+Bild↑ · Bild↓')}</dt>
           <dd>{t('Vorheriger · nächster Tab')}</dd>
-          <dt>{t('Strg+Umschalt+O')}</dt>
+          <dt>{keys(SHORTCUTS.overview)}</dt>
           <dd>{t('Übersicht')}</dd>
-          <dt>{t('Strg+Umschalt+D')}</dt>
+          <dt>{keys(SHORTCUTS.duplicateTab)}</dt>
           <dd>{t('Tab duplizieren (neue Verbindung zum selben Host)')}</dd>
-          <dt>{t('Strg+Umschalt+W')}</dt>
+          <dt>{keys(SHORTCUTS.closeTab)}</dt>
           <dd>{t('Tab schließen')}</dd>
-          <dt>{t('Strg+Umschalt+1 … 9')}</dt>
+          <dt>{`${keys('CmdOrCtrl+Shift+1')} … 9`}</dt>
           <dd>{t('Zu Tab 1 … 9')}</dd>
-          <dt>{t('Strg+,')}</dt>
+          <dt>{keys(SHORTCUTS.settings)}</dt>
           <dd>{t('Einstellungen')}</dd>
         </dl>
       </div>
@@ -383,14 +374,20 @@ function Vault({ onChanged }: { onChanged: () => void }) {
           'Passwörter liegen verschlüsselt im Tresor, mit Argon2id und XChaCha20-Poly1305. Das Master-Passwort verlässt dieses Gerät nie.',
         )}
       >
-        <span className="vault-status" data-status={status ?? 'loading'}>
-          {status ? text[status] : error ? error : t('Wird geprüft …')}
-        </span>
-        {status !== 'unlocked' && (
-          <button className="primary" onClick={() => setDialog(true)}>
-            {status === 'absent' ? t('Anlegen') : t('Entsperren')}
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <span className="vault-status" data-status={status ?? 'loading'}>
+            {status ? text[status] : error ? error : t('Wird geprüft …')}
+          </span>
+          {status !== 'unlocked' && (
+            <Button
+              variant="primary"
+              icon={status === 'absent' ? undefined : ICONS.unlocked}
+              onClick={() => setDialog(true)}
+            >
+              {status === 'absent' ? t('Anlegen') : t('Entsperren')}
+            </Button>
+          )}
+        </div>
       </Row>
       {status !== 'absent' && (
         <Row
@@ -426,7 +423,7 @@ function Vault({ onChanged }: { onChanged: () => void }) {
                 )
           }
         >
-          <button onClick={() => void guard(lockVault)}>{t('Jetzt sperren')}</button>
+          <Button onClick={() => void guard(lockVault)}>{t('Jetzt sperren')}</Button>
         </Row>
       )}
       {error && (
@@ -458,10 +455,9 @@ function Data({ onImport }: { onImport: () => void }) {
           'Alle Hosts mit Bereichen, Gruppen, Anmeldungen und Zertifikaten in eine .uwurdp-Datei – auf Wunsch mit Passwörtern, dann mit eigenem Passwort verschlüsselt.',
         )}
       >
-        <button onClick={() => setExporting(true)}>
-          <Icon name="export" size={15} />
+        <Button onClick={() => setExporting(true)} icon={ICONS.export}>
           {t('Exportieren…')}
-        </button>
+        </Button>
       </Row>
       <Row
         label={t('Importieren')}
@@ -469,10 +465,9 @@ function Data({ onImport }: { onImport: () => void }) {
           'Aus RDCMan (.rdg), .rdp-Dateien oder einer .uwurdp-Datei. Schon vorhandene Hosts werden übersprungen.',
         )}
       >
-        <button onClick={onImport}>
-          <Icon name="import" size={15} />
+        <Button onClick={onImport} icon={ICONS.import}>
           {t('Importieren…')}
-        </button>
+        </Button>
       </Row>
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
     </>
@@ -518,12 +513,13 @@ function Updates({
         )}
       >
         {update ? (
-          <button className="primary" onClick={onInstallUpdate}>
+          <Button variant="primary" onClick={onInstallUpdate}>
             {t('{version} installieren', { version: update.version })}
-          </button>
+          </Button>
         ) : (
-          <button
-            disabled={checking}
+          <Button
+            busy={checking}
+            icon={ICONS.refresh}
             onClick={async () => {
               setChecking(true);
               setResult(null);
@@ -542,7 +538,7 @@ function Updates({
             }}
           >
             {checking ? t('Sucht …') : t('Nach Updates suchen')}
-          </button>
+          </Button>
         )}
       </Row>
       {result && (
@@ -644,24 +640,26 @@ function About() {
         )}
       </p>
       <p className="about-text">{t('Remotedesktop mit IronRDP von Devolutions, in Rust.')}</p>
-      <details className="about-notice">
-        <summary>{t('H.264 (OpenH264)')}</summary>
-        <p lang="en">
-          {CISCO} UwURDP does not include it: when you turn H.264 on, Cisco&apos;s binary is
-          downloaded from Cisco to this device, and turning H.264 off deletes it again. Cisco
-          licenses its binary under the AVC/H.264 patent portfolio only on these conditions: the
-          binary is downloaded to the user&apos;s device separately, not integrated into or combined
-          with third-party software before that; the user can enable, disable and re-enable its use;
-          the software shows the text &quot;{CISCO}&quot; where the user controls it; and any
-          software using the binary reproduces this text, including this last condition, where
-          licensing information is presented to the user. OpenH264 is BSD-2-Clause licensed,
-          Copyright (c) 2013, Cisco Systems.
-        </p>
-      </details>
+      {buildInfo().h264 && (
+        <details className="about-notice">
+          <summary>{t('H.264 (OpenH264)')}</summary>
+          <p lang="en">
+            {CISCO} UwURDP does not include it: when you turn H.264 on, Cisco&apos;s binary is
+            downloaded from Cisco to this device, and turning H.264 off deletes it again. Cisco
+            licenses its binary under the AVC/H.264 patent portfolio only on these conditions: the
+            binary is downloaded to the user&apos;s device separately, not integrated into or
+            combined with third-party software before that; the user can enable, disable and
+            re-enable its use; the software shows the text &quot;{CISCO}&quot; where the user
+            controls it; and any software using the binary reproduces this text, including this last
+            condition, where licensing information is presented to the user. OpenH264 is
+            BSD-2-Clause licensed, Copyright (c) 2013, Cisco Systems.
+          </p>
+        </details>
+      )}
       <div className="about-actions">
-        <button onClick={() => open('source')}>{t('Quellcode auf GitHub')}</button>
-        <button onClick={() => open('releases')}>{t('Versionen')}</button>
-        <button onClick={() => open('license')}>{t('Lizenz')}</button>
+        <Button onClick={() => open('source')}>{t('Quellcode auf GitHub')}</Button>
+        <Button onClick={() => open('releases')}>{t('Versionen')}</Button>
+        <Button onClick={() => open('license')}>{t('Lizenz')}</Button>
       </div>
     </div>
   );
@@ -682,16 +680,18 @@ export function SettingsDialog({
     <Modal title={t('Einstellungen')} size="wide" onCancel={onClose}>
       <div className="settings">
         <nav className="settings-nav" aria-label={t('Bereiche')}>
-          {SECTIONS.map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              aria-current={section === id ? 'page' : undefined}
-              onClick={() => setSection(id)}
-            >
-              {t(label)}
-            </button>
-          ))}
+          {SECTIONS.filter(({ id }) => id !== 'updates' || buildInfo().updates).map(
+            ({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                aria-current={section === id ? 'page' : undefined}
+                onClick={() => setSection(id)}
+              >
+                {t(label)}
+              </button>
+            ),
+          )}
         </nav>
         <div className="settings-content">
           {section === 'appearance' && <Appearance />}
@@ -709,9 +709,6 @@ export function SettingsDialog({
           {section === 'about' && <About />}
         </div>
       </div>
-      <button className="settings-close icon-button" onClick={onClose} aria-label={t('Schließen')}>
-        ×
-      </button>
     </Modal>
   );
 }

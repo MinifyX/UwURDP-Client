@@ -1,3 +1,4 @@
+import { Button, Icon, ICONS } from '@uwusuite/design';
 import { useState, type FormEvent } from 'react';
 import { t, useLanguage } from '../lib/i18n';
 import {
@@ -7,7 +8,6 @@ import {
   type SaveFailure,
 } from '../lib/session';
 import { splitLogin } from './ConnectDialogs';
-import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { VaultDialog } from './VaultDialog';
 
@@ -72,8 +72,8 @@ export function GroupLoginDialog({ group, onSaved, onCancel }: Props) {
         footer={
           <>
             {group.username && (
-              <button
-                className="danger"
+              <Button
+                variant="danger"
                 data-secondary
                 disabled={busy}
                 onClick={() => {
@@ -86,15 +86,15 @@ export function GroupLoginDialog({ group, onSaved, onCancel }: Props) {
                 }}
               >
                 {t('Entfernen')}
-              </button>
+              </Button>
             )}
             <span className="spacer" />
-            <button data-secondary onClick={onCancel} disabled={busy}>
+            <Button data-secondary onClick={onCancel} disabled={busy}>
               {t('Abbrechen')}
-            </button>
-            <button className="primary" onClick={() => void submit()} disabled={busy}>
+            </Button>
+            <Button variant="primary" onClick={() => void submit()} busy={busy}>
               {t('Speichern')}
-            </button>
+            </Button>
           </>
         }
       >
@@ -128,24 +128,24 @@ export function GroupLoginDialog({ group, onSaved, onCancel }: Props) {
           </div>
           {group.hasPassword && !forget && password === null ? (
             <div className="stored-secret">
-              <Icon name="lock" size={15} />
+              <Icon icon={ICONS.vault} />
               <span>{t('Das Passwort ist im Tresor gespeichert.')}</span>
               <span className="spacer" />
-              <button type="button" className="quiet" onClick={() => setPassword('')}>
+              <Button type="button" variant="ghost" onClick={() => setPassword('')}>
                 {t('Ändern')}
-              </button>
-              <button type="button" className="quiet" onClick={() => setForget(true)}>
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setForget(true)}>
                 {t('Entfernen')}
-              </button>
+              </Button>
             </div>
           ) : forget ? (
             <div className="stored-secret" data-forgotten>
-              <Icon name="unlock" size={15} />
+              <Icon icon={ICONS.unlocked} />
               <span>{t('Das gespeicherte Passwort wird beim Speichern entfernt.')}</span>
               <span className="spacer" />
-              <button type="button" className="quiet" onClick={() => setForget(false)}>
+              <Button type="button" variant="ghost" onClick={() => setForget(false)}>
                 {t('Rückgängig')}
-              </button>
+              </Button>
             </div>
           ) : (
             <label className="field">
@@ -161,7 +161,7 @@ export function GroupLoginDialog({ group, onSaved, onCancel }: Props) {
             </label>
           )}
           {error && <p className="form-error">{error}</p>}
-          <button type="submit" hidden />
+          <Button type="submit" hidden />
         </form>
       </Modal>
       {vault && (

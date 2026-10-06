@@ -1,3 +1,4 @@
+import { Button, Toggle } from '@uwusuite/design';
 import { useState } from 'react';
 import { asBackupFailure, exportHosts, type BackupSummary } from '../lib/backup';
 import { t, useLanguage } from '../lib/i18n';
@@ -74,9 +75,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         footer={
           <>
             <span className="spacer" />
-            <button className="primary" onClick={onClose}>
+            <Button variant="primary" onClick={onClose}>
               {t('Fertig')}
-            </button>
+            </Button>
           </>
         }
       >
@@ -110,12 +111,12 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={guard.request} disabled={busy}>
+          <Button data-secondary onClick={guard.request} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" onClick={() => void run()} disabled={!ready}>
+          </Button>
+          <Button variant="primary" onClick={() => void run()} disabled={!ready}>
             {busy ? t('Exportiere…') : t('Speichern unter…')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -131,17 +132,14 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             'Alle Hosts mit Bereichen, Gruppen, Anmeldungen und bekannten Zertifikaten in eine Datei – zum Sichern oder für einen anderen Rechner.',
           )}
         </p>
-        <label className="check">
-          <input type="checkbox" checked={secrets} onChange={(e) => setSecrets(e.target.checked)} />
-          <span>
-            <b>{t('Passwörter mitnehmen')}</b>
-            <small>
-              {t(
-                'Die ganze Datei wird dann mit einem eigenen Passwort verschlüsselt (Argon2id, XChaCha20-Poly1305).',
-              )}
-            </small>
-          </span>
-        </label>
+        <Toggle
+          label={t('Passwörter mitnehmen')}
+          description={t(
+            'Die ganze Datei wird dann mit einem eigenen Passwort verschlüsselt (Argon2id, XChaCha20-Poly1305).',
+          )}
+          checked={secrets}
+          onChange={setSecrets}
+        />
         {secrets && (
           <div className="export-password">
             <label className="field">
@@ -190,7 +188,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             {error}
           </p>
         )}
-        <button type="submit" hidden />
+        <Button type="submit" hidden />
       </form>
       {guard.dialog}
     </Modal>

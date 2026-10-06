@@ -1,3 +1,4 @@
+import { Button, Icon, ICONS, Segmented, Toggle } from '@uwusuite/design';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { t, useLanguage } from '../lib/i18n';
@@ -22,7 +23,6 @@ import {
   type Offer,
   type SyncStatus,
 } from '../lib/sync';
-import { Icon } from './Icon';
 import { LockOverview, LockSignInForm, MoveDone } from './LockSync';
 import { Modal } from './Modal';
 import { NyuScene } from './nyu/scenes';
@@ -142,24 +142,16 @@ export function SyncSettings() {
     return (
       <div className="sync-intro">
         <NyuScene name="welcome" className="sync-scene" />
-        <div className="segmented" role="radiogroup" aria-label={t('Synchronisieren über')}>
-          {(
-            [
-              ['uwulock', 'UwULock'],
-              ['uwusync', 'UwUSync'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={backend === value}
-              onClick={() => setBackend(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          className="justify-self-start"
+          label={t('Synchronisieren über')}
+          value={backend}
+          onChange={setBackend}
+          options={[
+            { value: 'uwulock', label: 'UwULock' },
+            { value: 'uwusync', label: 'UwUSync' },
+          ]}
+        />
         {backend === 'uwulock' ? (
           <>
             <p className="dialog-lead">
@@ -169,7 +161,7 @@ export function SyncSettings() {
             </p>
             <div className="sync-choices">
               <button className="sync-choice" onClick={() => setMode('lock')}>
-                <Icon name="lock" size={20} />
+                <Icon icon={ICONS.vault} size="lg" />
                 <span>
                   <b>{t('Mit UwULock anmelden')}</b>
                   <small>
@@ -195,7 +187,7 @@ export function SyncSettings() {
             </p>
             <div className="sync-choices">
               <button className="sync-choice" onClick={() => setMode('connect')}>
-                <Icon name="network" size={20} />
+                <Icon icon={ICONS.server} size="lg" />
                 <span>
                   <b>{t('Server verbinden')}</b>
                   <small>
@@ -206,7 +198,7 @@ export function SyncSettings() {
                 </span>
               </button>
               <button className="sync-choice" onClick={() => setMode('join')}>
-                <Icon name="plus" size={20} />
+                <Icon icon={ICONS.add} size="lg" />
                 <span>
                   <b>{t('Mit einem Gerät koppeln')}</b>
                   <small>
@@ -350,13 +342,13 @@ function ConnectForm({
         </p>
       )}
       <div className="sync-actions">
-        <button type="button" data-secondary onClick={onBack} disabled={busy}>
+        <Button type="button" data-secondary onClick={onBack} disabled={busy}>
           {t('Zurück')}
-        </button>
+        </Button>
         <span className="spacer" />
-        <button type="submit" className="primary" disabled={!ready}>
+        <Button type="submit" variant="primary" disabled={!ready}>
           {busy ? t('Verbinde…') : t('Verbinden')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -414,33 +406,30 @@ function RecoveryKit({
             </>
           )}
         </dl>
-        <button
+        <Button
           onClick={() => {
             void copy(text);
             setCopied(true);
           }}
+          icon={copied ? ICONS.done : ICONS.copy}
         >
-          <Icon name={copied ? 'check' : 'copy'} size={15} />
           {copied ? t('Kopiert') : t('Kopieren')}
-        </button>
+        </Button>
       </div>
       {/* Asked for again, the kit was saved once already: no gate. */}
       {!again && (
-        <label className="check">
-          <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
-          <span>
-            <b>{t('Ich habe den Code sicher aufgeschrieben')}</b>
-            <small>
-              {t('Auf Papier oder im Passwort-Manager – nicht nur auf diesem Rechner.')}
-            </small>
-          </span>
-        </label>
+        <Toggle
+          label={t('Ich habe den Code sicher aufgeschrieben')}
+          description={t('Auf Papier oder im Passwort-Manager – nicht nur auf diesem Rechner.')}
+          checked={saved}
+          onChange={setSaved}
+        />
       )}
       <div className="sync-actions">
         <span className="spacer" />
-        <button className="primary" disabled={!saved && !again} onClick={onDone}>
+        <Button variant="primary" disabled={!saved && !again} onClick={onDone}>
           {t('Fertig')}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -535,7 +524,7 @@ function JoinForm({
             <input
               value={server}
               spellCheck={false}
-              placeholder="https://nas.lan:8443"
+              placeholder="https://nas.example:8443"
               onChange={(e) => setServer(e.target.value)}
             />
           </label>
@@ -579,13 +568,13 @@ function JoinForm({
         </p>
       )}
       <div className="sync-actions">
-        <button type="button" data-secondary onClick={onBack} disabled={busy}>
+        <Button type="button" data-secondary onClick={onBack} disabled={busy}>
           {t('Zurück')}
-        </button>
+        </Button>
         <span className="spacer" />
-        <button type="submit" className="primary" disabled={!ready}>
+        <Button type="submit" variant="primary" disabled={!ready}>
           {busy ? t('Kopple…') : t('Koppeln')}
-        </button>
+        </Button>
       </div>
       {unlocking && (
         <VaultDialog
@@ -678,20 +667,19 @@ function Paired({
         </div>
         <div className="setting-control">
           {locked ? (
-            <button onClick={() => setUnlocking(true)}>
-              <Icon name="unlock" size={15} />
+            <Button onClick={() => setUnlocking(true)} icon={ICONS.unlocked}>
               {t('Entsperren')}
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
               onClick={() => {
                 void syncNow().then(() => window.setTimeout(onChanged, 400));
               }}
               disabled={status.running}
+              icon={ICONS.refresh}
             >
-              <Icon name="refresh" size={15} />
               {t('Jetzt synchronisieren')}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -711,16 +699,16 @@ function Paired({
           )}
         </div>
         <div className="setting-control">
-          <button
+          <Button
             onClick={() => {
               setJoined(null);
               setAdding(true);
             }}
             disabled={locked}
+            icon={ICONS.add}
           >
-            <Icon name="plus" size={15} />
             {t('Gerät hinzufügen…')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -734,7 +722,7 @@ function Paired({
           <ul className="sync-device-list">
             {devices.map((device) => (
               <li key={device.id} data-revoked={device.revokedMs ? true : undefined}>
-                <Icon name="network" size={16} />
+                <Icon icon={ICONS.computer} />
                 <span className="sync-device-text">
                   <b>
                     {device.name}
@@ -750,9 +738,9 @@ function Paired({
                 </span>
                 <span className="spacer" />
                 {!device.current && !device.revokedMs && (
-                  <button className="quiet" onClick={() => setRevoking(device)}>
+                  <Button variant="ghost" onClick={() => setRevoking(device)}>
                     {t('Widerrufen…')}
-                  </button>
+                  </Button>
                 )}
               </li>
             ))}
@@ -778,10 +766,9 @@ function Paired({
           </p>
         </div>
         <div className="setting-control">
-          <button onClick={() => setAskingKit(true)}>
-            <Icon name="key" size={15} />
+          <Button onClick={() => setAskingKit(true)} icon={ICONS.secret}>
             {t('Anzeigen…')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -803,8 +790,8 @@ function Paired({
         </div>
         <div className="setting-control">
           {status.lock.moveStartedMs && (
-            <button
-              className="quiet"
+            <Button
+              variant="ghost"
               disabled={forgettingMove}
               onClick={() => {
                 setForgettingMove(true);
@@ -815,16 +802,16 @@ function Paired({
               }}
             >
               {t('Verwerfen')}
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             onClick={() => setMoving(true)}
             disabled={locked || moveServerOff}
             title={moveServerOff ? APP_SYNC_OFF() : undefined}
+            icon={ICONS.export}
           >
-            <Icon name="export" size={15} />
             {status.lock.moveStartedMs ? t('Fortsetzen…') : t('Umziehen…')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -838,9 +825,9 @@ function Paired({
           </p>
         </div>
         <div className="setting-control">
-          <button className="danger" onClick={() => setLeaving(true)}>
+          <Button variant="danger" onClick={() => setLeaving(true)}>
             {t('Trennen…')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -982,9 +969,9 @@ function AddDevice({ offer, onClose }: { offer: Offer; onClose: (joined: string 
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={cancel}>
+          <Button data-secondary onClick={cancel}>
             {error ? t('Schließen') : t('Abbrechen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -1005,15 +992,15 @@ function AddDevice({ offer, onClose }: { offer: Offer; onClose: (joined: string 
           )}
         </span>
       </div>
-      <button
+      <Button
         onClick={() => {
           void copy(offer.pasteable);
           setCopied(true);
         }}
+        icon={copied ? ICONS.done : ICONS.copy}
       >
-        <Icon name={copied ? 'check' : 'copy'} size={15} />
         {copied ? t('Langen Code kopiert') : t('Langen Code zum Einfügen kopieren')}
-      </button>
+      </Button>
       {!error && (
         <p className="field-hint" role="status">
           {t('Warte auf das andere Gerät… noch {m}:{s}', { m: minutes, s: seconds })}

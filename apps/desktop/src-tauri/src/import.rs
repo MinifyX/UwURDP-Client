@@ -236,9 +236,14 @@ pub(crate) struct RdcManFile {
 }
 
 /// The files RDCMan itself lists as open (Windows only), so importing the
-/// usual setup is one click.
+/// usual setup is one click. Empty wherever `build_info().rdcmanScan` is off:
+/// the Mac App Store build reads only files picked in the open panel.
 #[tauri::command]
 pub(crate) async fn rdcman_files(state: State<'_, AppState>) -> CommandResult<Vec<RdcManFile>> {
+    if !crate::system::BUILD_INFO.rdcman_scan {
+        state.pending_import.rdcman.lock().clear();
+        return Ok(Vec::new());
+    }
     let files = tauri::async_runtime::spawn_blocking(|| uwurdp_import::rdcman_settings().files)
         .await
         .map_err(err)?;

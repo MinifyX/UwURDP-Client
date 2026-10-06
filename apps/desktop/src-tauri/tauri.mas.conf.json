@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["app"],
+    "createUpdaterArtifacts": false,
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": "macos/Entitlements.mas.plist",
+      "files": {
+        "Resources/PrivacyInfo.xcprivacy": "macos/PrivacyInfo.xcprivacy"
+      }
+    }
+  },
+  "plugins": {
+    "updater": null
+  }
+}

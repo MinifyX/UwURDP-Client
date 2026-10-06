@@ -7114,7 +7114,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -7784,8 +7784,8 @@ dependencies = [
 
 [[package]]
 name = "uwu-macos"
-version = "1.5.0"
-source = "git+https://github.com/MinifyX/UwUSuite-Design?tag=v1.5.0#596277aeb65f13dc3721b010aa7b9ad3cbb5503d"
+version = "1.6.1"
+source = "git+https://github.com/MinifyX/UwUSuite-Design?tag=v1.6.1#73e6c6b0db0e46d8489c8c002315bd437ff65442"
 dependencies = [
  "objc2",
 ]

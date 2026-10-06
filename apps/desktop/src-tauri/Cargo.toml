@@ -67,7 +67,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # macOS: ⌘Q, the Dock and logging out quit through the page (`lib.rs`), which
 # asks first while desktops are open. Nothing off macOS; the tag matches the
 # @uwusuite/design version in package.json.
-uwu-macos = { git = "https://github.com/MinifyX/UwUSuite-Design", tag = "v1.5.0" }
+uwu-macos = { git = "https://github.com/MinifyX/UwUSuite-Design", tag = "v1.6.1" }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
 

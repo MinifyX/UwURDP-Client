@@ -54,10 +54,6 @@ body {
   color: var(--uwu-on-pink);
 }
 
-.setup-titlebar .uwu-window-controls > :nth-child(2) {
-  display: none;
-}
-
 .setup-titlebar[data-busy] .uwu-window-control[data-kind='close'] {
   opacity: 0.4;
   pointer-events: none;
@@ -72,11 +68,6 @@ body {
   height: 44px;
   min-height: 0;
   white-space: nowrap;
-}
-
-.setup-button:focus-visible {
-  /* The primary pill's own shadow would hide the package's focus ring. */
-  box-shadow: var(--uwu-focus);
 }
 
 .setup-quiet {

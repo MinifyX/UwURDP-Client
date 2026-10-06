@@ -11,7 +11,7 @@ import {
 } from '@uwusuite/design';
 import { useTauriWindow } from '@uwusuite/design/tauri';
 import clsx from 'clsx';
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type Info, type Options } from './api';
 import {
   DoneScene,
@@ -82,17 +82,6 @@ function SetupToggle({
 
 const inTauri = '__TAURI_INTERNALS__' in window;
 
-/**
- * Tauri acts on a double-click of a drag region by itself (its drag script),
- * and the package's title bar does it again in React. The window can't be
- * maximized anyway; the capture phase keeps the second one away.
- */
-function leaveDoubleClickToTauri(event: MouseEvent) {
-  if ((event.target as HTMLElement).hasAttribute('data-tauri-drag-region')) {
-    event.stopPropagation();
-  }
-}
-
 /** Minimize and close go through the installer (api.ts): closing ends the setup properly. */
 function setupControls(busy: boolean, maximized = false): WindowControls {
   return {
@@ -119,15 +108,12 @@ type BarProps = { busy: boolean; muted: boolean; onToggleSound: () => void };
  */
 function Bar({ busy, muted, onToggleSound, controls }: BarProps & { controls: WindowControls }) {
   return (
-    <div
-      className="setup-titlebar shrink-0"
-      data-busy={busy || undefined}
-      onDoubleClickCapture={leaveDoubleClickToTauri}
-    >
+    <div className="setup-titlebar shrink-0" data-busy={busy || undefined}>
       <UwuLabels labels={{ minimize: t.minimize, close: t.close }}>
         <TitleBar
           platform="windows"
           controls={controls}
+          maximizable={false}
           brand={<Wordmark product="RDP" shell="monitor" className="text-body" />}
           actions={
             <TitleBarAction label={muted ? t.soundOn : t.soundOff} onClick={onToggleSound}>

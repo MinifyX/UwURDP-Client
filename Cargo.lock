@@ -7783,6 +7783,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "uwu-macos"
+version = "1.5.0"
+source = "git+https://github.com/MinifyX/UwUSuite-Design?tag=v1.5.0#596277aeb65f13dc3721b010aa7b9ad3cbb5503d"
+dependencies = [
+ "objc2",
+]
+
+[[package]]
 name = "uwulock-core"
 version = "0.2.0-beta.3"
 source = "git+https://github.com/MinifyX/UwULock-Client?rev=44078ce82916ae4d7baa84dc2a87deafa71dd38c#44078ce82916ae4d7baa84dc2a87deafa71dd38c"
@@ -7865,6 +7873,8 @@ dependencies = [
  "futures-util",
  "keyring",
  "minisign-verify",
+ "objc2",
+ "objc2-foundation",
  "parking_lot",
  "rand 0.8.8",
  "reqwest 0.13.5",
@@ -7885,6 +7895,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "uwu-macos",
  "uwurdp-core",
  "uwurdp-import",
  "uwurdp-proto",

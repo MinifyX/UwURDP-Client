@@ -1,14 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the main window is allowed to do. App commands are plain #[tauri::command]s and need no extra permission; plugins (opener, updater) are only used from Rust, so the page gets none of their permissions. Anything beyond core:default and the title bar's own window controls has to be added here deliberately.",
+  "description": "What the main window is allowed to do, on every platform. App commands are plain #[tauri::command]s and need no extra permission; plugins (opener, updater) are only used from Rust, so the page gets none of their permissions. Anything beyond core:default has to be added here deliberately. close and destroy: the close guard (onCloseRequested asks while desktops are open, then destroys). set-title: the window title. show, hide, set-focus: bringing the window forward, and on macOS ⌘W hiding it (hideWindowOnClose). The title bar's window controls are in desktop.json (Windows, Linux), the menu bar in macos.json.",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:window:allow-start-dragging",
-    "core:window:allow-minimize",
-    "core:window:allow-toggle-maximize",
     "core:window:allow-close",
-    "core:window:allow-destroy"
+    "core:window:allow-destroy",
+    "core:window:allow-set-title",
+    "core:window:allow-set-focus",
+    "core:window:allow-show",
+    "core:window:allow-hide"
   ]
 }

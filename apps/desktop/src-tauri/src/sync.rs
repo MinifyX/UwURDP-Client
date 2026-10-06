@@ -489,25 +489,9 @@ pub(crate) fn device_name() -> String {
             .map(|name| name.trim().to_string())
             .filter(|name| !name.is_empty())
     };
-    // Apps started from the Dock or a menu get no HOSTNAME. macOS keeps the
-    // name people gave their Mac apart from the network one.
-    let from_command = || {
-        let (program, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
-            ("/usr/sbin/scutil", &["--get", "ComputerName"])
-        } else {
-            ("hostname", &[])
-        };
-        std::process::Command::new(program)
-            .args(args)
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-            .filter(|name| !name.is_empty())
-    };
     from_env
         .or_else(from_file)
-        .or_else(from_command)
+        .or_else(system_device_name)
         .unwrap_or_else(|| {
             if cfg!(target_os = "macos") {
                 "Mac".into()
@@ -518,6 +502,38 @@ pub(crate) fn device_name() -> String {
         .chars()
         .take(64)
         .collect()
+}
+
+/// Apps started from the Dock or a menu get no HOSTNAME. macOS keeps the
+/// name people gave their Mac apart from the network one.
+#[cfg(not(all(target_os = "macos", feature = "mas")))]
+fn system_device_name() -> Option<String> {
+    let (program, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
+        ("/usr/sbin/scutil", &["--get", "ComputerName"])
+    } else {
+        ("hostname", &[])
+    };
+    std::process::Command::new(program)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|name| !name.is_empty())
+}
+
+/// The Mac App Store build runs no other program (App Review 2.4.5), so it
+/// asks Foundation for the same name `scutil --get ComputerName` gives.
+/// `NSHost` is deprecated as a way to resolve names on the network; asking it
+/// for this Mac's own name is what it still does, and needs no other crate.
+#[cfg(all(target_os = "macos", feature = "mas"))]
+#[allow(deprecated)]
+fn system_device_name() -> Option<String> {
+    let name = objc2_foundation::NSHost::currentHost()
+        .localizedName()?
+        .to_string();
+    let name = name.trim();
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 fn clean_name(name: &str) -> SyncResult<String> {

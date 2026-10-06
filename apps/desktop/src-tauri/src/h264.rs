@@ -12,22 +12,23 @@
 //! The engine loads it per session (and checks the hash again, see
 //! `uwurdp_core`'s gfx module); a file that is missing or wrong just means no
 //! H.264 — the graphics pipeline works without it.
+//!
+//! Builds without the `h264-download` feature (the Mac App Store's: App
+//! Review 2.5.2 forbids downloading executable code) have no download at all:
+//! H.264 reports [`Status::Unsupported`] and no session gets a library.
 
 use parking_lot::Mutex;
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 use tauri::{AppHandle, Manager as _};
 
 /// The OpenH264 release the `openh264` crate we build against knows.
 pub(crate) const VERSION: &str = "2.6.0";
-const BASE_URL: &str = "https://ciscobinary.openh264.org";
-/// The biggest compressed file Cisco publishes is well under a megabyte.
-const MAX_DOWNLOAD: u64 = 8 * 1024 * 1024;
-const MAX_UNPACKED: u64 = 32 * 1024 * 1024;
+
+/// Whether this build can fetch OpenH264 at all (see the module docs).
+pub(crate) const AVAILABLE: bool = cfg!(feature = "h264-download");
 
 /// Cisco's file for this platform and its SHA-256 (from Cisco's release,
 /// as the `openh264` crate lists them).
@@ -37,7 +38,9 @@ struct Binary {
 }
 
 fn binary() -> Option<Binary> {
-    let (file, sha256) = if cfg!(all(windows, target_arch = "x86_64")) {
+    let (file, sha256) = if !AVAILABLE {
+        return None;
+    } else if cfg!(all(windows, target_arch = "x86_64")) {
         (
             "openh264-2.6.0-win64.dll",
             "2076cb5675ec6c1a4c70e7a2a322552f547b6eeed649d6dfcd9e02a543b24691",
@@ -209,7 +212,14 @@ fn intact(path: &Path, sha256: &str) -> bool {
 
 /// Fetches `<file>.bz2` from Cisco, unpacks and checks it, and puts it in
 /// place in one rename.
+#[cfg(feature = "h264-download")]
 fn download(binary: &Binary, path: &Path) -> Result<(), String> {
+    use std::io::Read as _;
+    use std::time::Duration;
+    const BASE_URL: &str = "https://ciscobinary.openh264.org";
+    /// The biggest compressed file Cisco publishes is well under a megabyte.
+    const MAX_DOWNLOAD: u64 = 8 * 1024 * 1024;
+
     let client = reqwest::blocking::Client::builder()
         .use_preconfigured_tls(uwurdp_sync::pin::roots_config())
         .timeout(Duration::from_secs(120))
@@ -238,7 +248,16 @@ fn download(binary: &Binary, path: &Path) -> Result<(), String> {
     write_atomically(path, &bytes).map_err(|e| format!("OpenH264 could not be saved: {e}"))
 }
 
+/// Never called: [`binary`] knows no file in a build without the download.
+#[cfg(not(feature = "h264-download"))]
+fn download(_: &Binary, _: &Path) -> Result<(), String> {
+    Err("This build does not download OpenH264.".into())
+}
+
+#[cfg(feature = "h264-download")]
 fn unpack(packed: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+    const MAX_UNPACKED: u64 = 32 * 1024 * 1024;
     let mut bytes = Vec::new();
     bzip2::read::BzDecoder::new(packed)
         .take(MAX_UNPACKED + 1)
@@ -250,6 +269,7 @@ fn unpack(packed: &[u8]) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+#[cfg(any(test, feature = "h264-download"))]
 fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let folder = path
         .parent()
@@ -265,6 +285,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature = "h264-download")]
     fn this_platform_has_a_pinned_binary() {
         // Every platform UwURDP is built for has one.
         let binary = binary().expect("a binary for this platform");
@@ -286,6 +307,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "h264-download")]
     fn unpacking_checks_and_bounds() {
         use std::io::Write as _;
         let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::fast());
@@ -298,6 +320,7 @@ mod tests {
     /// The real download from Cisco; run by hand with `--ignored` after
     /// bumping `VERSION`, or when Cisco changes its server.
     #[test]
+    #[cfg(feature = "h264-download")]
     #[ignore = "downloads from Cisco"]
     fn ciscos_file_downloads_and_matches() {
         let dir = std::env::temp_dir().join(format!("uwurdp-h264-{}", uuid::Uuid::new_v4()));
@@ -306,6 +329,11 @@ mod tests {
         download(&binary, &path).expect("download");
         assert!(intact(&path, binary.sha256));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn without_the_download_h264_is_unsupported() {
+        assert_eq!(binary().is_some(), AVAILABLE);
     }
 
     #[test]

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  UwURDP's privacy manifest, copied to Contents/Resources by the Mac App Store
+  build.
+
+  No tracking, no tracking domains, no data collected. UwURDP talks to the
+  remote desktops, gateways and the sync server the user set up; none of them
+  is run by us, and what goes to a sync server is end-to-end encrypted with a
+  key only the user's devices have. Nothing reaches the developer.
+
+  The required-reason APIs it does use, and why:
+  - File timestamps: drive redirection shows the remote desktop the files of
+    a folder the user picked to share, with their times (3B52.1); the app
+    clears its own stale temporary folders by age (C617.1).
+  - Disk space: the same shared folder reports its free space to the remote
+    desktop the user is working in, for Explorer to display (85F4.1).
+  - System boot time: Rust's `Instant` is mach_absolute_time, used for
+    timeouts and to measure how long things took (35F9.1).
+  - User defaults: AppKit and WebKit read and write the app's own defaults
+    (window and web view state) (CA92.1).
+  Nothing asks for active keyboards.
+-->
+<plist version="1.0">
+<dict>
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>3B52.1</string>
+        <string>C617.1</string>
+      </array>
+    </dict>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>85F4.1</string>
+      </array>
+    </dict>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>35F9.1</string>
+      </array>
+    </dict>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>CA92.1</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

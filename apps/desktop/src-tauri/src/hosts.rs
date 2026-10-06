@@ -150,9 +150,12 @@ pub(crate) fn set_group_drives(
 
 /// A folder to share, picked in the system's dialog. Only its path and the
 /// share name it would get come back; `None` when the dialog was closed.
+/// In the Mac App Store build the folder also gets a security-scoped
+/// bookmark, the only way the sandbox lets a later run reach it.
 #[tauri::command]
 pub(crate) async fn pick_shared_folder(app: tauri::AppHandle) -> Option<PickedFolder> {
     let path = crate::dialogs::pick_folder(&app, "Ordner freigeben").await?;
+    crate::sandbox_access::remember(&path);
     let path = path.to_string_lossy().into_owned();
     Some(PickedFolder {
         name: uwurdp_store::default_share_name(&path),
@@ -168,6 +171,9 @@ pub(crate) struct PickedFolder {
 
 /// What a host shares when it connects: its own setting or its group's, and
 /// only when switched on.
+///
+/// The Mac App Store build leaves "all drives" out: the sandbox has no drive
+/// to give, only folders the user picked (`build_info().allDrives`).
 fn shared_drives(drives: DriveRedirection) -> Vec<DriveShare> {
     if !drives.enabled {
         return Vec::new();
@@ -175,11 +181,34 @@ fn shared_drives(drives: DriveRedirection) -> Vec<DriveShare> {
     drives
         .drives
         .into_iter()
+        .filter(|drive| {
+            let all = drive.path == DriveShare::ALL;
+            if all && cfg!(feature = "mas") {
+                tracing::info!("\"all drives\" is not available in the sandbox; left out");
+            }
+            !(all && cfg!(feature = "mas"))
+        })
         .map(|drive| DriveShare {
             name: drive.name,
             path: drive.path.into(),
         })
         .collect()
+}
+
+/// Switches on the sandbox's access to every shared folder for the session
+/// (Mac App Store build; elsewhere nothing to do). A folder whose bookmark
+/// says it moved is shared from where it is now. A folder with no bookmark is
+/// left as it is: the engine finds it unreadable and skips it, like a folder
+/// that is not on this computer.
+fn open_drives(drives: &mut [DriveShare]) -> Vec<crate::sandbox_access::Access> {
+    let mut access = Vec::new();
+    for drive in drives {
+        if let Some(granted) = crate::sandbox_access::open(&drive.path) {
+            drive.path = granted.path().to_path_buf();
+            access.push(granted);
+        }
+    }
+    access
 }
 
 #[tauri::command]
@@ -479,7 +508,10 @@ pub(crate) async fn connect_host(
         .known_host(&host.address, host.port)
         .map_err(internal)?
         .map(|known| known.fingerprint);
-    let drives = shared_drives(state.store.host_drives(id).map_err(internal)?);
+    let mut drives = shared_drives(state.store.host_drives(id).map_err(internal)?);
+    // Kept with the session, and switched off when it closes; dropped right
+    // here when connecting fails.
+    let drive_access = open_drives(&mut drives);
 
     let target = RdpTarget {
         address: host.address.clone(),
@@ -520,6 +552,9 @@ pub(crate) async fn connect_host(
                 tracing::warn!(%error, "could not record the connection time");
             }
             state.session_hosts.lock().insert(session, host.id);
+            if !drive_access.is_empty() {
+                state.drive_access.lock().insert(session, drive_access);
+            }
             Ok(session)
         }
         Err(error) => {
@@ -595,6 +630,7 @@ pub(crate) async fn cancel_connect(state: State<'_, AppState>, attempt: String) 
 /// Forget what belonged to a session that closed.
 pub(crate) fn forget_session(state: &AppState, id: SessionId) {
     state.session_hosts.lock().remove(&id);
+    state.drive_access.lock().remove(&id);
 }
 
 #[cfg(test)]
@@ -628,6 +664,30 @@ mod tests {
             ..drives
         });
         assert_eq!(on[0].path, std::path::PathBuf::from("C:\\"));
+    }
+
+    #[test]
+    fn all_drives_stay_out_of_the_store_build() {
+        let drives = DriveRedirection {
+            enabled: true,
+            drives: vec![
+                uwurdp_store::SharedDrive {
+                    name: "Alle".into(),
+                    path: DriveShare::ALL.into(),
+                    ..Default::default()
+                },
+                uwurdp_store::SharedDrive {
+                    name: "Share".into(),
+                    path: "/Users/nyu/share".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let shared = shared_drives(drives);
+        let all = shared.iter().any(|d| d.path.as_os_str() == DriveShare::ALL);
+        assert_eq!(all, !cfg!(feature = "mas"));
+        assert!(shared.iter().any(|d| d.name == "Share"));
     }
 
     #[test]

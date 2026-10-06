@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "macos",
+  "description": "macOS only: the menu bar (setMacMenu). ⌘W hides the window (show/hide are in default.json; a click on the Dock icon shows it again from Rust). The quit guard needs no permission: onMacQuit listens to an event (core:default) and answers through the app's finish_quit command. The page draws no title bar there, so it doesn't get the title bar's window controls (desktop.json).",
+  "platforms": ["macOS"],
+  "windows": ["main"],
+  "permissions": ["core:menu:default"]
+}

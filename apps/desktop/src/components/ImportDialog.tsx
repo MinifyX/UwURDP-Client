@@ -462,7 +462,7 @@ function OwnPasswords({
       <Toggle
         label={t('Diese Passwörter übernehmen')}
         description={t(
-          'Ohne Haken kommen nur die Benutzernamen mit, und UwURDP fragt beim Verbinden nach dem Passwort.',
+          'Ausgeschaltet kommen nur die Benutzernamen mit, und UwURDP fragt beim Verbinden nach dem Passwort.',
         )}
         checked={checked}
         disabled={disabled}

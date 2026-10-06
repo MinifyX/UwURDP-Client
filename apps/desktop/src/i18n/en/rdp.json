@@ -145,7 +145,7 @@
   "Die Passwörter landen verschlüsselt im Tresor.": "The passwords end up encrypted in the vault.",
   "Diese Datei gibt Passwörter, die dein Windows-Konto entschlüsselt hat, an die folgenden Adressen. Übernimm sie nur, wenn du jeder davon vertraust.": "This file hands passwords your Windows account decrypted to the addresses below. Only take them if you trust every one of them.",
   "Diese Passwörter übernehmen": "Take these passwords",
-  "Ohne Haken kommen nur die Benutzernamen mit, und UwURDP fragt beim Verbinden nach dem Passwort.": "Without the tick only the usernames come along, and UwURDP asks for the password when connecting.",
+  "Ausgeschaltet kommen nur die Benutzernamen mit, und UwURDP fragt beim Verbinden nach dem Passwort.": "Switched off, only the usernames come along, and UwURDP asks for the password when connecting.",
   "Alle Hosts in „{name}“": "All hosts in “{name}”",
   "Gateway von {name}": "Gateway of {name}",
   "Gruppe {name}": "Group {name}",

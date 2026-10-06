@@ -56,17 +56,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-      - run: corepack enable
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # tauri-build wants every app's frontendDist to exist.
-      - run: pnpm -r build
+      # tauri-build wants every app's frontendDist to exist, and a debug build
+      # embeds nothing from it: an empty page each instead of Node and pnpm.
+      - name: Front-end placeholders
+        run: |
+          for app in desktop setup; do
+            mkdir -p "apps/$app/dist"
+            echo '<!doctype html>' > "apps/$app/dist/index.html"
+          done
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
@@ -74,6 +71,9 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          # Also what mas.yml's pull-request check starts from: same key, same
+          # profile, same folder.
+          shared-key: macos-dev
           # Only main saves: the 10 GB the repository gets would otherwise
           # fill with branch caches nobody reads again.
           save-if: ${{ github.ref == 'refs/heads/main' }}

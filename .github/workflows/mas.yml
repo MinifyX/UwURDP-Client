@@ -2,9 +2,7 @@ name: Mac App Store
 
 # The Mac App Store build, beside the release rather than inside it: a tag
 # starts this, installers.yml builds the GitHub downloads, and neither waits
-# for the other. Also from Actions → Mac App Store → Run workflow, and on pull requests
-# that touch what only this build uses, so a change that breaks it is noticed
-# before a tag is.
+# for the other. Also from Actions → Mac App Store → Run workflow.
 #
 #   build (no secrets) ── sign (only when the signing secrets exist)
 #
@@ -14,31 +12,18 @@ name: Mac App Store
 # installed nothing, for a simple reason: the
 # certificates never share a machine with a few hundred build scripts.
 #
+# Pull requests that touch what only this build uses get `check` instead:
+# `pnpm build:mas --check`, a debug build for Apple silicon alone with the
+# same checks, started from the dependencies installers.yml's macOS check
+# compiled on main (shared cache key `macos-dev`). Some 5 minutes instead of
+# the 20 a universal release build from scratch took, and no cache of its own:
+# main doesn't run this workflow, the Intel half and the release profile are
+# compiled on main by installers.yml anyway.
+#
 # Only the desktop app: the store installs it, so there is no setup app.
 on:
   push:
     tags: ['v*']
-    # Also main, for the same paths: the one place a cache is saved, so pull
-    # requests start warm.
-    branches: [main]
-    paths:
-      - '.github/workflows/mas.yml'
-      - 'scripts/build-mas.mjs'
-      - 'Cargo.lock'
-      - 'apps/desktop/src-tauri/Cargo.toml'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/src-tauri/capabilities/**'
-      - 'apps/desktop/src-tauri/Info.plist'
-      - 'apps/desktop/src-tauri/macos/**'
-      - 'apps/desktop/src-tauri/tauri.mas.conf.json'
-      - 'apps/desktop/src-tauri/tauri.macos.conf.json'
-      - 'apps/desktop/src-tauri/src/lib.rs'
-      - 'apps/desktop/src-tauri/src/h264.rs'
-      - 'apps/desktop/src-tauri/src/hosts.rs'
-      - 'apps/desktop/src-tauri/src/import.rs'
-      - 'apps/desktop/src-tauri/src/sync.rs'
-      - 'apps/desktop/src-tauri/src/system.rs'
-      - 'apps/desktop/src-tauri/src/sandbox_access.rs'
   workflow_dispatch:
   pull_request:
     paths:
@@ -69,19 +54,20 @@ concurrency:
 
 env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+  # As in installers.yml: the variables rust-cache hashes into its key have to
+  # match for `check` to find the cache the macOS check saved there.
+  CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  check:
+    name: Check (debug, Apple silicon)
+    if: github.event_name == 'pull_request'
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-
-      # Caches for branches and pull requests, where this job only proves that
-      # the build works. Not for a tag: what goes to the store is built from the
-      # lockfiles alone.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -89,19 +75,40 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: ${{ startsWith(github.ref, 'refs/tags/') && '' || 'pnpm' }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Saved by installers.yml's macOS check on main; only read here.
+          shared-key: macos-dev
+          save-if: false
+      - name: Build the store app (debug, unsigned) and check it
+        run: node scripts/build-mas.mjs --check
+
+  build:
+    # Tags and Run workflow: what goes to the store, built from the lockfiles
+    # alone, without any cache.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: corepack enable
       - run: pnpm install --frozen-lockfile
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        with:
-          key: mas
-          # Pull requests read main's cache; only main saves (10 GB per repo).
-          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build the store app, unsigned
         env:
@@ -126,7 +133,9 @@ jobs:
   # Whether there is anything to sign with. A job of its own, because a job's
   # `if` cannot read secrets; this one hands on a yes or a no and nothing else.
   secrets:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       present: ${{ steps.check.outputs.present }}
     steps:
@@ -139,6 +148,7 @@ jobs:
     needs: [build, secrets]
     if: needs.secrets.outputs.present == 'true'
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       # Only the script, not the workspace: nothing here installs or builds.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

@@ -56,8 +56,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       # tauri-build wants every app's frontendDist to exist, and a debug build
-      # embeds nothing from it: an empty page each instead of Node and pnpm.
+      # embeds nothing from it: an empty page each instead of both front ends.
+      # The store build below builds the app's own.
       - name: Front-end placeholders
         run: |
           for app in desktop setup; do
@@ -72,7 +82,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Also what mas.yml's pull-request check starts from: same key, same
-          # profile, same folder.
+          # profile, same folder, and the store build's dependencies below.
           shared-key: macos-dev
           # Only main saves: the 10 GB the repository gets would otherwise
           # fill with branch caches nobody reads again.
@@ -81,6 +91,12 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --no-fail-fast
+      # The Mac App Store app as mas.yml checks it on pull requests: the desktop
+      # crate alone with other features, so its dependencies resolve
+      # differently from the workspace's and would otherwise be compiled
+      # from scratch there (8 of its 10 minutes). Here they land in the cache.
+      - name: Mac App Store build (debug, unsigned)
+        run: node scripts/build-mas.mjs --check
 
   installers:
     name: Setup (${{ matrix.name }})

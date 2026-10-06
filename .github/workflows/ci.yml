@@ -92,40 +92,22 @@ jobs:
             echo '<!doctype html>' > "apps/$app/dist/index.html"
           done
 
-      # Windows builds a good deal faster on a Dev Drive (ReFS, no Defender
-      # scans of every object file): the workspace, Cargo and rustup move there.
-      - uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
-        if: runner.os == 'Windows'
-        with:
-          drive-size: 16GB
-          drive-format: ReFS
-          drive-type: Dynamic
-          workspace-copy: true
-          env-mapping: |
-            CARGO_HOME,{{ DEV_DRIVE }}/.cargo
-            RUSTUP_HOME,{{ DEV_DRIVE }}/.rustup
-
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: stable
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: ${{ env.DEV_DRIVE_WORKSPACE || '.' }}
           # Pull requests read main's cache; only main saves (10 GB per repo).
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: cargo fmt --all --check
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || '.' }}
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || '.' }}
       # The Mac App Store build's feature set (no updater, no OpenH264
       # download), as far as it compiles off a Mac: only the desktop crate
       # changes, every dependency is already checked above. The macOS-only
       # parts build in mas.yml.
       - name: clippy (Mac App Store features)
         if: runner.os == 'Linux'
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || '.' }}
         run: cargo clippy -p uwurdp-desktop --all-targets --locked --no-default-features --features mas -- -D warnings
       - run: cargo test --workspace --locked --no-fail-fast
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || '.' }}

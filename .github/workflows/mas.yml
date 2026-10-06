@@ -13,12 +13,12 @@ name: Mac App Store
 # certificates never share a machine with a few hundred build scripts.
 #
 # Pull requests that touch what only this build uses get `check` instead:
-# `pnpm build:mas --check`, a debug build for Apple silicon alone with the
-# same checks, started from the dependencies installers.yml's macOS check
-# compiled on main (shared cache key `macos-dev`). Some 5 minutes instead of
-# the 20 a universal release build from scratch took, and no cache of its own:
-# main doesn't run this workflow, the Intel half and the release profile are
-# compiled on main by installers.yml anyway.
+# `build-mas.mjs --check`, a debug build for Apple silicon alone with the same
+# checks. installers.yml's macOS check runs the same on every push to main and
+# saves what it compiled (shared cache key `macos-dev`), so here only the
+# workspace crates compile: minutes instead of the 20 a universal release build
+# from scratch took, and no cache of its own. The Intel half and the release
+# profile are compiled on main by installers.yml anyway.
 #
 # Only the desktop app: the store installs it, so there is no setup app.
 on:

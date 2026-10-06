@@ -61,6 +61,9 @@
   flex-direction: column;
   gap: 4px;
   min-height: 0;
+  /* Never sideways: a long word or label wraps or is cut, the sidebar
+     doesn't scroll horizontally. */
+  overflow-x: hidden;
   overflow-y: auto;
   margin: 0 -4px;
   padding: 0 4px 12px;
@@ -204,8 +207,10 @@
   justify-items: center;
   gap: 10px;
   margin-top: 24px;
+  padding: 0 6px;
   color: var(--uwu-muted);
   text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .sidebar-empty p,

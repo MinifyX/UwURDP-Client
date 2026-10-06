@@ -646,7 +646,12 @@ export function HostList(props: Props) {
             <Button variant="primary" icon={ICONS.add} onClick={() => props.onAdd(workspace, null)}>
               {t('Host hinzufügen')}
             </Button>
-            <Button variant="ghost" size="sm" className="h-auto py-1.5" onClick={props.onImport}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-auto max-w-full py-1.5 text-balance whitespace-normal! text-(length:--uwu-text-caption)! font-medium! text-(--uwu-muted)!"
+              onClick={props.onImport}
+            >
               {hosts.length === 0
                 ? t('Aus RDCMan (.rdg), .rdp-Dateien oder einer UwURDP-Datei importieren')
                 : t('Hosts aus dem anderen Bereich hierher ziehen')}

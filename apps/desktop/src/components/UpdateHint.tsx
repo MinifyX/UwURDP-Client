@@ -1,3 +1,4 @@
+import { Button } from '@uwusuite/design';
 import { useState } from 'react';
 import { language, t, useLanguage } from '../lib/i18n';
 import type { UpdateInfo } from '../lib/session';
@@ -71,12 +72,13 @@ export function UpdateHint({ update, openConnections, onLater, onRestart }: Prop
         </p>
       )}
       <div className="update-hint-actions">
-        <button className="quiet" onClick={onLater}>
+        <Button variant="ghost" size="sm" onClick={onLater}>
           {t('Später')}
-        </button>
-        <button
-          className="primary"
-          disabled={restarting}
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          busy={restarting}
           onClick={async () => {
             setRestarting(true);
             setError(null);
@@ -89,7 +91,7 @@ export function UpdateHint({ update, openConnections, onLater, onRestart }: Prop
           }}
         >
           {restarting ? t('Startet neu …') : t('Jetzt neu starten')}
-        </button>
+        </Button>
       </div>
     </aside>
   );

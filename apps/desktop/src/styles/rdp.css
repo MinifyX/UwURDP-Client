@@ -22,8 +22,9 @@
   place-items: center;
   overflow: hidden;
   border-radius: var(--uwu-radius-card);
-  /* The desktop is dark whatever the app theme, like a monitor that's off. */
-  background: #0c1030;
+  /* The desktop is dark whatever the app theme, like a monitor that's off:
+     the suite's stage (package docs/color.md). */
+  background: var(--uwu-stage);
 }
 
 /* A desktop larger than its tab, without smart sizing: scroll it. */
@@ -70,13 +71,13 @@
   align-items: center;
   gap: 10px;
   max-width: calc(100% - 32px);
-  padding: 8px 14px;
+  padding: 6px 6px 6px 14px;
   border-radius: var(--uwu-radius-pill);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-surface);
-  color: var(--uwu-ink);
-  font-size: 13px;
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+  border: 1px solid var(--uwu-stage-border);
+  background: var(--uwu-stage-overlay);
+  color: var(--uwu-stage-ink);
+  font-size: var(--uwu-text-meta);
+  box-shadow: var(--uwu-shadow-float);
   z-index: 1;
 }
 
@@ -85,11 +86,23 @@
 }
 
 .rdp-note[data-tone='error'] {
-  color: var(--uwu-alarm);
+  border-color: var(--uwu-warning);
 }
 
 .rdp-note button {
-  padding: 3px 12px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--uwu-stage-border);
+  border-radius: var(--uwu-radius-pill);
+  background: transparent;
+  color: var(--uwu-stage-ink);
+  font-size: var(--uwu-text-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rdp-note button:hover {
+  background: rgb(255 255 255 / 0.1);
 }
 
 /* A session that ended keeps its last picture, dimmed under the overlay. */
@@ -99,7 +112,7 @@
 }
 
 .pane-overlay[data-tone='ended'] {
-  background: color-mix(in srgb, #141016 55%, transparent);
+  background: color-mix(in srgb, var(--uwu-stage) 55%, transparent);
 }
 
 /* ── Full screen ───────────────────────────────────────── */
@@ -114,20 +127,26 @@
 
 /*
  * The connection bar, like mstsc's: a slim strip at the top edge that slides
- * in when the pointer comes near and gets out of the way otherwise.
+ * in when the pointer comes near and gets out of the way otherwise. The
+ * suite's full-screen bar (package docs/window.md): at most 640 px wide,
+ * rounded below, on the stage overlay.
  */
 .fullscreen-bar {
   position: fixed;
   top: 0;
   left: 50%;
-  z-index: 20;
+  z-index: var(--uwu-z-sticky);
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 0 0 var(--uwu-radius-control) var(--uwu-radius-control);
-  background: var(--uwu-surface);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 35%);
+  gap: 4px;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 4px 8px 4px 16px;
+  border: 1px solid var(--uwu-stage-border);
+  border-top: 0;
+  border-radius: 0 0 16px 16px;
+  background: var(--uwu-stage-overlay);
+  color: var(--uwu-stage-ink);
+  box-shadow: var(--uwu-shadow-float);
   transform: translate(-50%, calc(-100% + 6px));
   transition: transform 160ms ease;
 }
@@ -139,7 +158,10 @@
 
 .fullscreen-bar b {
   margin-right: 6px;
-  font-size: 13px;
+  overflow: hidden;
+  font-size: var(--uwu-text-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── The overview ──────────────────────────────────────── */
@@ -158,7 +180,7 @@
   gap: 8px;
   margin-bottom: 12px;
   color: var(--uwu-muted);
-  font-size: 13px;
+  font-size: var(--uwu-text-meta);
 }
 
 .thumbs {
@@ -184,9 +206,9 @@
   min-height: 96px;
   padding: 0;
   overflow: hidden;
-  border: 2px solid var(--uwu-border);
-  border-radius: var(--uwu-radius-control);
-  background: #0c1030;
+  border: 2px solid var(--uwu-stage-border);
+  border-radius: var(--uwu-radius-card);
+  background: var(--uwu-stage);
   cursor: pointer;
   transition:
     border-color 120ms ease,
@@ -200,7 +222,7 @@
 }
 
 .thumb[data-status='live'] .thumb-screen {
-  border-color: color-mix(in srgb, var(--uwu-online) 60%, var(--uwu-border));
+  border-color: color-mix(in srgb, var(--uwu-success) 70%, var(--uwu-stage-border));
 }
 
 .thumb-idle {
@@ -208,23 +230,12 @@
   justify-items: center;
   gap: 6px;
   padding: 24px;
-  color: #cfc4dc;
-  font-size: 13px;
+  color: var(--uwu-stage-muted);
+  font-size: var(--uwu-text-meta);
 }
 
 .thumb[data-status='live'] .thumb-idle {
-  color: var(--uwu-online);
-}
-
-.thumb-badge {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 2px 8px;
-  border-radius: var(--uwu-radius-pill);
-  background: rgb(0 0 0 / 60%);
-  color: #fff;
-  font-size: 12px;
+  color: var(--uwu-stage-ink);
 }
 
 .thumb-caption {
@@ -232,22 +243,6 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.thumb-caption .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--uwu-offline);
-  flex: none;
-}
-
-.thumb-caption .dot[data-state='online'] {
-  background: var(--uwu-online);
-}
-
-.thumb-caption .dot[data-state='connecting'] {
-  background: var(--uwu-pink);
 }
 
 .thumb-text {
@@ -264,68 +259,15 @@
 
 .thumb-text small {
   color: var(--uwu-muted);
+  font-family: var(--uwu-mono);
+  font-size: 11px;
 }
 
-/* ── Host list ─────────────────────────────────────────── */
-
-.group-login {
-  display: inline-grid;
-  place-items: center;
-  color: var(--uwu-muted);
+/* A desktop larger than its tab scrolls: stage-coloured scrollbars on the dark desktop. */
+.rdp-view::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--uwu-stage-muted) 35%, transparent) padding-box;
 }
 
-/* ── Host form ─────────────────────────────────────────── */
-
-.form-section {
-  border: 1px solid var(--uwu-hairline);
-  border-radius: var(--uwu-radius-control);
-}
-
-.form-section summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  font-weight: 700;
-  cursor: pointer;
-  list-style: none;
-}
-
-.form-section summary::-webkit-details-marker {
-  display: none;
-}
-
-.form-section[open] summary .group-chevron {
-  transform: rotate(90deg);
-}
-
-.form-section-body {
-  display: grid;
-  gap: 12px;
-  padding: 4px 12px 12px;
-}
-
-.gateway-block {
-  display: grid;
-  gap: 10px;
-  padding-left: 12px;
-  border-left: 2px solid var(--uwu-pink-tint-strong);
-}
-
-.login-inherit {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin: 0;
-}
-
-.field textarea {
-  font: inherit;
-  width: 100%;
-  padding: 8px 10px;
-  resize: vertical;
-  border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-canvas);
-  color: var(--uwu-ink);
+.rdp-view::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--uwu-pink) 70%, transparent) padding-box;
 }

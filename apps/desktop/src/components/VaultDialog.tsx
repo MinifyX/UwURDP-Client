@@ -1,3 +1,4 @@
+import { Button, Toggle } from '@uwusuite/design';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { t, useLanguage } from '../lib/i18n';
 import { systemName } from '../lib/platform';
@@ -116,10 +117,10 @@ export function VaultDialog({ reason, cancelLabel = t('Abbrechen'), onDone, onCa
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onCancel} disabled={busy}>
+          <Button data-secondary onClick={onCancel} disabled={busy}>
             {cancelLabel}
-          </button>
-          <button className="primary" onClick={() => void submit()} disabled={!ready}>
+          </Button>
+          <Button variant="primary" onClick={() => void submit()} disabled={!ready}>
             {busy
               ? mode === 'create'
                 ? t('Lege an…')
@@ -131,7 +132,7 @@ export function VaultDialog({ reason, cancelLabel = t('Abbrechen'), onDone, onCa
                 : mode === 'repair'
                   ? t('Speichern')
                   : t('Entsperren')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -198,22 +199,15 @@ export function VaultDialog({ reason, cancelLabel = t('Abbrechen'), onDone, onCa
               )}
             </label>
           )}
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-            />
-            <span>
-              <b>{t('Auf diesem Gerät merken')}</b>
-              <small>
-                {t(
-                  '{system} öffnet den Tresor für dein Benutzerkonto automatisch – du gibst das Master-Passwort hier nicht noch einmal ein.',
-                  { system: systemName() },
-                )}
-              </small>
-            </span>
-          </label>
+          <Toggle
+            label={t('Auf diesem Gerät merken')}
+            description={t(
+              '{system} öffnet den Tresor für dein Benutzerkonto automatisch – du gibst das Master-Passwort hier nicht noch einmal ein.',
+              { system: systemName() },
+            )}
+            checked={remember}
+            onChange={setRemember}
+          />
           {error && (
             <p className="field-error" role="alert">
               {error}
@@ -226,7 +220,7 @@ export function VaultDialog({ reason, cancelLabel = t('Abbrechen'), onDone, onCa
               )}
             </p>
           )}
-          <button type="submit" hidden disabled={!ready} />
+          <Button type="submit" hidden disabled={!ready} />
         </form>
       )}
     </Modal>

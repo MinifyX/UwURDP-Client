@@ -1,3 +1,4 @@
+import { Button } from '@uwusuite/design';
 import { useState, type ReactNode } from 'react';
 import { t, useLanguage } from '../lib/i18n';
 import { Modal } from './Modal';
@@ -19,12 +20,12 @@ export function useCloseGuard(
   const dialog = asking ? (
     <Modal
       title={t('Wirklich schließen?')}
+      size="small"
       onCancel={() => setAsking(false)}
       footer={
         <>
-          <span className="spacer" />
-          <button
-            className="danger"
+          <Button
+            variant="danger"
             data-secondary
             onClick={() => {
               setAsking(false);
@@ -32,10 +33,10 @@ export function useCloseGuard(
             }}
           >
             {t('Schließen')}
-          </button>
-          <button className="primary" data-autofocus onClick={() => setAsking(false)}>
+          </Button>
+          <Button variant="primary" data-autofocus onClick={() => setAsking(false)}>
             {t('Weiter bearbeiten')}
-          </button>
+          </Button>
         </>
       }
     >

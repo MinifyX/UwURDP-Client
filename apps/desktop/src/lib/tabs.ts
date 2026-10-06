@@ -122,7 +122,17 @@ type KeyLike = Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'shiftKey' | 'al
  * full screen, Ctrl+Alt+Home to take the keyboard back, and Ctrl+Alt+PageUp/
  * PageDown between tabs. Outside a desktop the usual Ctrl+Shift ones work too.
  */
-export function shortcutFor(event: KeyLike, inDesktop: boolean): ShortcutAction | null {
+export function shortcutFor(
+  event: KeyLike,
+  inDesktop: boolean,
+  mac = false,
+): ShortcutAction | null {
+  // On a Mac the menu bar owns ⌘, ⌘⇧O, ⌘W and ⌘⇧D (App.tsx); ⌘⇧1 … 9 has no
+  // menu entry, so that one is handled here.
+  if (mac && event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey && !inDesktop) {
+    const digit = /^Digit([1-9])$/.exec(event.code);
+    return digit ? { kind: 'select-tab', index: Number(digit[1]) - 1 } : null;
+  }
   if (!event.ctrlKey || event.metaKey) return null;
   if (event.altKey) {
     switch (event.code) {

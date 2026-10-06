@@ -1,0 +1,228 @@
+/*
+ * Forms in dialogs: a label above its control, then a hint or an error. The
+ * controls have the package's control look (@uwusuite/design
+ * docs/components.md: radius 10, the 3:1 control outline, a pink focus ring),
+ * 40 px high like UwULock's, because a host has many of them. On/off choices
+ * are the package's Switch and Toggle, two to four choices its Segmented.
+ */
+
+.form {
+  display: grid;
+  gap: 12px;
+}
+
+.form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.field {
+  display: grid;
+  /* Without this a taller neighbour (one with an error line) stretches the
+     rows and pushes this input down. */
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.field.grow {
+  flex: 1;
+}
+
+.field.port {
+  width: 96px;
+}
+
+.field > span {
+  color: var(--uwu-muted);
+  font-size: var(--uwu-text-caption);
+  font-weight: 600;
+  line-height: var(--uwu-leading);
+}
+
+.field-hint,
+.field-error {
+  margin: 0;
+  font-size: var(--uwu-text-caption);
+  font-style: normal;
+  line-height: var(--uwu-leading);
+}
+
+.field-hint {
+  color: var(--uwu-muted);
+}
+
+.field-error {
+  color: var(--uwu-danger-ink);
+}
+
+/* Commands in hints must not break at their hyphens. */
+.field-hint code {
+  white-space: nowrap;
+}
+
+.form-error {
+  margin: 0;
+  color: var(--uwu-danger-ink);
+  font-size: var(--uwu-text-meta);
+}
+
+.field input:not([type='checkbox'], [type='radio'], [type='range']),
+.field textarea,
+.field select,
+.select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--uwu-control) 60%, transparent);
+  border-radius: var(--uwu-radius-control);
+  background: var(--uwu-surface);
+  color: var(--uwu-ink);
+  font-size: var(--uwu-text-body);
+  transition:
+    border-color var(--uwu-duration-fast),
+    box-shadow var(--uwu-duration-fast);
+}
+
+.select {
+  width: auto;
+}
+
+.field textarea {
+  min-height: 64px;
+  padding: 8px 12px;
+  line-height: var(--uwu-leading);
+  resize: vertical;
+}
+
+:is(.field input, .field textarea, .field select, .select)::placeholder {
+  color: var(--uwu-faint);
+}
+
+:is(.field input, .field textarea, .field select, .select):focus {
+  border-color: var(--uwu-pink);
+  box-shadow: var(--uwu-focus);
+  outline: none;
+}
+
+:is(.field input, .field textarea, .field select)[aria-invalid='true'] {
+  border-color: var(--uwu-danger);
+}
+
+:is(.field input, .field textarea, .field select, .select):disabled {
+  opacity: 0.55;
+}
+
+/* A password field with its eye inside, on the right. */
+.input-with-button {
+  position: relative;
+  display: block;
+}
+
+.field .input-with-button input {
+  padding-right: 44px;
+}
+
+.input-with-button > button {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  translate: 0 -50%;
+}
+
+/* A secret that is stored in the vault, shown instead of its field. */
+.stored-secret {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 40px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--uwu-success) 45%, transparent);
+  border-radius: var(--uwu-radius-control);
+  background: var(--uwu-success-tint);
+  color: var(--uwu-success-ink);
+  font-size: var(--uwu-text-meta);
+}
+
+.stored-secret[data-forgotten] {
+  border-color: color-mix(in srgb, var(--uwu-warning) 45%, transparent);
+  background: var(--uwu-warning-tint);
+  color: var(--uwu-warning-ink);
+}
+
+/* A small checkbox in a line of text, in the suite's pink. */
+.check.inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--uwu-text-meta);
+  cursor: pointer;
+}
+
+.check.inline input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--uwu-pink-solid);
+}
+
+/* A section of a long form that folds away. */
+.form-section {
+  border: 1px solid var(--uwu-hairline);
+  border-radius: var(--uwu-radius-card);
+}
+
+.form-section summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--uwu-radius-card);
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+}
+
+.form-section summary:hover {
+  background: color-mix(in srgb, var(--uwu-pink-tint) 45%, transparent);
+}
+
+.form-section summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The down chevron points right while the section is closed. */
+.form-section .section-chevron {
+  color: var(--uwu-muted);
+  transform: rotate(-90deg);
+  transition: transform var(--uwu-duration-fast) ease;
+}
+
+.form-section[open] .section-chevron {
+  transform: none;
+}
+
+.form-section-body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 14px 14px;
+}
+
+.gateway-block {
+  display: grid;
+  gap: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--uwu-pink-tint-strong);
+}
+
+.login-inherit {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+}

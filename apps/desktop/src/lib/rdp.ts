@@ -47,6 +47,9 @@ export type Fit = {
   smartSizing: boolean;
 };
 
+/** The Mac keeps ⌘ shortcuts for itself (see `key`). */
+const MAC = /mac/i.test(navigator.platform || navigator.userAgent);
+
 const RESIZE_DELAY_MS = 450;
 /** How long after connecting the desktop may still take the tab's size. */
 const SETTLE_MS = 3_000;
@@ -488,6 +491,10 @@ export class RdpDriver {
 
   private key(event: KeyboardEvent, down: boolean) {
     if (event.isComposing) return;
+    // On a Mac, ⌘ with a key belongs to the Mac — ⌘W, ⌘Q, ⌘, and the menu
+    // bar's shortcuts — as in every other app there. The ⌘ key on its own
+    // still reaches the desktop as the Windows key.
+    if (MAC && event.metaKey && !event.code.startsWith('Meta')) return;
     const scancode = scancodeFor(event.code);
     if (scancode) {
       event.preventDefault();

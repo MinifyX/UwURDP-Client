@@ -1,3 +1,5 @@
+import { Button, Icon, IconButton, ICONS, Toggle } from '@uwusuite/design';
+import { isStoreBuild } from '../lib/build';
 import { useState } from 'react';
 import { t, useLanguage } from '../lib/i18n';
 import {
@@ -9,7 +11,6 @@ import {
   type SaveFailure,
   type SharedDrive,
 } from '../lib/session';
-import { Icon } from './Icon';
 import { Modal } from './Modal';
 
 /** What a list of shared folders says in one line, for "like the group". */
@@ -55,7 +56,7 @@ export function DriveList({
       )}
       {drives.map((drive, index) => (
         <div className="drive-row" key={drive.path}>
-          <Icon name={drive.path === ALL_DRIVES ? 'drive' : 'folder'} size={15} />
+          <Icon icon={drive.path === ALL_DRIVES ? ICONS.drive : ICONS.folder} />
           {drive.path === ALL_DRIVES ? (
             <span className="drive-all">
               <b>{t('Alle Laufwerke')}</b>
@@ -81,31 +82,28 @@ export function DriveList({
               </code>
             </>
           )}
-          <button
+          <IconButton
             type="button"
-            className="icon-button"
-            aria-label={t('Entfernen')}
-            title={t('Entfernen')}
+            size="sm"
+            icon={ICONS.delete}
+            label={t('Entfernen')}
             onClick={() => onChange(drives.filter((_, i) => i !== index))}
-          >
-            <Icon name="trash" size={14} />
-          </button>
+          />
         </div>
       ))}
       <div className="drive-actions">
-        <button type="button" onClick={() => void add()}>
-          <Icon name="plus" size={14} />
+        <Button type="button" onClick={() => void add()} icon={ICONS.add}>
           {t('Ordner hinzufügen…')}
-        </button>
-        {!hasAll && (
-          <button
+        </Button>
+        {!hasAll && !isStoreBuild() && (
+          <Button
             type="button"
-            className="quiet"
+            variant="ghost"
             onClick={() => onChange([...drives, { name: ALL_DRIVES, path: ALL_DRIVES }])}
+            icon={ICONS.drive}
           >
-            <Icon name="drive" size={14} />
             {t('Alle Laufwerke')}
-          </button>
+          </Button>
         )}
       </div>
       {error && <p className="form-error">{error}</p>}
@@ -129,17 +127,12 @@ export function DrivesSwitch({
   useLanguage();
   return (
     <>
-      <label className="check">
-        <input
-          type="checkbox"
-          checked={value.enabled}
-          onChange={(e) => onChange({ ...value, enabled: e.target.checked })}
-        />
-        <span>
-          <b>{t('Lokale Laufwerke/Ordner freigeben')}</b>
-          <small>{t('Wie in mstsc: Der Server kann die Ordner lesen und beschreiben.')}</small>
-        </span>
-      </label>
+      <Toggle
+        label={t('Lokale Laufwerke/Ordner freigeben')}
+        description={t('Wie in mstsc: Der Server kann die Ordner lesen und beschreiben.')}
+        checked={value.enabled}
+        onChange={(enabled) => onChange({ ...value, enabled })}
+      />
       {value.enabled && (
         <div className="gateway-block">
           <DriveList drives={value.drives} onChange={(drives) => onChange({ ...value, drives })} />
@@ -187,12 +180,12 @@ export function GroupDrivesDialog({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onCancel} disabled={busy}>
+          <Button data-secondary onClick={onCancel} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" onClick={() => void save()} disabled={busy}>
+          </Button>
+          <Button variant="primary" onClick={() => void save()} busy={busy}>
             {t('Speichern')}
-          </button>
+          </Button>
         </>
       }
     >

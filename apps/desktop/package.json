@@ -10,19 +10,23 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --no-warnings --test \"test/*.test.mjs\"",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "icons": "uwu-icons --brand ../../brand --name uwurdp"
   },
   "dependencies": {
-    "@fontsource-variable/manrope": "^5.2.0",
     "@tauri-apps/api": "^2.0.0",
+    "@uwusuite/design": "https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.5.0/uwusuite-design-1.5.0.tgz",
+    "lucide-react": "^1.52.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.5.4",
     "vite": "^5.4.0"
   }

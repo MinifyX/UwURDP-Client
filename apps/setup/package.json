@@ -11,20 +11,21 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fontsource-variable/manrope": "^5.2.0",
     "@tauri-apps/api": "^2.11.1",
+    "@uwusuite/design": "https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.5.0/uwusuite-design-1.5.0.tgz",
     "clsx": "^2.1.1",
+    "lucide-react": "^1.52.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "tailwindcss": "^4.1.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.5.4",
     "vite": "^5.4.0"
   }

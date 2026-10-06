@@ -1,3 +1,4 @@
+import { Button, Icon, IconButton, ICONS } from '@uwusuite/design';
 import { useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { beginDrag, edgeByHalf, type DropTarget } from '../lib/dnd';
 import { t } from '../lib/i18n';
@@ -12,9 +13,9 @@ import {
   type Workspace,
 } from '../lib/session';
 import { updateSettings, useSettings, workspaceName } from '../lib/settings';
+import { SHORTCUTS, withKeys } from '../lib/shortcuts';
 import { hostLine } from '../lib/tabs';
 import { ContextMenu, type MenuItem } from './ContextMenu';
-import { Icon } from './Icon';
 import { Nyu } from './nyu/Nyu';
 
 type Props = {
@@ -215,28 +216,28 @@ export function HostList(props: Props) {
           ? [
               {
                 label: t('Zum offenen Tab'),
-                icon: 'monitor' as const,
+                icon: ICONS.computer,
                 onSelect: () => props.onConnect(host),
               },
               {
                 label: t('Weiteren Tab öffnen'),
-                icon: 'plus' as const,
+                icon: ICONS.add,
                 onSelect: () => props.onConnectAnother(host),
               },
               {
                 label: t('Trennen'),
-                icon: 'power' as const,
+                icon: ICONS.disconnect,
                 onSelect: () => props.onDisconnect(host),
               },
             ]
           : [
               {
                 label: t('Verbinden'),
-                icon: 'monitor' as const,
+                icon: ICONS.computer,
                 onSelect: () => props.onConnect(host),
               },
             ]),
-        { label: t('Bearbeiten'), icon: 'pencil', onSelect: () => props.onEdit(host) },
+        { label: t('Bearbeiten'), icon: ICONS.edit, onSelect: () => props.onEdit(host) },
         'separator',
         ...(settings.workspaces
           ? [
@@ -244,7 +245,7 @@ export function HostList(props: Props) {
                 label: t('Nach {workspace} verschieben', {
                   workspace: workspaceName(other, settings),
                 }),
-                icon: other === 'private' ? ('house' as const) : ('briefcase' as const),
+                icon: other === 'private' ? ICONS.home : ICONS.work,
                 onSelect: () => run(() => moveHost(host.id, other, host.groupPath, null)),
               },
             ]
@@ -253,7 +254,7 @@ export function HostList(props: Props) {
           ? [
               {
                 label: t('Aus der Gruppe nehmen'),
-                icon: 'up' as const,
+                icon: ICONS.parentFolder,
                 onSelect: () => run(() => moveHost(host.id, host.workspace, null, null)),
               },
             ]
@@ -279,12 +280,12 @@ export function HostList(props: Props) {
       items: [
         {
           label: t('Alle verbinden'),
-          icon: 'power',
+          icon: ICONS.connect,
           onSelect: () => props.onConnectGroup(workspace, name),
         },
         {
           label: t('Übersicht der Gruppe'),
-          icon: 'grid',
+          icon: ICONS.overview,
           onSelect: () => props.onOverview(workspace, name),
         },
         ...(hosts.some(
@@ -293,7 +294,7 @@ export function HostList(props: Props) {
           ? [
               {
                 label: t('Alle trennen'),
-                icon: 'close' as const,
+                icon: ICONS.disconnect,
                 onSelect: () => props.onDisconnectGroup(workspace, name),
               },
             ]
@@ -301,22 +302,22 @@ export function HostList(props: Props) {
         'separator',
         {
           label: t('Anmeldung der Gruppe…'),
-          icon: 'user',
+          icon: ICONS.account,
           onSelect: () => props.onGroupLogin(groupRecord(name)),
         },
         {
           label: t('Lokale Ordner der Gruppe…'),
-          icon: 'folder',
+          icon: ICONS.folder,
           onSelect: () => props.onGroupDrives(groupRecord(name)),
         },
         {
           label: t('Host hier hinzufügen'),
-          icon: 'plus',
+          icon: ICONS.add,
           onSelect: () => props.onAdd(workspace, name),
         },
         {
           label: t('Umbenennen'),
-          icon: 'pencil',
+          icon: ICONS.edit,
           onSelect: () => setEditing({ from: name, value: name }),
         },
         ...(settings.workspaces
@@ -325,7 +326,7 @@ export function HostList(props: Props) {
                 label: t('Nach {workspace} verschieben', {
                   workspace: workspaceName(other, settings),
                 }),
-                icon: other === 'private' ? ('house' as const) : ('briefcase' as const),
+                icon: other === 'private' ? ICONS.home : ICONS.work,
                 onSelect: () => run(() => moveGroup(workspace, name, other, null)),
               },
             ]
@@ -333,7 +334,7 @@ export function HostList(props: Props) {
         'separator',
         {
           label: t('Gruppe auflösen (Hosts bleiben)'),
-          icon: 'trash',
+          icon: ICONS.delete,
           danger: true,
           onSelect: () => run(() => deleteGroup(workspace, name)),
         },
@@ -397,7 +398,7 @@ export function HostList(props: Props) {
             .join('\n')}
         >
           <span className="host-icon host-glyph">
-            <Icon name="monitor" size={17} />
+            <Icon icon={ICONS.computer} size="md" />
             <i
               className="dot"
               data-state={online ? 'online' : connecting ? 'connecting' : 'idle'}
@@ -409,14 +410,12 @@ export function HostList(props: Props) {
           </span>
         </button>
         <span className="host-actions">
-          <button
-            className="icon-button"
+          <IconButton
+            size="sm"
+            icon={ICONS.edit}
             onClick={() => props.onEdit(host)}
-            title={t('{name} bearbeiten', { name: host.name })}
-            aria-label={t('{name} bearbeiten', { name: host.name })}
-          >
-            <Icon name="pencil" size={15} />
-          </button>
+            label={t('{name} bearbeiten', { name: host.name })}
+          />
         </span>
       </li>
     );
@@ -429,30 +428,24 @@ export function HostList(props: Props) {
       <div className="sidebar-head">
         <h2>{t('Hosts')}</h2>
         <span className="spacer" />
-        <button
-          className="icon-button"
+        <IconButton
+          size="sm"
+          icon={ICONS.import}
           onClick={props.onImport}
-          title={t('Importieren')}
-          aria-label={t('Importieren')}
-        >
-          <Icon name="import" />
-        </button>
-        <button
-          className="icon-button"
+          label={t('Importieren')}
+        />
+        <IconButton
+          size="sm"
+          icon={ICONS.newFolder}
           onClick={() => setEditing({ from: null, value: '' })}
-          title={t('Neue Gruppe')}
-          aria-label={t('Neue Gruppe')}
-        >
-          <Icon name="folderPlus" />
-        </button>
-        <button
-          className="icon-button"
+          label={t('Neue Gruppe')}
+        />
+        <IconButton
+          size="sm"
+          icon={ICONS.add}
           onClick={() => props.onAdd(workspace, null)}
-          title={t('Host hinzufügen')}
-          aria-label={t('Host hinzufügen')}
-        >
-          <Icon name="plus" />
-        </button>
+          label={t('Host hinzufügen')}
+        />
       </div>
 
       {settings.workspaces && (
@@ -470,7 +463,7 @@ export function HostList(props: Props) {
                 workspace: workspaceName(id, settings),
               })}
             >
-              <Icon name={id === 'private' ? 'house' : 'briefcase'} size={15} />
+              <Icon icon={id === 'private' ? ICONS.home : ICONS.work} />
               <span className="workspace-name">{workspaceName(id, settings)}</span>
               {counts[id] > 0 && <span className="workspace-count">{counts[id]}</span>}
             </button>
@@ -496,10 +489,10 @@ export function HostList(props: Props) {
               className="host"
               aria-current={activeId === 'overview'}
               onClick={() => props.onOverview(null, null)}
-              title={t('Alle offenen Sitzungen im Überblick (Strg+Umschalt+O)')}
+              title={withKeys(t('Alle offenen Sitzungen im Überblick'), SHORTCUTS.overview)}
             >
               <span className="host-icon host-glyph" aria-hidden>
-                <Icon name="grid" size={17} />
+                <Icon icon={ICONS.overview} size="md" />
               </span>
               <span className="host-name">{t('Übersicht')}</span>
               {onlineIds.size > 0 && <span className="group-count">{onlineIds.size}</span>}
@@ -598,7 +591,7 @@ export function HostList(props: Props) {
                           'Klicken zum Auf-/Zuklappen, doppelklicken zum Umbenennen, ziehen zum Sortieren',
                         )}
                       >
-                        <Icon name="chevron" size={12} className="group-chevron" />
+                        <Icon icon={ICONS.expand} size="xs" className="group-chevron" />
                         <h3>{name}</h3>
                         {groupRecord(name).username && (
                           <span
@@ -609,22 +602,22 @@ export function HostList(props: Props) {
                                 : groupRecord(name).username,
                             })}
                           >
-                            <Icon name="user" size={12} />
+                            <Icon icon={ICONS.account} size="xs" />
                           </span>
                         )}
                         <span className="group-count">{section.hosts.length}</span>
                       </button>
                     )}
-                    <button
-                      className="icon-button group-more"
+                    <IconButton
+                      size="sm"
+                      icon={ICONS.more}
+                      className="group-more"
                       onClick={(event) => {
                         const rect = event.currentTarget.getBoundingClientRect();
                         groupMenu(rect.left, rect.bottom, name);
                       }}
-                      aria-label={t('Menü für {name}', { name })}
-                    >
-                      <Icon name="more" size={15} />
-                    </button>
+                      label={t('Menü für {name}', { name })}
+                    />
                   </div>
                   {!isCollapsed && (
                     <ul className="host-list">
@@ -650,14 +643,14 @@ export function HostList(props: Props) {
                     workspace: workspaceName(workspace, settings),
                   })}
             </p>
-            <button className="primary" onClick={() => props.onAdd(workspace, null)}>
+            <Button variant="primary" icon={ICONS.add} onClick={() => props.onAdd(workspace, null)}>
               {t('Host hinzufügen')}
-            </button>
-            <button className="quiet" onClick={props.onImport}>
+            </Button>
+            <Button variant="ghost" size="sm" className="h-auto py-1.5" onClick={props.onImport}>
               {hosts.length === 0
                 ? t('Aus RDCMan (.rdg), .rdp-Dateien oder einer UwURDP-Datei importieren')
                 : t('Hosts aus dem anderen Bereich hierher ziehen')}
-            </button>
+            </Button>
           </div>
         )}
       </div>

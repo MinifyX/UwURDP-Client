@@ -1107,6 +1107,8 @@ export function App() {
       event.stopPropagation();
 
       const id = activeRef.current;
+      // ⇧⌘1 … 9 inside a desktop: ⌘ is down there as the Windows key.
+      if (inDesktop && event.metaKey && id) drivers.current.get(id)?.maskWindowsKey();
       const list = tabsRef.current;
       const index = list.findIndex((tab) => tab.id === id);
       switch (action.kind) {

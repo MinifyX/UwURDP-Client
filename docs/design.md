@@ -59,8 +59,11 @@ keeps out of its way.
   in the suite's colours where a list is picked from, `Toggle`/`Switch` for
   on/off settings, native selects in the control look.
 - **Keyboard**: inside the desktop every key belongs to the server, except
-  mstsc's Ctrl+Alt combinations (Ctrl on a Mac too) and, on a Mac, ⌘ keys,
-  which go to the menu bar.
+  mstsc's Ctrl+Alt combinations (Ctrl on a Mac too). On a Mac ⌘ is the
+  Windows key there and ⌘ with a key reaches the server as Windows+key, like
+  in Microsoft's Windows App; only the app's own commands stay on the Mac
+  (`lib/mac-keys.ts`): ⌘Q, ⌘W, ⌘,, ⇧⌘1 … 9 and the full screen (⇧⌘↩, ⌃⌘F).
+  A Ctrl tap goes to the server before them, so the Start menu stays shut.
 - **Windows and Linux**: the package's `TitleBar` with the Wordmark and the
   settings button; a double-click maximizes once (`useTauriWindow`).
 - **macOS** (package `docs/macos.md`): the system's title bar with the

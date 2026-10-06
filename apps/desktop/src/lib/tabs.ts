@@ -128,8 +128,9 @@ export function shortcutFor(
   mac = false,
 ): ShortcutAction | null {
   // On a Mac the menu bar owns ⌘, ⌘⇧O, ⌘W and ⌘⇧D (App.tsx); ⌘⇧1 … 9 has no
-  // menu entry, so that one is handled here.
-  if (mac && event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey && !inDesktop) {
+  // menu entry, so that one is handled here — inside a desktop too, where it
+  // is one of the few ⌘ shortcuts that stay the app's (lib/mac-keys.ts).
+  if (mac && event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey) {
     const digit = /^Digit([1-9])$/.exec(event.code);
     return digit ? { kind: 'select-tab', index: Number(digit[1]) - 1 } : null;
   }

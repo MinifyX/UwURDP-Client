@@ -75,6 +75,12 @@ pub struct Account {
     pub suite_off: bool,
     /// `/uwu/v1/info` has `switches`, as from UwULock Server 0.6.0-beta.2.
     pub switches: bool,
+    /// The devices remembered for two-step login, as the server keeps them:
+    /// by device identifier, each with the token it was given.
+    pub remembered: HashMap<String, String>,
+    /// The second step of every password login, as it came: provider and
+    /// token, both empty for a login without one.
+    pub second_steps: Vec<(String, String)>,
 }
 
 pub struct Fake {
@@ -123,6 +129,8 @@ impl Fake {
             forge_pulls: false,
             suite_off: false,
             switches: true,
+            remembered: HashMap::new(),
+            second_steps: Vec::new(),
         }));
         let records = Arc::new(MemoryServer::new());
         let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
@@ -232,7 +240,9 @@ fn header(request: &tiny_http::Request, name: &str) -> Option<String> {
         .map(|h| h.value.as_str().to_string())
 }
 
-fn grant(account: &mut Account, remember: bool) -> Value {
+/// A session; `remember` is the identifier of a device to remember for
+/// two-step login, which gets a token of its own.
+fn grant(account: &mut Account, remember: Option<String>) -> Value {
     account.issued += 1;
     let access = format!("access-{}", account.issued);
     let refresh = format!("refresh-{}", account.issued);
@@ -247,8 +257,10 @@ fn grant(account: &mut Account, remember: bool) -> Value {
         "Key": account.protected_user_key,
         "PrivateKey": account.protected_private_key,
     });
-    if remember {
-        body["TwoFactorToken"] = json!("remembered");
+    if let Some(device) = remember {
+        let token = format!("remembered-{}", account.issued);
+        account.remembered.insert(device, token.clone());
+        body["TwoFactorToken"] = json!(token);
     }
     body
 }
@@ -325,7 +337,7 @@ fn token(request: tiny_http::Request, form: &HashMap<String, String>, account: &
             if field("client_id") != "uwurdp" || !account.refresh.remove(&field("refresh_token")) {
                 return respond(request, 400, json!({ "error": "invalid_grant" }));
             }
-            let body = grant(&mut account, false);
+            let body = grant(&mut account, None);
             respond(request, 200, body)
         }
         "password" => {
@@ -347,12 +359,18 @@ fn token(request: tiny_http::Request, form: &HashMap<String, String>, account: &
                     }),
                 );
             }
-            let mut remember = false;
+            account
+                .second_steps
+                .push((field("twoFactorProvider"), field("twoFactorToken")));
+            let mut remember = None;
             if account.two_factor {
                 let provider = field("twoFactorProvider");
                 let code = field("twoFactorToken");
+                let device = field("deviceIdentifier");
                 let ok = match provider.as_str() {
-                    "5" => code == "remembered",
+                    // Remembered per device: another device's token, or one
+                    // from before the device was forgotten, does not count.
+                    "5" => account.remembered.get(&device) == Some(&code),
                     "0" | "1" => code == CODE,
                     _ => false,
                 };
@@ -381,7 +399,7 @@ fn token(request: tiny_http::Request, form: &HashMap<String, String>, account: &
                     });
                     return respond(request, 400, body);
                 }
-                remember = field("twoFactorRemember") == "1";
+                remember = (field("twoFactorRemember") == "1").then_some(device);
             }
             let body = grant(&mut account, remember);
             respond(request, 200, body)

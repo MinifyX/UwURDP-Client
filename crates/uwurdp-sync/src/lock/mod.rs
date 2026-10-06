@@ -35,8 +35,8 @@ mod real;
 mod tests;
 
 pub use account::{
-    known, send_email_code, sign_in, AcceptSpace, Known, SignIn, SignInOutcome, SignedIn,
-    TwoFactorAnswer, TwoFactorMethod,
+    known, remember_token, send_email_code, sign_in, AcceptSpace, Known, SignIn, SignInOutcome,
+    SignedIn, TwoFactorAnswer, TwoFactorMethod,
 };
 pub use api::{normalize_server, Lock, LockDevice};
 

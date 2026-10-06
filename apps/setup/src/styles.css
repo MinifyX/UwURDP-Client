@@ -1,36 +1,91 @@
+/*
+ * The installer, from @uwusuite/design: tokens, UwU Sans, the base layer, the
+ * motion keyframes, Nyu's CSS (the edge, blinking, the scene loops) and the
+ * title bar. The setup is always light (main.tsx), on the app tile's gradient
+ * with plum text, a translucent card and a striped pink bar (the package's
+ * docs/window.md, "Installers"). Below is only what the installer adds: the
+ * title bar over the gradient, the card, the sparkles and Nyu's hop, toss and
+ * the stripes.
+ */
 @import 'tailwindcss';
-@import '../../desktop/src/components/nyu/nyu.css';
+@import '@uwusuite/design/tailwind.css';
 
-@theme inline {
-  --font-sans: 'Manrope Variable', ui-sans-serif, system-ui, sans-serif;
-  --color-plum: #4b1d3f;
-  --color-plum-soft: #7a5670;
-  --color-pink: #ff4d8d;
-  --color-pink-solid: #e11d74;
-  --color-pink-solid-hover: #c8165f;
-  --color-blush: #ffe4ef;
-}
-
-html,
-body,
-#root {
-  height: 100%;
-}
+/* The installer's own sources and the app's Nyu scenes it shows. */
+@source '../src';
+@source '../../desktop/src/components/nyu';
 
 body {
-  margin: 0;
-  overflow: hidden;
-  user-select: none;
   cursor: default;
-  font-family: var(--font-sans);
-  color: var(--color-plum);
-  background: linear-gradient(180deg, #fff3f8 0%, #ffd3e5 100%);
-  -webkit-font-smoothing: antialiased;
+  color: var(--uwu-plum);
+  background: linear-gradient(180deg, var(--uwu-tile-from) 0%, var(--uwu-tile-to) 100%);
 }
 
-:focus-visible {
-  outline: 3px solid rgb(255 77 141 / 0.45);
-  outline-offset: 2px;
+/*
+ * The package's title bar, see-through over the gradient. The window can't be
+ * maximized (src-tauri/src/app.rs), so its button goes; closing waits while
+ * the installer works.
+ */
+.setup-titlebar .uwu-titlebar {
+  height: 44px;
+  padding-left: 8px;
+  border-bottom: 0;
+  background: transparent;
+  color: var(--uwu-plum);
+}
+
+.setup-titlebar .uwu-titlebar-action {
+  width: 32px;
+  height: 32px;
+  color: var(--uwu-plum-soft);
+}
+
+.setup-titlebar .uwu-titlebar-action:hover:not(:disabled),
+.setup-titlebar .uwu-window-control:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.7);
+  color: var(--uwu-plum);
+}
+
+.setup-titlebar .uwu-window-control {
+  color: var(--uwu-plum);
+}
+
+.setup-titlebar .uwu-window-control[data-kind='close']:hover:not(:disabled) {
+  background: var(--uwu-pink-solid);
+  color: var(--uwu-on-pink);
+}
+
+.setup-titlebar .uwu-window-controls > :nth-child(2) {
+  display: none;
+}
+
+.setup-titlebar[data-busy] .uwu-window-control[data-kind='close'] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/*
+ * The installer window is 460 px wide, so the package's phone: rules (taller,
+ * wrapping buttons) would apply; the pills keep their desktop shape here.
+ * Plain CSS on purpose: it outranks Tailwind's layered utilities.
+ */
+.setup-button {
+  height: 44px;
+  min-height: 0;
+  white-space: nowrap;
+}
+
+.setup-button:focus-visible {
+  /* The primary pill's own shadow would hide the package's focus ring. */
+  box-shadow: var(--uwu-focus);
+}
+
+.setup-quiet {
+  color: var(--uwu-plum-soft);
+}
+
+.setup-quiet:hover {
+  background: rgb(255 255 255 / 0.7);
+  color: var(--uwu-plum);
 }
 
 .setup-card {
@@ -39,6 +94,11 @@ body {
     0 1px 0 rgb(255 255 255 / 0.9) inset,
     0 22px 44px -22px rgb(194 48 111 / 0.4);
   backdrop-filter: blur(10px);
+}
+
+/* The package's muted grey reads as plum here, like the rest of the text. */
+.setup-card .text-muted {
+  color: var(--uwu-plum-soft);
 }
 
 .setup-sparkles {
@@ -61,18 +121,14 @@ body {
   animation: setup-toss 1.65s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
-.setup-pop {
-  animation: setup-pop 520ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
-}
-
 .setup-bar {
-  background: repeating-linear-gradient(-45deg, #ff6fa6 0 12px, #ff8ab7 12px 24px);
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--uwu-pink) 82%, #fff) 0 12px,
+    color-mix(in srgb, var(--uwu-pink) 64%, #fff) 12px 24px
+  );
   background-size: 34px 34px;
   animation: setup-stripes 900ms linear infinite;
-}
-
-.setup-fade {
-  animation: setup-fade 260ms ease-out;
 }
 
 @keyframes setup-hop {
@@ -111,44 +167,17 @@ body {
   }
 }
 
-@keyframes setup-pop {
-  0% {
-    transform: scale(0.85);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 @keyframes setup-stripes {
   to {
     background-position: 34px 0;
   }
 }
 
-@keyframes setup-fade {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+/* Motion off (main.tsx follows the system): the package stops everything else. */
+:root[data-motion='reduced'] .setup-bar {
+  animation: none !important;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .nyu-host,
-  .nyu-host *,
-  .setup-bar,
-  .setup-pop,
-  .setup-fade {
-    animation: none !important;
-  }
-
-  .setup-toss {
-    display: none;
-  }
+:root[data-motion='reduced'] .setup-toss {
+  display: none;
 }

@@ -526,14 +526,30 @@ fn system_device_name() -> Option<String> {
 /// asks Foundation for the same name `scutil --get ComputerName` gives.
 /// `NSHost` is deprecated as a way to resolve names on the network; asking it
 /// for this Mac's own name is what it still does, and needs no other crate.
+///
+/// `NSHost` may wait on the network for seconds, and the sync status asks on
+/// the main thread: so it asks once, and start-up warms it up on a thread of
+/// its own ([`warm_device_name`]).
 #[cfg(all(target_os = "macos", feature = "mas"))]
 #[allow(deprecated)]
 fn system_device_name() -> Option<String> {
-    let name = objc2_foundation::NSHost::currentHost()
-        .localizedName()?
-        .to_string();
-    let name = name.trim();
-    (!name.is_empty()).then(|| name.to_string())
+    static NAME: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    NAME.get_or_init(|| {
+        let name = objc2_foundation::NSHost::currentHost()
+            .localizedName()?
+            .to_string();
+        let name = name.trim();
+        (!name.is_empty()).then(|| name.to_string())
+    })
+    .clone()
+}
+
+/// Asks for this Mac's name off the main thread, before the page does.
+#[cfg(all(target_os = "macos", feature = "mas"))]
+pub(crate) fn warm_device_name() {
+    std::thread::spawn(|| {
+        let _ = system_device_name();
+    });
 }
 
 fn clean_name(name: &str) -> SyncResult<String> {

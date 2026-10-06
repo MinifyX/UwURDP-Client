@@ -75,6 +75,10 @@ if (process.platform !== 'darwin')
 const conf = JSON.parse(readFileSync(join(tauriDir, 'tauri.conf.json'), 'utf8'));
 const env = process.env;
 const signing = Boolean(env.APPLE_MAS_APP_IDENTITY);
+if (options.sign && !signing)
+  fail(
+    '--sign needs APPLE_MAS_APP_IDENTITY (and the other signing variables): there is nothing to sign with.',
+  );
 
 /**
  * App Store Connect wants three plain numbers as the version, so a pre-release

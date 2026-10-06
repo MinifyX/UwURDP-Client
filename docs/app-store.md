@@ -13,20 +13,20 @@ it.
 
 ## What is different in the store build
 
-|                          | GitHub (setup, DMG, packages)                      | Mac App Store                                                                                 |
-| ------------------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Cargo features           | default (`self-update`, `h264-download`)           | `--no-default-features --features mas`                                                        |
-| Config                   | `tauri.conf.json` (+ `tauri.macos.conf.json`)      | + `tauri.mas.conf.json`                                                                       |
-| Installed by             | the setup app (`apps/setup`)                       | the store; no setup app is built                                                              |
-| Updates                  | updater plugin, GitHub feed                        | none compiled in; the store updates it                                                        |
-| H.264 (OpenH264)         | downloaded from Cisco on request                   | not available: App Review 2.5.2 forbids downloading code                                      |
-| Sandbox                  | no                                                 | yes, `macos/Entitlements.mas.plist`                                                           |
-| Shared folders (drives)  | any path                                           | only folders picked in the panel, kept through security-scoped bookmarks                      |
-| "Alle Laufwerke"         | every fixed drive (Windows only)                   | refused (`hosts.rs` leaves it out)                                                            |
-| RDCMan import            | RDCMan's list of open files (Windows only)         | only files picked in the open panel                                                           |
-| One copy at a time       | single-instance plugin                             | macOS itself (the plugin's socket in `/tmp` is closed to the sandbox, so it's off)            |
-| This Mac's name for sync | `scutil --get ComputerName`                        | `NSHost.localizedName` (runs no other program)                                                |
-| App data                 | `~/Library/Application Support/app.uwurdp.desktop` | `~/Library/Containers/app.uwurdp.desktop/Data/Library/Application Support/app.uwurdp.desktop` |
+|                          | GitHub (setup, DMG, packages)                                          | Mac App Store                                                                                 |
+| ------------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Cargo features           | default (`self-update`, `h264-download`)                               | `--no-default-features --features mas`                                                        |
+| Config                   | `tauri.conf.json` (+ `tauri.macos.conf.json`)                          | + `tauri.mas.conf.json`                                                                       |
+| Installed by             | the setup app (`apps/setup`)                                           | the store; no setup app is built                                                              |
+| Updates                  | updater plugin, GitHub feed                                            | none compiled in; the store updates it                                                        |
+| H.264 (OpenH264)         | downloaded from Cisco on request                                       | not available: App Review 2.5.2 forbids downloading code                                      |
+| Sandbox                  | no                                                                     | yes, `macos/Entitlements.mas.plist`                                                           |
+| Shared folders (drives)  | any path                                                               | only folders picked in the panel, kept through security-scoped bookmarks                      |
+| "Alle Laufwerke"         | every fixed drive (offered everywhere as before; only Windows has any) | refused (`hosts.rs` leaves it out)                                                            |
+| RDCMan import            | RDCMan's list of open files (Windows only)                             | only files picked in the open panel                                                           |
+| One copy at a time       | single-instance plugin                                                 | macOS itself (the plugin's socket in `/tmp` is closed to the sandbox, so it's off)            |
+| This Mac's name for sync | `scutil --get ComputerName`                                            | `NSHost.localizedName` (runs no other program)                                                |
+| App data                 | `~/Library/Application Support/app.uwurdp.desktop`                     | `~/Library/Containers/app.uwurdp.desktop/Data/Library/Application Support/app.uwurdp.desktop` |
 
 Everything else is the same code: connecting, the vault, sync with UwUSync and
 UwULock, `uwurdp://` links, the clipboard with files in both directions, audio.

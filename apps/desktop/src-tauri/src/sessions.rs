@@ -56,12 +56,16 @@ pub(crate) fn clipboard_download(state: State<'_, AppState>, id: SessionId) -> C
 
 #[tauri::command]
 pub(crate) async fn close_session(state: State<'_, AppState>, id: SessionId) -> CommandResult<()> {
-    crate::hosts::forget_session(&state, id);
     // A session that already ended on its own is fine to close again.
-    if state.sessions.is_open(id) {
-        state.sessions.close(id).map_err(err)?;
-    }
-    Ok(())
+    let closed = if state.sessions.is_open(id) {
+        state.sessions.close(id).map_err(err)
+    } else {
+        Ok(())
+    };
+    // Only then: the sandbox's access to shared folders ends with the session,
+    // not while it may still be reading or writing them.
+    crate::hosts::forget_session(&state, id);
+    closed
 }
 
 /// Full screen for the whole window; the page hides its own chrome.

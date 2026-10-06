@@ -143,6 +143,8 @@ pub fn run() {
             if let Some(folder) = path.parent() {
                 sandbox_access::configure(folder);
             }
+            #[cfg(all(target_os = "macos", feature = "mas"))]
+            sync::warm_device_name();
             // A vault this device keeps the key for opens right away, so the
             // master password is a once-per-device thing.
             if let Err(error) = store.unlock_remembered_vault(device::unprotect) {

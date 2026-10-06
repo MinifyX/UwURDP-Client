@@ -4,6 +4,11 @@
 //   pnpm build:mas                     build, and sign when the identities are set
 //   node scripts/build-mas.mjs --sign <UwURDP.app>
 //                                      sign an app this script built elsewhere
+//   node scripts/build-mas.mjs --check
+//                                      a quick proof for pull requests: a debug
+//                                      build for this Mac's architecture only,
+//                                      the same checks, an unsigned package.
+//                                      Never what goes to the store.
 //
 // What comes out, in target/release:
 //
@@ -52,6 +57,10 @@ import { parseArgs } from 'node:util';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const tauriDir = join(root, 'apps/desktop/src-tauri');
 const TARGET = 'universal-apple-darwin';
+// What the universal executable carries. --check builds the host's alone, in
+// the debug profile and the folder the workspace checks build into, so it
+// starts from their compiled dependencies.
+const ARCHS = ['arm64', 'x86_64'];
 const BUNDLE_ID = 'app.uwurdp.desktop';
 
 function fail(message) {
@@ -65,9 +74,11 @@ function run(command, args, options = {}) {
 
 let options;
 try {
-  ({ values: options } = parseArgs({ options: { sign: { type: 'string' } } }));
+  ({ values: options } = parseArgs({
+    options: { sign: { type: 'string' }, check: { type: 'boolean' } },
+  }));
 } catch (error) {
-  fail(`${error.message}\n  Usage: node scripts/build-mas.mjs [--sign <UwURDP.app>]`);
+  fail(`${error.message}\n  Usage: node scripts/build-mas.mjs [--sign <UwURDP.app> | --check]`);
 }
 if (process.platform !== 'darwin')
   fail('The Mac App Store build needs a Mac: Xcode does the signing and packaging.');
@@ -75,6 +86,8 @@ if (process.platform !== 'darwin')
 const conf = JSON.parse(readFileSync(join(tauriDir, 'tauri.conf.json'), 'utf8'));
 const env = process.env;
 const signing = Boolean(env.APPLE_MAS_APP_IDENTITY);
+if (options.check && (options.sign || signing))
+  fail('--check builds a debug app for this Mac only: nothing to sign, nothing for the store.');
 if (options.sign && !signing)
   fail(
     '--sign needs APPLE_MAS_APP_IDENTITY (and the other signing variables): there is nothing to sign with.',
@@ -108,7 +121,12 @@ const scratch = mkdtempSync(join(tmpdir(), 'uwurdp-mas-'));
 try {
   const app = options.sign ? resolve(options.sign) : build();
   checkBundle(app);
-  const pkg = join(root, 'target', 'release', `UwURDP-${conf.version}-mas-universal.pkg`);
+  const pkg = join(
+    root,
+    'target',
+    options.check ? 'debug' : 'release',
+    `UwURDP-${conf.version}-mas-${options.check ? 'check' : 'universal'}.pkg`,
+  );
   if (signing) sign(app);
   else console.log('\n▸ No APPLE_MAS_APP_IDENTITY: the app and the package stay unsigned.');
   rmSync(pkg, { force: true });
@@ -130,8 +148,7 @@ function build() {
   const bundle = join(
     root,
     'target',
-    TARGET,
-    'release',
+    ...(options.check ? ['debug'] : [TARGET, 'release']),
     'bundle',
     'macos',
     `${conf.productName}.app`,
@@ -166,8 +183,7 @@ function build() {
       '@uwurdp/desktop',
       'tauri',
       'build',
-      '--target',
-      TARGET,
+      ...(options.check ? ['--debug'] : ['--target', TARGET]),
       '--bundles',
       'app',
       '--no-sign',
@@ -195,8 +211,9 @@ function checkBundle(app) {
   const archs = execFileSync('lipo', ['-archs', join(contents, 'MacOS', exe)], { encoding: 'utf8' })
     .trim()
     .split(/\s+/);
-  if (!archs.includes('arm64') || !archs.includes('x86_64'))
-    fail(`${exe} carries ${archs.join(' ')}, not arm64 and x86_64.`);
+  const wanted = options.check ? [process.arch === 'arm64' ? 'arm64' : 'x86_64'] : ARCHS;
+  if (!wanted.every((arch) => archs.includes(arch)))
+    fail(`${exe} carries ${archs.join(' ')}, not ${wanted.join(' and ')}.`);
 
   const plist = (key) => {
     try {

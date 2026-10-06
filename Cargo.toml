@@ -72,6 +72,13 @@ opt-level = 3
 panic = "unwind"
 strip = true
 
+# The setup's build script packs the app into it with zstd at level 19, and
+# build scripts' dependencies are built without optimisation in release
+# (`build-override` defaults to opt-level 0): unoptimised, zstd took about four
+# times as long, minutes in every installer job. Same bytes either way.
+[profile.release.package.zstd-sys]
+opt-level = 3
+
 # IronRDP's Progressive decoder with refinement passes decoded the way Windows
 # sends them (vendor/README.md).
 [patch."https://github.com/Devolutions/IronRDP"]

@@ -81,17 +81,16 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
             librsvg2-dev libdbus-1-dev libssl-dev libasound2-dev pkg-config
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-      - run: corepack enable
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # tauri-build wants every app's frontendDist to exist.
-      - run: pnpm -r build
+      # tauri-build wants every app's frontendDist to exist, and a debug build
+      # embeds nothing from it: an empty page each instead of Node, pnpm and
+      # both front ends, which `web` builds and checks already.
+      - name: Front-end placeholders
+        shell: bash
+        run: |
+          for app in desktop setup; do
+            mkdir -p "apps/$app/dist"
+            echo '<!doctype html>' > "apps/$app/dist/index.html"
+          done
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:

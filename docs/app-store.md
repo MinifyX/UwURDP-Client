@@ -154,8 +154,11 @@ was built elsewhere (CI's `sign` job does that).
 ### CI
 
 `.github/workflows/mas.yml` runs on tags (beside `installers.yml`, not inside
-it), by hand, on pushes to main and pull requests that touch the store build.
-`build` makes the unsigned app and package (artifact `mas-unsigned`). `sign`
+it) and by hand. `build` makes the unsigned universal app and package (artifact
+`mas-unsigned`). Pull requests that touch the store build get `check` instead:
+`node scripts/build-mas.mjs --check`, a debug build for Apple silicon with the
+same bundle checks, which `installers.yml`'s macOS check also runs on every push
+to main, so its compiled dependencies are cached for the pull requests. `sign`
 runs only when these repository secrets exist, on a fresh runner that has built
 nothing:
 

@@ -4,7 +4,8 @@ name: CI
 # between two releases: Prettier and the locale check, the type check and the
 # front-end builds once, then rustfmt, clippy and the Rust tests on Windows
 # (where most people run UwURDP) and Linux. macOS is checked by
-# `installers.yml` on every push to main. The end-to-end run needs a desktop
+# `installers.yml` on every push to main, the Mac App Store build by
+# `mas.yml`. The end-to-end run needs a desktop
 # session and stays on Lorin's machine.
 
 on:
@@ -103,4 +104,11 @@ jobs:
 
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # The Mac App Store build's feature set (no updater, no OpenH264
+      # download), as far as it compiles off a Mac: only the desktop crate
+      # changes, every dependency is already checked above. The macOS-only
+      # parts build in mas.yml.
+      - name: clippy (Mac App Store features)
+        if: runner.os == 'Linux'
+        run: cargo clippy -p uwurdp-desktop --all-targets --locked --no-default-features --features mas -- -D warnings
       - run: cargo test --workspace --locked --no-fail-fast

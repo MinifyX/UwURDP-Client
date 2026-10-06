@@ -16,6 +16,7 @@
     "lint": "prettier --check . && node scripts/check-i18n.mjs",
     "format": "prettier --write .",
     "build:setup": "node scripts/build-setup.mjs",
+    "build:mas": "node scripts/build-mas.mjs",
     "release": "node scripts/release.mjs"
   },
   "devDependencies": {

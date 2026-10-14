@@ -1,43 +1,43 @@
 {
-  "version": "0.1.0-beta.13",
-  "notes": "{\"de\":\"UwURDP 0.1.0-beta.13 ✧ Aufgeräumte Seitenleiste\\n\\n- Ohne Hosts lässt sich die Seitenleiste nicht mehr seitwärts scrollen: Der Import-Hinweis bricht jetzt um und ist kleiner\",\"en\":\"UwURDP 0.1.0-beta.13 ✧ a tidier sidebar\\n\\n- Without hosts, the sidebar no longer scrolls sideways: the import hint now wraps and is smaller\"}",
-  "pub_date": "2026-10-06T15:30:00Z",
+  "version": "0.1.0-beta.14",
+  "notes": "{\"de\":\"UwURDP 0.1.0-beta.14 ✧ Kein Absturz mehr mit mehreren Sitzungen\\n\\n- Windows: Mit mehreren offenen Sitzungen stürzte UwURDP ab und zu ohne Meldung ab. Die Sitzungen greifen jetzt nacheinander auf die Zwischenablage zu, statt gleichzeitig\\n- Server, die einen unbekannten Fehlercode schicken, brechen die Verbindung nicht mehr mit „unexpected info code“ ab\\n- Zu jedem Windows-Setup gibt es die Symbole (.pdb) als eigene Datei, damit sich Absturzberichte auswerten lassen\",\"en\":\"UwURDP 0.1.0-beta.14 ✧ no more crashes with several sessions\\n\\n- Windows: with several sessions open, UwURDP now and then crashed without a word. The sessions now take turns with the clipboard instead of using it at the same time\\n- Servers that send an error code UwURDP doesn't know no longer end the connection with “unexpected info code”\\n- Every Windows setup comes with its symbols (.pdb) as a file of their own, so crash reports can be read\"}",
+  "pub_date": "2026-10-14T09:40:03Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockNEd1l0ZEhnR0hzWGpFRlY2UHFuampucTdFZTZlR2U4dllyQkxZSWdPeGxiSG1zSW9kYWV4dFF1UE5SdEFwbiswemk2d0VGek14WWplWm1JOFAwZkFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzAwNDc2CWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTMuZXhlCkFWeTBHQUhOM1FxRGJNR1hoeHgweklZWHRjbWtpdXprWUVWTVJkQ2hkN1oxSUpnczNiTW42Y2o0dUtUc2hWZGE1WDVNS1kyNWF3cjZIbGZnUWJGNURnPT0K",
-      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.13/UwURDP-windows-x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockp5ZVc4QnhSQ0hMTk9maFlWdm9pTVFUSU5KNlViSWJrRkJYek5pTGFUaGJTdnpoZDhualBYMHB4aXJOK1VtVVY1MjU1VHcybG5zcnZtUE1pOXVsUXdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTcwNjY2CWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTQuZXhlCjdUNTV3SzVUS2FwcVI3WGhtckx0Mk9CekYyYUVnaDFQVlJKQWxZU2p5ckZJcTRzcTFEbFIwVW1CbEpWd1Y0aG15bWgwRlJKeGMrY0J4ZFlKR2dnU0NnPT0K",
+      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.14/UwURDP-windows-x64-setup.exe"
     },
     "windows-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockw2ZUhUS0FsVWs1THdxMEVGOGhUQ3gxNHpHK0o5YXJZdkx1aEpTUDJGOU5WL1l4L1BkTzFSYVIrNHgwcitjalhSN2twL3prdTN0NVEvRlFZQmJVSGcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzAwNDc3CWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTMtd2luZG93cy1hcm02NC5leGUKOFAwdGhuWFRYYWY2UzVabDZTT0phanhpT2ZxYS9iRVI3YmhpYVFqTjN3d1NyY0VUckNxSzBYWUpzcGdwM1RTdUlNWVlMRGxiYUJwc1JJWktwN0duQkE9PQo=",
-      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.13/UwURDP-windows-arm64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockZ1ZEZpQ0Y5dzMxSVMwZzltOEVpMEFaQjBxeVpHY0ZjL1R3a0twWkkrK2JlY0VMUDJWczNnUGlab1NKQlZ4V0ttVlhRbUNiR0E2TjJQcVhQR0x5M2dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTcwNjY3CWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTQtd2luZG93cy1hcm02NC5leGUKTjhhKzR1c25uRTYxUys5QVEreGVKZVlOMnhvTlMyakpxWGZQZDJnaFFEeEtGcnZxWU9xNkp4NGg0SW1ZOU15UGFoYU1IV1hZeUdvclBFMUUyTXpMQXc9PQo=",
+      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.14/UwURDP-windows-arm64-setup.exe"
     },
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockZucXFhbkpKSWtPbVdVVCtGcFBnS1pEc3RwMWZVU003YTZQa01aQ0VXQ2d2aXZ3M1NacHQvaHpxTWViWnM0QXlyRFBnblN6VDJNLzdhSEM0Z1JnYlFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzAwNDc4CWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTMtbWFjb3MtYXJtNjQtdXBkYXRlCmYrS25yZ3hkRUZVMjFOUTJMdW1xT1B2alVMdU5ZVG5SWGJPeGRIazlCRjdLNjNKNk5PQ1V6QjE2ZjRpNU9WaGR4MThobnpNbGRwSEYyYThod1pEOURnPT0K",
-      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.13/UwURDP-update-macos-universal"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockZqd1MrTWpReGVYS2N0TE9qM0VDdGVUQXZrcmhXeFlWT01LTFdiMnhUdmwxZWN1amJiTGduaWNEV2NJVk82TS91MUIyeHl4ZWIwclpQanlGWHE5aHdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTcwNjY4CWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTQtbWFjb3MtYXJtNjQtdXBkYXRlCk05Rm9VbWx3bUlpc1dPRWcvWXdDWjZncExyWDZYanUyckZZeUtBbG5mU3g1MHNrNXJVRzdxd3BlTi9hZGpob3puT1hZdTg2SGV1SEVpMktFZDNvakRnPT0K",
+      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.14/UwURDP-update-macos-universal"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockFpRWZRR3plRHU1UFBYVlhVTFV1V0xocjVLT1AzYkM3Sks4eTNybU51S0l0SkhCUVNDK0RBZDRDbm04MU5Hb09aZmtudmZWSGRGaGx4OFRkV0ZzV2c4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzAwNDc5CWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTMtbWFjb3MteDY0LXVwZGF0ZQp2eDlHSm50UGFWejZSV1FjZmYvK2tuMFBGd0VoVG1iN241eFJWeE0vSmFDczB5U28wQ3htMEl2b3gxQUgrNVZoOUxFTndIb0ZxejkrekhJaVVpRWRBZz09Cg==",
-      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.13/UwURDP-update-macos-universal"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockhoNXltcGxUTnF6MDdOOXVMZ2xnNGFUVWY5TDhyYysvVjhiZ0FMSUE0T0NPVnZrMjdndnBDaWFiNDNGU3kxanlBMCtCNUp2UG5kRWV1ci9KRTc0QXdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTcwNjY5CWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTQtbWFjb3MteDY0LXVwZGF0ZQpSUkwzRGsrcnJNR2JCcnkwZGZFcUJscDJ1YnpIeW11djdTOUpGcXhYZGdQTDFHT2dlbk9JOTI1MG5WdTU4ajVzcUljOEZ0bUV6Wmo4SFZadnRTV3hCZz09Cg==",
+      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.14/UwURDP-update-macos-universal"
     },
     "linux-x86_64-deb": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dock8rVjU1dmVJeTBXNEZoZGxvTDNvWEhtUmpzNXYzcTNxekYzVDZBR2dZOEI5REtUeElqUmUzREppY3NKd1pqOXB2YTRkbXA0dlp2K0ZuZ255eVRsT1EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzAwNDgwCWZpbGU6VXdVUkRQLTAuMS4wLWJldGEuMTMtbGludXgteDg2XzY0LmRlYgpSYnRGZlNXM3U4UzYza3ArS3lJc0ZYSHlncitwWW5XV1RoN1l6Ylc4b1BCNXdXYWpveTJmVVNmVTNUaXJZM2hVZzhRUVZ6eDluRDlWU1YwLzhhemdCdz09Cg==",
-      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.13/UwURDP-linux-x64.deb"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockxIVXd6U2xhUUJRSW4xblk3RkgySk0wVzZTV3k1bmkveSt1NitxdFh4NCs3eWhzSGpqSkJjZHdLT2tWbnl2dnBLT01lUUl6RmZic3IxQUVrZVVxcFFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTcwNjcwCWZpbGU6VXdVUkRQLTAuMS4wLWJldGEuMTQtbGludXgteDg2XzY0LmRlYgpjZnk2MUFqNDVhL3NQWEl2Q1pvamNZcnJyN3dSS1RudVdhT011L3AzWnpLbHVLOFg4RlFsQjVIdmNFVTBTeFByekNGUmprNnRHSXNZYjRwcTB3RXFDZz09Cg==",
+      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.14/UwURDP-linux-x64.deb"
     },
     "linux-x86_64-rpm": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dock44T2djeVRRamxHWDhaVU9yajl0WHhPMmFsd3JYNzcxWE9qcnNyLzAyQjdtN3ZMVmdKQzV5VXEwRGpkUmp6MjhQTndUcmQ4ZHFiMEVrTUt1UFY5amdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzAwNDgxCWZpbGU6VXdVUkRQLTAuMS4wLWJldGEuMTMtbGludXgteDg2XzY0LnJwbQpMajRVcWQ5NWlzb28wSGgyOVJQUzN3VWE0RWo5SlVZZ25FTTJPbnVraVlMbDI3cCtkcTV4SmpyL3V1bUxWWWpGai9zekxBR3dDMjVnNStHV1pYWlFEUT09Cg==",
-      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.13/UwURDP-linux-x64.rpm"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockV2K2JOSnJPYjZuNGNjN3hlOFpybmVvN3ZvNzFzckVMVVhWdFh3blNKdjVhMHpEa0NiSUh0bm9ZRkFmM0RMeWtHK2dIMmI5VmZnMG1YL0tRUGhjbXdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTcwNjcxCWZpbGU6VXdVUkRQLTAuMS4wLWJldGEuMTQtbGludXgteDg2XzY0LnJwbQpWQkJTUDd2dmJxajM5MFEyK1JoOGNRa1lpZUFQM0dFR21GV1lkZXRaVHZzMHVpT09RNDBPL1FTMldjTnZobVljNi9kc3ljTjhvWTdHcllKbFZ6NFhEUT09Cg==",
+      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.14/UwURDP-linux-x64.rpm"
     },
     "linux-aarch64-deb": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockJwZ28vVFVsRzlOeEg1TzJPcHh4alJTQ2RCektGUllISm4wRU80YXk0a0pDNTBYOEliYStRclJsMDVkT1pZbjFENlpTN1lDTWNGck12b1JZU0g0VHdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzAwNDgxCWZpbGU6VXdVUkRQLTAuMS4wLWJldGEuMTMtbGludXgtYWFyY2g2NC5kZWIKbGxPTFBJcjhsa2tpV0VvbUQwSlVGK09tM3RYakgvaG1md0c1eEliUGVybTlscVFLYjdnTWtnbzgwc3VhVHArZGxzZ1VkYU5NYWhIWjNNZ1E5ZTZFQ1E9PQo=",
-      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.13/UwURDP-linux-arm64.deb"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockNwcit2NmliNjF2OURuUzJQeklGZmRMd2UzZE8zKytnZ0s4Qm1OYjBOalpzck42V1plbjZ2bUZNa0xqKy90MHNGV1JvODYzSTVkLy9WZ0Y0U2VxT1FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTcwNjcxCWZpbGU6VXdVUkRQLTAuMS4wLWJldGEuMTQtbGludXgtYWFyY2g2NC5kZWIKcnYvYWtabkJEYlpGMmdvSFREUkNSZE5sMVhNckVpMk5DR21rZk05Y3l6cFRHbHZ5TkJ0MFVYWWVleU5kUTk0V2JWZjFvdmlQWVlCNmpyMllsMlNOQ2c9PQo=",
+      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.14/UwURDP-linux-arm64.deb"
     },
     "linux-aarch64-rpm": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockUyT3BhYm5JUnNLNXhoZEJhSlhBYlRycDlNYlRxSGlBcENzWjRIeVFTQ3BxKzRZSmE0SHJSMzFiNUVUbVZ3Ulp2TTdOcmVMZFdyN2dsSzhiNUpIc1FvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzAwNDgyCWZpbGU6VXdVUkRQLTAuMS4wLWJldGEuMTMtbGludXgtYWFyY2g2NC5ycG0KdE0yL2Vha1Z5Nk9jazhINnFlNmt3OFRSNzdlL1Jzcjc4M3gyb2VROENMTFdEUTBMTSs5N201YXd1Nkk5b3N3K1lqbDNtL205NGpLME96T2VWZHJ5Q3c9PQo=",
-      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.13/UwURDP-linux-arm64.rpm"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1dockFlM01CVlpQdEMwd01QSklKcEVKRGJXaDgzTUkzZ1hiZTgzNUN2N3RDWXRXR0JXSm8yMmYwZkZSMEpWVUNuYURkb0R3Yy81NU1YYzVqVEdJY2JsQndvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTcwNjcyCWZpbGU6VXdVUkRQLTAuMS4wLWJldGEuMTQtbGludXgtYWFyY2g2NC5ycG0KdkNIWUZnK0laMWp0OGM2UVJINVJKdHpNbDNzQ2RocStEVG9QSkV3bkZyQ0txS0dNM1pzMnBzQTB3MThTeW1jZzJLZzBzbDN0K0l1bWFEOVZ6VHVNQkE9PQo=",
+      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.14/UwURDP-linux-arm64.rpm"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1docklXak1Rb00ycklILzkxUGlEdjZzV3hNa2FySG5TL3FXQWIxK3k2eFk5VVdzdU1ZNTdoUDNQWW0xOGFkVzFaQUQwSGd2L2JGUy9hQXJnUndUa2o0aFF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzAwNDgzCWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTMtbGludXgteDY0LkFwcEltYWdlCkJIUUxwMDhKR0NYdTM2cVkxT1pqUm1HY2hONjRSQ0ZNTW5LWGtQWnAxMDlFOTYrUHB1ZG5QNWpKODRyR0FKcEp4QzdYKzk4ajBnQTlGa2cwRFp2V0JBPT0K",
-      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.13/UwURDP-update-linux-x64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSXJsUDRqb1doclBURXNXbmt5N25idTBHRVh1NzM4eW9QTDlObzlYWnpFSXBOTWpQZWplb2M1R0NxcGFsSDJ0TkM1eTJFOWdnZ2lodTdITW15MlhNUFZUY29IWlVKRUFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTcwNjczCWZpbGU6VXdVUkRQLVNldHVwLTAuMS4wLWJldGEuMTQtbGludXgteDY0LkFwcEltYWdlClp1VG9lRFkvYzZOc2pGVGJ6OEEzc3JoRXRqVlVvYXoyZmZFampqZmpmRlBQYU92VmVxSHgwUGJpdzUzTW5KUmcyYjIwT09TdlNqbTJSaVhBWmNUdEJBPT0K",
+      "url": "https://github.com/MinifyX/UwURDP-Client/releases/download/v0.1.0-beta.14/UwURDP-update-linux-x64.AppImage"
     }
   }
 }

@@ -85,6 +85,8 @@ const tag = `v${version}`;
 const installers = join(root, 'target', 'installers');
 const windowsName = 'UwURDP-windows-x64-setup.exe';
 const windowsSetup = join(installers, windowsName);
+const windowsSymbolsName = 'UwURDP-windows-x64-symbols.zip';
+const windowsSymbols = join(installers, windowsSymbolsName);
 
 /**
  * What the release carries: each file under its published name, the CI
@@ -113,11 +115,14 @@ const PLATFORMS = [
     file: windowsName,
     sign: { 'windows-x86_64': `UwURDP-Setup-${version}.exe` },
   },
+  // The .pdb of the program in that setup, for reading its crash dumps.
+  { artifact: localWindows ? null : 'installers-windows-x64', file: windowsSymbolsName },
   {
     artifact: 'installers-windows-arm64',
     file: 'UwURDP-windows-arm64-setup.exe',
     sign: { 'windows-aarch64': `UwURDP-Setup-${version}-windows-arm64.exe` },
   },
+  { artifact: 'installers-windows-arm64', file: 'UwURDP-windows-arm64-symbols.zip' },
   { artifact: 'installers-macos-universal', file: 'UwURDP-macos-universal.dmg' },
   {
     // One universal program for both Mac platforms, signed once under each name.
@@ -136,7 +141,9 @@ const PLATFORMS = [
     file: 'UwURDP-update-linux-x64.AppImage',
     sign: { 'linux-x86_64': `UwURDP-Setup-${version}-linux-x64.AppImage` },
   },
-].filter((entry) => !windowsOnly || entry.file === windowsName);
+].filter(
+  (entry) => !windowsOnly || entry.file === windowsName || entry.file === windowsSymbolsName,
+);
 
 console.log(`\n▸ Checking UwURDP ${version}`);
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(version)) fail(`Unexpected version ${version}`);
@@ -184,8 +191,8 @@ if (build) {
     stdio: 'inherit',
     env,
   });
-} else if (localWindows && !existsSync(windowsSetup)) {
-  fail(`${windowsSetup} is missing. Run without --no-build.`);
+} else if (localWindows && !(existsSync(windowsSetup) && existsSync(windowsSymbols))) {
+  fail(`${windowsSetup} or its symbols are missing. Run without --no-build.`);
 } else if (
   localWindows &&
   statSync(windowsSetup).mtimeMs < Number(git(['log', '-1', '--format=%ct'])) * 1000
@@ -195,7 +202,14 @@ if (build) {
 
 const work = mkdtempSync(join(tmpdir(), 'uwurdp-release-'));
 try {
-  const files = new Map(localWindows ? [[windowsName, windowsSetup]] : []);
+  const files = new Map(
+    localWindows
+      ? [
+          [windowsName, windowsSetup],
+          [windowsSymbolsName, windowsSymbols],
+        ]
+      : [],
+  );
   if (!windowsOnly) {
     console.log(
       `\n▸ Fetching what CI built for this ${dryRun ? 'commit' : 'tag'}: ${localWindows ? '' : 'Windows x64, '}Windows ARM, macOS, Linux`,

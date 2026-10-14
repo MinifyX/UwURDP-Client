@@ -24,7 +24,7 @@ releasing renames it to the version's file. The text appears under "Was ist neu?
 4. Run `pnpm release` on the machine with the signing key (any system), with the tag checked out.
 
 `pnpm release` waits for the Installers run of the tagged commit and downloads what it built: the Windows setups for x64
-(`UwURDP-windows-x64-setup.exe`) and ARM, the universal macOS disk image and its update program, and
+(`UwURDP-windows-x64-setup.exe`) and ARM with the symbols of the program in each (`UwURDP-windows-<arch>-symbols.zip`, for crash dumps), the universal macOS disk image and its update program, and
 for Linux x64 and arm64 the `.deb`, `.rpm` and portable `.tar.gz`, plus the x64 setup AppImage for
 copies the old Linux setup installed. With `--build-windows` it builds the Windows x64 setup on this
 machine instead (`pnpm build:setup`, on Windows only), with `--no-build` it takes the one already in

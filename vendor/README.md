@@ -13,3 +13,16 @@ now read as zero and zero runs are handed out one value at a time.
 The manifest points the sibling crates at the same git rev instead of paths;
 tests and dev-dependencies are dropped. Remove this copy and the `[patch]` in
 the root `Cargo.toml` once upstream decodes Windows' streams.
+
+## ironrdp-pdu
+
+`ironrdp-pdu` 0.9.0 as published on crates.io (the version every IronRDP crate
+from crates.io uses), with one change: `src/rdp/server_error_info.rs` decodes
+a Set Error Info PDU with a code it doesn't know as `ErrorInfo::Unknown(code)`.
+Upstream fails the whole PDU with "unexpected info code", which ended
+connections to servers that send codes MS-RDPBCGR doesn't list; now the
+connection goes on (or ends with the code in its message, if it isn't zero).
+
+Tests and dev-dependencies are dropped. Remove this copy and the
+`[patch.crates-io]` in the root `Cargo.toml` once upstream accepts unknown
+codes.

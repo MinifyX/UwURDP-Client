@@ -6,10 +6,22 @@
 //! Linux). What it lacks is a cheap way to see that anything changed; Windows
 //! and macOS keep a counter for exactly that, read here without opening the
 //! clipboard. Linux has none, so there the worker compares contents.
+//!
+//! Every session has a worker of its own, but they all share this computer's
+//! one clipboard, so each access holds [`ONE_AT_A_TIME`]. On Windows that is
+//! what keeps the process alive: arboard opens the clipboard without a
+//! window, which doesn't keep a second thread of the same process out, and
+//! two threads inside `GetClipboardData` at once corrupt the heap through
+//! user32's cache of the handles it hands out (0xc0000374 with two or more
+//! sessions open, every crash dump with a second worker in `GlobalSize`).
 
 use super::formats::Rgba;
+use parking_lot::Mutex;
 use std::path::PathBuf;
 use tracing::warn;
+
+/// Held for every call into arboard, by every session's worker.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 pub(crate) trait LocalClipboard {
     /// A number that changes whenever anything puts something on the
@@ -33,6 +45,7 @@ pub(crate) trait LocalClipboard {
 pub(crate) struct Arboard(arboard::Clipboard);
 
 pub(crate) fn open_system_clipboard() -> Option<Box<dyn LocalClipboard>> {
+    let _one = ONE_AT_A_TIME.lock();
     match arboard::Clipboard::new() {
         Ok(clipboard) => Some(Box::new(Arboard(clipboard))),
         Err(e) => {
@@ -59,6 +72,7 @@ impl LocalClipboard for Arboard {
     }
 
     fn files(&mut self) -> Option<Vec<PathBuf>> {
+        let _one = ONE_AT_A_TIME.lock();
         let files = self.0.get().file_list().ok()?;
         let files: Vec<PathBuf> = files
             .into_iter()
@@ -73,14 +87,17 @@ impl LocalClipboard for Arboard {
     }
 
     fn text(&mut self) -> Option<String> {
+        let _one = ONE_AT_A_TIME.lock();
         self.0.get_text().ok().filter(|t| !t.is_empty())
     }
 
     fn html(&mut self) -> Option<String> {
+        let _one = ONE_AT_A_TIME.lock();
         self.0.get().html().ok().filter(|t| !t.is_empty())
     }
 
     fn image(&mut self) -> Option<Rgba> {
+        let _one = ONE_AT_A_TIME.lock();
         let image = self.0.get_image().ok()?;
         Some(Rgba {
             width: image.width,
@@ -90,6 +107,7 @@ impl LocalClipboard for Arboard {
     }
 
     fn set_text(&mut self, text: &str, html: Option<&str>) -> Result<(), String> {
+        let _one = ONE_AT_A_TIME.lock();
         match html {
             Some(html) => self.0.set_html(html, Some(text)),
             None => self.0.set_text(text),
@@ -98,6 +116,7 @@ impl LocalClipboard for Arboard {
     }
 
     fn set_image(&mut self, image: Rgba) -> Result<(), String> {
+        let _one = ONE_AT_A_TIME.lock();
         self.0
             .set_image(arboard::ImageData {
                 width: image.width,
@@ -108,6 +127,7 @@ impl LocalClipboard for Arboard {
     }
 
     fn set_files(&mut self, files: &[PathBuf]) -> Result<(), String> {
+        let _one = ONE_AT_A_TIME.lock();
         self.0.set().file_list(files).map_err(|e| e.to_string())
     }
 }

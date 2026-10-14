@@ -717,6 +717,17 @@ mod tests {
     }
 
     #[test]
+    fn unknown_error_info_codes_decode() {
+        // Not in MS-RDPBCGR; upstream ironrdp-pdu refused the whole PDU.
+        let pdu: ironrdp_pdu::rdp::server_error_info::ServerSetErrorInfoPdu =
+            ironrdp_core::decode(&[0x34, 0x12, 0x00, 0x00]).unwrap();
+        assert_eq!(pdu.0, ErrorInfo::Unknown(0x1234));
+        let ending = ending_for(&GracefulDisconnectReason::Other(pdu.0.description()), false);
+        assert_eq!(ending.reason, CloseReason::Server);
+        assert_eq!(ending.message, "The server sent error code 0x00001234.");
+    }
+
+    #[test]
     fn other_server_reasons_are_server() {
         let description =
             ErrorInfo::ProtocolIndependentCode(ProtocolIndependentCode::IdleTimeout).description();

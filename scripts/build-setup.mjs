@@ -14,6 +14,7 @@
 //
 //   Windows  UwURDP-windows-x64-setup.exe           what people run, and what updates run
 //            UwURDP-windows-arm64-setup.exe         the same for ARM
+//            UwURDP-windows-<arch>-symbols.zip      the app's .pdb, for crash dumps
 //   macOS    UwURDP-macos-universal.dmg             what people open
 //            UwURDP-update-macos-universal          the setup program inside it, for updates
 //   Linux    UwURDP-linux-<arch>.deb                the app for apt/dpkg, updates itself
@@ -99,18 +100,41 @@ function only(dir, test, what) {
 const produced = [];
 
 if (process.platform === 'win32') {
+  // Symbols for reading crash dumps, published next to the setup rather than
+  // in it: MSVC writes them to a .pdb of their own, so the program itself is
+  // no bigger than stripped. Both builds alike, or the second rebuilds every
+  // dependency.
+  const symbols = {
+    CARGO_PROFILE_RELEASE_DEBUG: 'line-tables-only',
+    CARGO_PROFILE_RELEASE_STRIP: 'none',
+  };
   console.log(`\n▸ Building UwURDP ${version}`);
-  run(`pnpm --filter @uwurdp/desktop tauri build --no-bundle${targetArg}`);
+  run(`pnpm --filter @uwurdp/desktop tauri build --no-bundle${targetArg}`, symbols);
   const app = join(release, 'uwurdp-desktop.exe');
   if (!existsSync(app)) fail(`Missing ${app}`);
+  const pdb = 'uwurdp_desktop.pdb';
+  if (!existsSync(join(release, pdb))) fail(`Missing ${join(release, pdb)}`);
 
   console.log('\n▸ Packing it into the setup');
   run(`pnpm --filter @uwurdp/setup tauri build --no-bundle${targetArg}`, {
+    ...symbols,
     UWURDP_SETUP_PAYLOAD: app,
   });
   const setup = join(out, `UwURDP-windows-${arch()}-setup.exe`);
   copyFileSync(join(release, 'uwurdp-setup.exe'), setup);
   produced.push(setup);
+
+  // Windows' own tar (bsdtar) writes zip; Git's, earlier on CI's PATH, can't.
+  const zip = join(out, `UwURDP-windows-${arch()}-symbols.zip`);
+  rmSync(zip, { force: true });
+  execFileSync(
+    join(process.env.SystemRoot, 'System32', 'tar.exe'),
+    ['-a', '-cf', zip, '-C', release, pdb],
+    {
+      stdio: 'inherit',
+    },
+  );
+  produced.push(zip);
 } else if (process.platform === 'darwin') {
   // Ad-hoc signed: no Apple developer ID, but a sealed bundle, which Apple
   // silicon insists on and which keeps the app intact through the setup.

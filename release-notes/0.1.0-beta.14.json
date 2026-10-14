@@ -1,0 +1,4 @@
+{
+  "de": "UwURDP 0.1.0-beta.14 ✧ Kein Absturz mehr mit mehreren Sitzungen\n\n- Windows: Mit mehreren offenen Sitzungen stürzte UwURDP ab und zu ohne Meldung ab. Die Sitzungen greifen jetzt nacheinander auf die Zwischenablage zu, statt gleichzeitig\n- Server, die einen unbekannten Fehlercode schicken, brechen die Verbindung nicht mehr mit „unexpected info code“ ab\n- Zu jedem Windows-Setup gibt es die Symbole (.pdb) als eigene Datei, damit sich Absturzberichte auswerten lassen",
+  "en": "UwURDP 0.1.0-beta.14 ✧ no more crashes with several sessions\n\n- Windows: with several sessions open, UwURDP now and then crashed without a word. The sessions now take turns with the clipboard instead of using it at the same time\n- Servers that send an error code UwURDP doesn't know no longer end the connection with “unexpected info code”\n- Every Windows setup comes with its symbols (.pdb) as a file of their own, so crash reports can be read"
+}

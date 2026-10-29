@@ -239,5 +239,20 @@
   "Hoch": "High",
   "Schrift": "Font",
   "Nur auf diesem Gerät. UwU Sans ist die Schrift aller UwU-Apps.": "Only on this device. UwU Sans is the font of every UwU app.",
-  "Remotedesktop 0123 Il1 O0": "Remote desktop 0123 Il1 O0"
+  "Remotedesktop 0123 Il1 O0": "Remote desktop 0123 Il1 O0",
+  "Mit UwUAuth anmelden": "Sign in with UwUAuth",
+  "Statt einer Einladung: Ist der Server mit UwUAuth verbunden, meldest du dich im Browser an. Dein Master-Passwort bleibt trotzdem deins.": "Instead of an invite: if the server is connected to UwUAuth, you sign in in the browser. Your master password stays yours all the same.",
+  "Der Server muss mit UwUAuth gekoppelt sein (uwusync-server uwuauth pair). Die Anmeldung öffnet sich im Browser.": "The server has to be paired with UwUAuth (uwusync-server uwuauth pair). Signing in opens in the browser.",
+  "Einrichtungscode oder Server-Adresse": "Setup code or server address",
+  "Eine Adresse allein reicht, wenn der Server ein Zertifikat hat, dem dieses Gerät vertraut. Sonst den Einrichtungscode nehmen: Er enthält den Fingerprint.": "An address alone is enough when the server has a certificate this device trusts. Otherwise use the setup code: it holds the fingerprint.",
+  "Warte auf die Anmeldung im Browser…": "Waiting for you to sign in in the browser…",
+  "Im Browser anmelden": "Sign in in the browser",
+  "Konto anlegen": "Create account",
+  "Mit deinem Konto verbinden": "Connect to your account",
+  "Angemeldet als {who}. Auf diesem Server gibt es noch kein Konto für dich: Dieses Gerät legt es an. Danach zeigt UwURDP dein Recovery-Kit.": "Signed in as {who}. There is no account for you on this server yet: this device creates it. UwURDP shows your recovery kit afterwards.",
+  "Angemeldet als {who}. Du hast hier schon ein Konto: Master-Passwort und Recovery-Code öffnen es auf diesem Gerät.": "Signed in as {who}. You already have an account here: the master password and recovery code open it on this device.",
+  "Recovery-Code": "Recovery code",
+  "Steht im Recovery-Kit. Ein verbundenes Gerät zeigt ihn unter Sync → Recovery-Kit.": "It's in the recovery kit. A connected device shows it under Sync → Recovery kit.",
+  "UwUAuth sieht dein Master-Passwort nie, und eine Anmeldung dort öffnet deinen Tresor nicht.": "UwUAuth never sees your master password, and signing in there doesn't open your vault.",
+  "Die Anmeldung mit UwUAuth hat nicht geklappt: {reason}": "Signing in with UwUAuth didn't work: {reason}"
 }

@@ -28,8 +28,8 @@ use uuid::Uuid;
 use uwurdp_proto::api::{
     self, Admitted, ChallengeRequest, ChallengeResponse, ChangePassword, CreateAccount,
     DeviceSummary, EnrolDevice, EnrolmentToken, Health, LoginRequest, LoginResponse, PairMessage,
-    PairMessages, PairOpened, RevokeDevice, VaultParamsRequest, WireVault, WireVaultParams,
-    PAIR_CLAIM_HEADER,
+    PairMessages, PairOpened, RevokeDevice, SsoFinish, SsoStart, SsoStarted, SsoTicket,
+    VaultParamsRequest, WireVault, WireVaultParams, PAIR_CLAIM_HEADER,
 };
 use uwurdp_proto::{
     Envelope, PullResponse, PushRequest, PushResponse, SyncCursor, MAX_BATCH, MAX_BATCH_BYTES,
@@ -145,16 +145,34 @@ impl Server {
 
     /// What a joining device needs before it can prove it knows the master
     /// password: the salt, the costs, and whether an account key is wanted.
-    pub fn vault_params(&self, enrolment: &str) -> Result<WireVaultParams, TransportError> {
-        let request = VaultParamsRequest {
-            enrolment: enrolment.to_string(),
-        };
+    /// The request carries an enrolment token or an SSO ticket.
+    pub fn vault_params(
+        &self,
+        request: &VaultParamsRequest,
+    ) -> Result<WireVaultParams, TransportError> {
+        self.send(
+            || self.client.post(self.url("/v1/vault/params")).json(request),
+            false,
+        )
+    }
+
+    /// Start signing in with UwUAuth: the server answers where to send the
+    /// browser. Refused when the server is not paired with UwUAuth.
+    pub fn sso_start(&self, request: &SsoStart) -> Result<SsoStarted, TransportError> {
         self.send(
             || {
                 self.client
-                    .post(self.url("/v1/vault/params"))
-                    .json(&request)
+                    .post(self.url("/v1/sso/authorize"))
+                    .json(request)
             },
+            false,
+        )
+    }
+
+    /// Turn what came back to the loopback address into a ticket.
+    pub fn sso_token(&self, request: &SsoFinish) -> Result<SsoTicket, TransportError> {
+        self.send(
+            || self.client.post(self.url("/v1/sso/token")).json(request),
             false,
         )
     }

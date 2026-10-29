@@ -25,7 +25,7 @@ use uuid::Uuid;
 use uwurdp_store::{Store, StoreError, VaultStatus, Withheld};
 use uwurdp_sync::flow::{self, FlowError, PairingOffer};
 use uwurdp_sync::lock::{Difference, Lock, LockError};
-use uwurdp_sync::{pairing, Server, SyncError, SyncReport, TransportError};
+use uwurdp_sync::{pairing, sso, Server, SyncError, SyncReport, TransportError};
 use zeroize::Zeroizing;
 
 /// How often the worker looks whether something waits to be pushed.
@@ -63,6 +63,11 @@ pub(crate) enum SyncFailure {
     },
     /// The other device did not answer in time, or the words didn't match.
     PairingFailed {
+        message: String,
+    },
+    /// Signing in with UwUAuth did not work out: cancelled, too slow,
+    /// refused there, or the ticket ran out.
+    SsoFailed {
         message: String,
     },
     Error {
@@ -326,6 +331,7 @@ pub(crate) fn describe(failure: &SyncFailure) -> String {
         SyncFailure::Unreachable { message }
         | SyncFailure::Refused { message }
         | SyncFailure::PairingFailed { message }
+        | SyncFailure::SsoFailed { message }
         | SyncFailure::LoginRefused { message }
         | SyncFailure::Error { message } => message.clone(),
     }
@@ -724,6 +730,302 @@ pub(crate) async fn sync_join(
     .await
 }
 
+// ── Signing in with UwUAuth ────────────────────────────────────────────────
+
+/// A ticket from signing in with UwUAuth, waiting for the next step. It stays
+/// on this side: the page only learns what to ask next.
+struct SsoPending {
+    setup: flow::Setup,
+    ticket: Zeroizing<String>,
+    expires: Instant,
+    /// Joins with it the server turned away, most likely for a wrong master
+    /// password. The server forgets a ticket after as many.
+    refused: u32,
+}
+
+/// Wrong master passwords the server takes with one ticket before it forgets
+/// it (`TICKET_TRIES` on the server).
+const SSO_TICKET_TRIES: u32 = 5;
+
+static SSO_PENDING: Mutex<Option<SsoPending>> = Mutex::new(None);
+/// Set to stop a sign-in that waits for the browser.
+static SSO_CANCEL: AtomicBool = AtomicBool::new(false);
+
+impl From<sso::SsoError> for SyncFailure {
+    fn from(error: sso::SsoError) -> Self {
+        match error {
+            sso::SsoError::Transport(error) => error.into(),
+            sso::SsoError::TimedOut => Self::SsoFailed {
+                message: "signing in took too long".into(),
+            },
+            sso::SsoError::Cancelled => Self::SsoFailed {
+                message: "cancelled".into(),
+            },
+            other => Self::SsoFailed {
+                message: other.to_string(),
+            },
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SsoSignedIn {
+    /// Whether this person already has an account on the server: join it
+    /// (master password and recovery code), otherwise make one.
+    has_account: bool,
+    needs_account_key: bool,
+    display_name: Option<String>,
+    user_name: Option<String>,
+    server_url: String,
+}
+
+/// Sign in with UwUAuth through the system browser: the server's setup code
+/// or address, then the browser, then back here with a ticket.
+#[tauri::command]
+pub(crate) async fn sync_sso_sign_in(app: AppHandle, server: String) -> SyncResult<SsoSignedIn> {
+    use tauri_plugin_opener::OpenerExt;
+    let setup = flow::parse_server(&server).ok_or(SyncFailure::BadCode)?;
+    SSO_CANCEL.store(false, Ordering::SeqCst);
+    *SSO_PENDING.lock() = None;
+    tauri::async_runtime::spawn_blocking(move || {
+        let connection = Server::connect(&setup.server_url, setup.tls_fingerprint.as_deref())?;
+        let sign_in = sso::begin(&connection)?;
+        app.opener()
+            .open_url(sign_in.url.clone(), None::<&str>)
+            .map_err(|error| SyncFailure::error(format!("couldn't open the browser: {error}")))?;
+        let ticket = sso::finish(
+            &connection,
+            sign_in,
+            Instant::now() + sso::SIGN_IN_TIMEOUT,
+            || SSO_CANCEL.load(Ordering::SeqCst),
+        )?;
+        let signed_in = SsoSignedIn {
+            has_account: ticket.has_account,
+            needs_account_key: ticket.needs_account_key,
+            display_name: ticket.display_name.clone(),
+            user_name: ticket.user_name.clone(),
+            server_url: setup.server_url.clone(),
+        };
+        // A little before the server's own end, so the next step does not
+        // start with a ticket about to run out.
+        let left = ticket
+            .expires_ms
+            .saturating_sub(now_ms())
+            .saturating_sub(5_000);
+        *SSO_PENDING.lock() = Some(SsoPending {
+            setup,
+            ticket: Zeroizing::new(ticket.ticket),
+            expires: Instant::now() + Duration::from_millis(left),
+            refused: 0,
+        });
+        Ok(signed_in)
+    })
+    .await
+    .map_err(SyncFailure::error)?
+}
+
+/// Stop waiting for the browser, and forget a ticket nobody used.
+#[tauri::command]
+pub(crate) fn sync_sso_cancel() {
+    SSO_CANCEL.store(true, Ordering::SeqCst);
+    *SSO_PENDING.lock() = None;
+}
+
+/// The ticket of the last sign-in. It stays where it is until
+/// [`settle_sso`] says what became of it: a mistyped password or a locked
+/// vault must not throw the sign-in away.
+fn peek_sso() -> SyncResult<(flow::Setup, Zeroizing<String>)> {
+    let mut slot = SSO_PENDING.lock();
+    let pending = slot.as_ref().ok_or_else(|| SyncFailure::SsoFailed {
+        message: "sign in with UwUAuth first".into(),
+    })?;
+    if Instant::now() >= pending.expires {
+        *slot = None;
+        return Err(SyncFailure::SsoFailed {
+            message: "the sign-in ran out, sign in again".into(),
+        });
+    }
+    Ok((pending.setup.clone(), pending.ticket.clone()))
+}
+
+/// The server's short code at the end of a refusal: `message (code)`.
+fn refusal_code(failure: &SyncFailure) -> Option<&str> {
+    match failure {
+        SyncFailure::Refused { message } => message
+            .strip_suffix(')')
+            .and_then(|rest| rest.rsplit_once(" ("))
+            .map(|(_, code)| code),
+        _ => None,
+    }
+}
+
+/// After a step with `ticket`: forget it once it is used, or once the
+/// server has done so; otherwise keep it for another try. `joining` is a
+/// join, where the server answers a wrong master password the way it
+/// answers a ticket it does not know.
+fn settle_sso<T>(ticket: &str, joining: bool, result: SyncResult<T>) -> SyncResult<T> {
+    let mut slot = SSO_PENDING.lock();
+    let same = slot
+        .as_ref()
+        .is_some_and(|pending| pending.ticket.as_str() == ticket);
+    let failure = match result {
+        Ok(done) => {
+            if same {
+                *slot = None;
+            }
+            return Ok(done);
+        }
+        Err(failure) => failure,
+    };
+    let forget = |slot: &mut Option<SsoPending>| {
+        if same {
+            *slot = None;
+        }
+    };
+    match refusal_code(&failure) {
+        // UwUAuth turned the person away, or the server is no longer paired:
+        // the ticket is gone with that.
+        Some("account-disabled") | Some("sso-off") => {
+            forget(&mut slot);
+            Err(failure)
+        }
+        // Making an account takes no password: the ticket itself was refused.
+        Some("unauthorized") if !joining => {
+            forget(&mut slot);
+            Err(SyncFailure::SsoFailed {
+                message: "the sign-in ran out, sign in again".into(),
+            })
+        }
+        Some("unauthorized") => {
+            let refused = match slot.as_mut().filter(|_| same) {
+                Some(pending) => {
+                    pending.refused += 1;
+                    pending.refused
+                }
+                None => SSO_TICKET_TRIES,
+            };
+            if refused >= SSO_TICKET_TRIES {
+                forget(&mut slot);
+                return Err(SyncFailure::SsoFailed {
+                    message: "too many wrong master passwords, sign in again".into(),
+                });
+            }
+            Err(SyncFailure::PasswordWrong)
+        }
+        // Anything else (a locked vault, a password too weak, the network)
+        // left the ticket as it was on the server.
+        _ => Err(failure),
+    }
+}
+
+/// First device of a person who signed in with UwUAuth: a new master password
+/// and a name. Makes the account and hands back the recovery kit, as
+/// [`sync_connect`] does.
+#[tauri::command]
+pub(crate) async fn sync_sso_create(
+    app: AppHandle,
+    password: String,
+    name: String,
+) -> SyncResult<Connected> {
+    let password = Zeroizing::new(password);
+    let name = clean_name(&name)?;
+    let (setup, ticket) = peek_sso()?;
+    let held = ticket.clone();
+    let result = blocking(&app, move |app, store, sync| {
+        if store.sync_state()?.paired() {
+            return Err(SyncFailure::error("this device is already paired"));
+        }
+        if store.lock_state()?.active {
+            return Err(SyncFailure::error("this device syncs through UwULock"));
+        }
+        if password.trim().is_empty() {
+            return Err(SyncFailure::error("the master password cannot be empty"));
+        }
+        check_password(store, password.as_bytes())?;
+        let remembered = wants_remembered(store);
+        let (server, paired) = flow::create_account_sso(
+            store,
+            &setup,
+            &ticket,
+            password.as_bytes(),
+            &name,
+            crate::device::protect_sync,
+        )?;
+        keep_remembered(store, remembered);
+        let recovery_code = paired
+            .recovery
+            .as_ref()
+            .map(|key| key.to_code())
+            .unwrap_or_default();
+        *sync.server.lock() = Some(Arc::new(server));
+        sync.poke();
+        let _ = app.emit("sync:status", ());
+        Ok(Connected {
+            recovery_code,
+            server_url: setup.server_url,
+            tls_fingerprint: setup.tls_fingerprint,
+        })
+    })
+    .await;
+    settle_sso(&held, false, result)
+}
+
+/// Another device of a person who signed in with UwUAuth: the account's
+/// master password and, when it has one, the recovery code from the kit.
+#[tauri::command]
+pub(crate) async fn sync_sso_join(
+    app: AppHandle,
+    password: String,
+    recovery_code: Option<String>,
+    name: String,
+) -> SyncResult<()> {
+    let password = Zeroizing::new(password);
+    let name = clean_name(&name)?;
+    let account_key = match recovery_code.as_deref().map(str::trim) {
+        Some(code) if !code.is_empty() => {
+            Some(uwurdp_vault::AccountKey::from_code(code).map_err(|_| SyncFailure::BadCode)?)
+        }
+        _ => None,
+    };
+    let (setup, ticket) = peek_sso()?;
+    let held = ticket.clone();
+    let result = blocking(&app, move |app, store, sync| {
+        if store.sync_state()?.paired() {
+            return Err(SyncFailure::error("this device is already paired"));
+        }
+        if store.lock_state()?.active {
+            return Err(SyncFailure::error("this device syncs through UwULock"));
+        }
+        if store.vault_status()? == VaultStatus::Locked {
+            return Err(SyncFailure::VaultLocked);
+        }
+        let remembered = wants_remembered(store);
+        let (server, _) = flow::join_sso(
+            store,
+            &setup,
+            &ticket,
+            password.as_bytes(),
+            account_key.as_ref(),
+            &name,
+            crate::device::protect_sync,
+        )
+        .map_err(|error| match error {
+            FlowError::NoAccountKey => SyncFailure::SsoFailed {
+                message: "this account needs the recovery code from its kit".into(),
+            },
+            other => other.into(),
+        })?;
+        keep_remembered(store, remembered);
+        *sync.server.lock() = Some(Arc::new(server));
+        sync.poke();
+        let _ = app.emit("sync:status", ());
+        Ok(())
+    })
+    .await;
+    settle_sso(&held, true, result)
+}
+
 // ── Adding a device from here ──────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -990,6 +1292,69 @@ pub(crate) fn kept_account_key(store: &Store) -> Option<uwurdp_vault::AccountKey
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pending_ticket(ticket: &str) {
+        *SSO_PENDING.lock() = Some(SsoPending {
+            setup: flow::parse_server("https://sync.example.com").unwrap(),
+            ticket: Zeroizing::new(ticket.into()),
+            expires: Instant::now() + Duration::from_secs(60),
+            refused: 0,
+        });
+    }
+
+    fn refused(code: &str) -> SyncResult<()> {
+        Err(SyncFailure::Refused {
+            message: format!("not allowed ({code})"),
+        })
+    }
+
+    /// One test for the one slot the sign-in lives in, so nothing runs
+    /// beside it.
+    #[test]
+    fn a_sign_in_is_kept_until_it_is_used_or_gone() {
+        // A wrong master password keeps it, a few times.
+        pending_ticket("t1");
+        for _ in 1..SSO_TICKET_TRIES {
+            assert!(matches!(
+                settle_sso("t1", true, refused("unauthorized")),
+                Err(SyncFailure::PasswordWrong)
+            ));
+            assert_eq!(peek_sso().unwrap().1.as_str(), "t1");
+        }
+        // The server forgets it after as many; so does this side.
+        assert!(matches!(
+            settle_sso("t1", true, refused("unauthorized")),
+            Err(SyncFailure::SsoFailed { .. })
+        ));
+        assert!(peek_sso().is_err());
+
+        // A local failure (a locked vault, the network) keeps it as it is.
+        pending_ticket("t2");
+        assert!(matches!(
+            settle_sso::<()>("t2", true, Err(SyncFailure::VaultLocked)),
+            Err(SyncFailure::VaultLocked)
+        ));
+        assert!(settle_sso("t2", false, refused("rate-limited")).is_err());
+        assert_eq!(peek_sso().unwrap().1.as_str(), "t2");
+        // Turned away at UwUAuth: gone.
+        assert!(settle_sso("t2", true, refused("account-disabled")).is_err());
+        assert!(peek_sso().is_err());
+
+        // Making an account takes no password: a refusal is the ticket's.
+        pending_ticket("t3");
+        assert!(matches!(
+            settle_sso("t3", false, refused("unauthorized")),
+            Err(SyncFailure::SsoFailed { .. })
+        ));
+        assert!(peek_sso().is_err());
+
+        // Used: gone. A newer sign-in is not touched by an older one's end.
+        pending_ticket("t4");
+        assert!(settle_sso("t3", false, Ok(())).is_ok());
+        assert_eq!(peek_sso().unwrap().1.as_str(), "t4");
+        assert!(settle_sso("t4", false, Ok(())).is_ok());
+        assert!(peek_sso().is_err());
+    }
 
     #[test]
     fn a_spoken_code_needs_the_server_it_belongs_to() {

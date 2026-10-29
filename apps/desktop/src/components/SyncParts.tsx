@@ -22,6 +22,10 @@ export function failureText(failure: SyncFailure): string {
       return t('Der Server hat abgelehnt: {reason}', { reason: failure.message });
     case 'pairing-failed':
       return t('Die Kopplung hat nicht geklappt: {reason}', { reason: failure.message });
+    case 'sso-failed':
+      return t('Die Anmeldung mit UwUAuth hat nicht geklappt: {reason}', {
+        reason: failure.message,
+      });
     case 'sign-in':
       return t('Die Anmeldung bei UwULock ist abgelaufen. Melde dich neu an.');
     case 'switched-off':

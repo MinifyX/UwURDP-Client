@@ -26,10 +26,14 @@ pub const CALLBACK_PATH: &str = "/uwusync/callback";
 pub const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// The most a browser's request line and headers may weigh.
 const MAX_REQUEST: usize = 16 * 1024;
-/// Requests to the listener that are not the answer (a favicon, a stray tab)
-/// before it gives up: a page somewhere poking at the port does not get to keep
-/// the device waiting forever.
-const MAX_STRAY: usize = 32;
+/// Answers on the callback path with a state that is not this sign-in's
+/// before the listener gives up: a page somewhere guessing at the port does
+/// not get to keep the device waiting. Anything else (a favicon, a stray tab)
+/// is answered and ignored.
+const MAX_WRONG_STATE: usize = 8;
+/// How long one connection to the listener may take to send its request: a
+/// connection that dawdles is dropped, so it cannot hold the real answer up.
+const REQUEST_DEADLINE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum SsoError {
@@ -73,7 +77,7 @@ pub fn begin(server: &Server) -> Result<SignIn, SsoError> {
         redirect_uri: format!("http://127.0.0.1:{port}{CALLBACK_PATH}"),
         code_challenge: challenge(&verifier),
     })?;
-    if !started.url.starts_with("https://") && !started.url.starts_with("http://127.0.0.1") {
+    if !acceptable_sign_in_url(&started.url) {
         return Err(TransportError::Refused("a sign-in address that is not https".into()).into());
     }
     Ok(SignIn {
@@ -82,6 +86,24 @@ pub fn begin(server: &Server) -> Result<SignIn, SsoError> {
         verifier,
         listener,
     })
+}
+
+/// Where the browser may be sent: https anywhere, or plain http only to this
+/// machine's own `127.0.0.1` (a UwUAuth on the same machine). The host is
+/// compared as parsed, so `http://127.0.0.1.example.com` or
+/// `http://127.0.0.1@example.com` are not mistaken for it.
+fn acceptable_sign_in_url(text: &str) -> bool {
+    let Ok(url) = url::Url::parse(text) else {
+        return false;
+    };
+    if !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
+    match url.scheme() {
+        "https" => url.host().is_some(),
+        "http" => url.host() == Some(url::Host::Ipv4(std::net::Ipv4Addr::LOCALHOST)),
+        _ => false,
+    }
 }
 
 /// Wait for the browser to come back, then trade the answer for a ticket.
@@ -117,7 +139,7 @@ fn wait_for_answer(
         .listener
         .set_nonblocking(true)
         .map_err(SsoError::Listen)?;
-    let mut stray = 0;
+    let mut wrong_state = 0;
     loop {
         if cancelled() {
             return Err(SsoError::Cancelled);
@@ -129,38 +151,54 @@ fn wait_for_answer(
             Ok((stream, _)) => stream,
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 // Nothing to wait on but the person: a short nap between looks.
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(25));
                 continue;
             }
             Err(error) => return Err(SsoError::Listen(error)),
         };
         match answer_from(stream, &sign_in.state) {
-            Some(Ok(answer)) => return Ok(answer),
-            Some(Err(error)) => return Err(error),
-            None => {
-                stray += 1;
-                if stray >= MAX_STRAY {
-                    return Err(SsoError::Refused("too many stray requests".into()));
+            Heard::Answer(answer) => return Ok(answer),
+            Heard::Refused(error) => return Err(error),
+            Heard::WrongState => {
+                wrong_state += 1;
+                if wrong_state >= MAX_WRONG_STATE {
+                    return Err(SsoError::Refused(
+                        "too many answers to another sign-in".into(),
+                    ));
                 }
             }
+            Heard::Other => {}
         }
     }
 }
 
-/// Read one request. `None` for anything that is not the answer this sign-in
-/// waits for, which is told so and ignored.
-fn answer_from(mut stream: TcpStream, state: &str) -> Option<Result<Answer, SsoError>> {
+/// What one connection to the listener brought.
+enum Heard {
+    /// The answer to this sign-in.
+    Answer(Answer),
+    /// UwUAuth's refusal of this sign-in.
+    Refused(SsoError),
+    /// The callback, but for a state that is not this one.
+    WrongState,
+    /// Anything else: a favicon, a stray tab, a connection that said nothing
+    /// in time.
+    Other,
+}
+
+/// Read one request, within [`REQUEST_DEADLINE`]. Anything that is not the
+/// answer this sign-in waits for is told so and ignored.
+fn answer_from(mut stream: TcpStream, state: &str) -> Heard {
     let _ = stream.set_nonblocking(false);
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-    let target = read_target(&mut stream)?;
-    let Some(query) = target
-        .strip_prefix(CALLBACK_PATH)
-        .and_then(|rest| rest.strip_prefix('?'))
-    else {
-        reply(&mut stream, "404 Not Found", NOT_HERE);
-        return None;
+    let _ = stream.set_write_timeout(Some(REQUEST_DEADLINE));
+    let Some(target) = read_target(&mut stream, Instant::now() + REQUEST_DEADLINE) else {
+        return Heard::Other;
     };
+    let path = target.split('?').next().unwrap_or_default();
+    if path != CALLBACK_PATH {
+        reply(&mut stream, "404 Not Found", NOT_HERE);
+        return Heard::Other;
+    }
+    let query = target.split_once('?').map(|(_, query)| query).unwrap_or("");
     let mut code = None;
     let mut got_state = None;
     let mut iss = None;
@@ -181,7 +219,7 @@ fn answer_from(mut stream: TcpStream, state: &str) -> Option<Result<Answer, SsoE
         .is_some_and(|got| constant_time_eq(got.as_bytes(), state.as_bytes()));
     if !matches {
         reply(&mut stream, "400 Bad Request", NOT_HERE);
-        return None;
+        return Heard::WrongState;
     }
     if let Some(error) = error {
         reply(&mut stream, "200 OK", REFUSED);
@@ -190,24 +228,30 @@ fn answer_from(mut stream: TcpStream, state: &str) -> Option<Result<Answer, SsoE
             .filter(|c| c.is_ascii_graphic())
             .take(64)
             .collect();
-        return Some(Err(SsoError::Refused(error)));
+        return Heard::Refused(SsoError::Refused(error));
     }
     let Some(code) = code.filter(|code| !code.is_empty() && code.len() <= 2048) else {
         reply(&mut stream, "400 Bad Request", NOT_HERE);
-        return None;
+        return Heard::Other;
     };
     reply(&mut stream, "200 OK", DONE);
-    Some(Ok(Answer { code, iss }))
+    Heard::Answer(Answer { code, iss })
 }
 
-/// The request target of a `GET`, read up to the end of the headers.
-fn read_target(stream: &mut TcpStream) -> Option<String> {
+/// The request target of a `GET`, read up to the end of the headers — all of
+/// it before `deadline`, however slowly the bytes trickle in.
+fn read_target(stream: &mut TcpStream, deadline: Instant) -> Option<String> {
     let mut buffer = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
     while !buffer.windows(4).any(|window| window == b"\r\n\r\n") {
         if buffer.len() >= MAX_REQUEST {
             return None;
         }
+        let left = deadline.checked_duration_since(Instant::now())?;
+        if left.is_zero() {
+            return None;
+        }
+        stream.set_read_timeout(Some(left)).ok()?;
         let read = stream.read(&mut chunk).ok()?;
         if read == 0 {
             break;
@@ -291,10 +335,10 @@ mod tests {
 
     #[test]
     fn the_challenge_is_the_base64url_sha256_of_the_verifier() {
-        // `printf %s <verifier> | openssl dgst -sha256 -binary | base64`, URL-safe.
+        // The example of RFC 7636, appendix B.
         assert_eq!(
-            challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r2nkcBJ5yk6R-o"),
-            "des700RPWHSrep_xrkEzFurUzCnCJHVAKUuwDMycPzc"
+            challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
         );
         assert_eq!(random_text().len(), 43);
         assert_ne!(random_text(), random_text());
@@ -317,6 +361,75 @@ mod tests {
         assert!(real.starts_with("HTTP/1.1 200") && real.contains("Signed in"));
         assert_eq!(answer.code, "abc/1");
         assert_eq!(answer.iss.as_deref(), Some("https://auth.example.com"));
+    }
+
+    #[test]
+    fn only_wrong_states_on_the_callback_count_towards_giving_up() {
+        let (sign_in, port) = listening("good-state");
+        let browser = std::thread::spawn(move || {
+            // Far more strays than wrong states are allowed: they do not count.
+            for _ in 0..(MAX_WRONG_STATE + 4) {
+                get(port, "/favicon.ico");
+            }
+            for _ in 0..(MAX_WRONG_STATE - 1) {
+                get(port, "/uwusync/callback?code=x&state=other");
+            }
+            get(port, "/uwusync/callback?code=real&state=good-state")
+        });
+        let answer = wait_for_answer(&sign_in, far(), || false).unwrap();
+        assert!(browser.join().unwrap().starts_with("HTTP/1.1 200"));
+        assert_eq!(answer.code, "real");
+
+        let (sign_in, port) = listening("good-state");
+        let browser = std::thread::spawn(move || {
+            for _ in 0..MAX_WRONG_STATE {
+                get(port, "/uwusync/callback?code=x&state=other");
+            }
+        });
+        let result = wait_for_answer(&sign_in, far(), || false);
+        browser.join().unwrap();
+        assert!(matches!(result, Err(SsoError::Refused(_))));
+    }
+
+    #[test]
+    fn a_connection_that_says_nothing_does_not_hold_up_the_answer() {
+        let (sign_in, port) = listening("s");
+        let browser = std::thread::spawn(move || {
+            // Connected first, and silent.
+            let _silent = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let started = Instant::now();
+            let real = get(port, "/uwusync/callback?code=c&state=s");
+            (real, started.elapsed())
+        });
+        let answer = wait_for_answer(&sign_in, far(), || false).unwrap();
+        let (real, waited) = browser.join().unwrap();
+        assert!(real.starts_with("HTTP/1.1 200"));
+        assert_eq!(answer.code, "c");
+        assert!(
+            waited < REQUEST_DEADLINE + Duration::from_secs(2),
+            "{waited:?}"
+        );
+    }
+
+    #[test]
+    fn the_browser_goes_only_to_https_or_this_machine() {
+        for good in [
+            "https://auth.example.com/authorize?x=1",
+            "http://127.0.0.1:8080/authorize",
+        ] {
+            assert!(acceptable_sign_in_url(good), "{good}");
+        }
+        for bad in [
+            "http://auth.example.com/authorize",
+            "http://127.0.0.1.example.com/authorize",
+            "http://127.0.0.1@auth.example.com/authorize",
+            "https://user@auth.example.com/authorize",
+            "http://localhost/authorize",
+            "javascript:alert(1)",
+            "not a url",
+        ] {
+            assert!(!acceptable_sign_in_url(bad), "{bad}");
+        }
     }
 
     #[test]

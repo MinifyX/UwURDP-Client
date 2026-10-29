@@ -472,8 +472,9 @@ function SsoForm({
       setError(failureText(failure));
       setPassword('');
       setRepeat('');
-      // The ticket is used up or ran out either way: sign in again.
-      if (failure.kind !== 'password-wrong' && failure.kind !== 'bad-code') setSignedIn(null);
+      // Only a sign-in the server used up or forgot needs another one; the
+      // app keeps it through a wrong password or a network hiccup.
+      if (failure.kind === 'sso-failed') setSignedIn(null);
     } finally {
       setBusy(false);
     }

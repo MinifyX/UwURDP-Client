@@ -19,6 +19,8 @@
 //!
 //! - [`http`] is the real transport: one blocking request at a time, against a
 //!   server whose certificate this device pinned ([`pin`]).
+//! - [`sso`] signs in with UwUAuth through the system browser, for a ticket
+//!   that stands in for an invite or an enrolment token.
 //! - [`lock`] is the other one: a UwULock Server's suite vault, with its
 //!   login, its keys, its realtime channel, and the move from UwUSync to it.
 
@@ -29,9 +31,13 @@ pub mod lock;
 pub mod memory;
 pub mod pairing;
 pub mod pin;
+pub mod sso;
 
 pub use engine::{sync_once, SyncError, SyncReport, Transport, TransportError, MAX_ROUNDS};
-pub use flow::{create_account, join, offer_pairing, parse_setup, reconnect, FlowError, Setup};
+pub use flow::{
+    create_account, create_account_sso, join, join_sso, offer_pairing, parse_server, parse_setup,
+    reconnect, FlowError, Setup,
+};
 pub use http::{from_wire, to_wire, Server};
 pub use memory::MemoryServer;
 pub use uwurdp_proto::api;

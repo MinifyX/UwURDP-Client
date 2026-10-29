@@ -60,6 +60,33 @@ pub fn parse_setup(text: &str) -> Option<Setup> {
     (!setup.server_url.is_empty()).then_some(setup)
 }
 
+/// What a person types to sign in with UwUAuth: a setup code (its invite is
+/// not needed then) or just the server's address, for a server behind a
+/// certificate the system trusts.
+pub fn parse_server(text: &str) -> Option<Setup> {
+    let text = text.trim();
+    if let Some(setup) = parse_setup(text) {
+        return Some(setup);
+    }
+    let url = url::Url::parse(text).ok()?;
+    let plain_local = url.scheme() == "http"
+        && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    if (url.scheme() != "https" && !plain_local)
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return None;
+    }
+    Some(Setup {
+        server_url: url.as_str().trim_end_matches('/').to_string(),
+        tls_fingerprint: None,
+        invite: String::new(),
+    })
+}
+
 /// What a device has once it is in.
 pub struct Paired {
     pub account_id: Uuid,
@@ -101,6 +128,31 @@ pub fn create_account(
     device_name: &str,
     protect: impl Fn(&[u8]) -> std::io::Result<Vec<u8>>,
 ) -> Result<(Server, Paired)> {
+    create_account_with(store, setup, None, password, device_name, protect)
+}
+
+/// The same as [`create_account`], with a ticket from signing in with UwUAuth
+/// in place of the invite. The account key and the recovery kit are made here
+/// just the same: UwUAuth proves who may have an account, never what opens it.
+pub fn create_account_sso(
+    store: &Store,
+    setup: &Setup,
+    ticket: &str,
+    password: &[u8],
+    device_name: &str,
+    protect: impl Fn(&[u8]) -> std::io::Result<Vec<u8>>,
+) -> Result<(Server, Paired)> {
+    create_account_with(store, setup, Some(ticket), password, device_name, protect)
+}
+
+fn create_account_with(
+    store: &Store,
+    setup: &Setup,
+    ticket: Option<&str>,
+    password: &[u8],
+    device_name: &str,
+    protect: impl Fn(&[u8]) -> std::io::Result<Vec<u8>>,
+) -> Result<(Server, Paired)> {
     let account_key = AccountKey::generate();
     // A device starting fresh gets a vault under the password alone first:
     // should the server say no, that is a vault like any other.
@@ -116,7 +168,12 @@ pub fn create_account(
     let (seed, public_key) = device_key();
     let server = Server::connect(&setup.server_url, setup.tls_fingerprint.as_deref())?;
     let admitted = server.create_account(&uwurdp_proto::api::CreateAccount {
-        invite: setup.invite.clone(),
+        invite: if ticket.is_some() {
+            String::new()
+        } else {
+            setup.invite.clone()
+        },
+        sso_ticket: ticket.map(str::to_string),
         vault: http::to_wire(&header),
         auth_key: http::encode_base64(*login_key),
         device: uwurdp_proto::api::NewDevice {
@@ -246,7 +303,10 @@ pub fn join(
     let server = Server::connect(&handover.server_url, handover.tls_fingerprint.as_deref())?;
 
     // The salt and costs, so the password can become the login key.
-    let params = server.vault_params(&handover.enrolment)?;
+    let params = server.vault_params(&uwurdp_proto::api::VaultParamsRequest {
+        enrolment: handover.enrolment.clone(),
+        sso_ticket: None,
+    })?;
     if params.needs_account_key && account_key.is_none() {
         return Err(FlowError::NoAccountKey);
     }
@@ -255,6 +315,7 @@ pub fn join(
     let (seed, public_key) = device_key();
     let admitted = server.enrol(&uwurdp_proto::api::EnrolDevice {
         enrolment: handover.enrolment.clone(),
+        sso_ticket: None,
         auth_key: http::encode_base64(*login_key),
         device: uwurdp_proto::api::NewDevice {
             name: device_name.to_string(),
@@ -294,6 +355,70 @@ pub fn join(
         },
     );
 
+    Ok((
+        server,
+        Paired {
+            account_id: admitted.account_id,
+            device_id: admitted.device_id,
+            recovery: None,
+        },
+    ))
+}
+
+/// Join an account with a ticket from signing in with UwUAuth, in place of a
+/// code from another device.
+///
+/// Nothing arrives from another device here, so the person brings what
+/// opens the vault: the master password, and the account key from the
+/// recovery kit when the account has one. There is no manifest from another
+/// device either: this device starts like one restored from the kit, and
+/// takes what the server holds as the vault.
+pub fn join_sso(
+    store: &Store,
+    setup: &Setup,
+    ticket: &str,
+    password: &[u8],
+    account_key: Option<&AccountKey>,
+    device_name: &str,
+    protect: impl Fn(&[u8]) -> std::io::Result<Vec<u8>>,
+) -> Result<(Server, Paired)> {
+    let server = Server::connect(&setup.server_url, setup.tls_fingerprint.as_deref())?;
+    let params = server.vault_params(&uwurdp_proto::api::VaultParamsRequest {
+        enrolment: String::new(),
+        sso_ticket: Some(ticket.to_string()),
+    })?;
+    if params.needs_account_key && account_key.is_none() {
+        return Err(FlowError::NoAccountKey);
+    }
+    // An account without an account key leaves none to mix in, even when the
+    // person typed one.
+    let account_key = account_key.filter(|_| params.needs_account_key);
+    let login_key = login_key_from(&params, password, account_key)?;
+
+    let (seed, public_key) = device_key();
+    let admitted = server.enrol(&uwurdp_proto::api::EnrolDevice {
+        enrolment: String::new(),
+        sso_ticket: Some(ticket.to_string()),
+        auth_key: http::encode_base64(*login_key),
+        device: uwurdp_proto::api::NewDevice {
+            name: device_name.to_string(),
+            public_key,
+        },
+    })?;
+    let server = server.as_device(admitted.account_id, admitted.device_id, &seed);
+
+    let header = http::from_wire(&server.vault()?)?;
+    let key = header.unlock_with(password, account_key)?.export_key();
+    store.adopt_vault(&header, key)?;
+    remember(
+        store,
+        setup.server_url.clone(),
+        setup.tls_fingerprint.clone(),
+        &admitted,
+        &seed,
+        account_key,
+        protect,
+    )?;
     Ok((
         server,
         Paired {
@@ -473,6 +598,30 @@ mod tests {
 
         for nonsense in ["", "uwu1_", "uwu1_notbase64!!", "hello", "uwu2_abc"] {
             assert!(parse_setup(nonsense).is_none(), "{nonsense}");
+        }
+    }
+
+    #[test]
+    fn a_server_address_or_a_setup_code_names_the_server_to_sign_in_at() {
+        let setup = parse_server(" https://sync.example.com/ ").unwrap();
+        assert_eq!(setup.server_url, "https://sync.example.com");
+        assert_eq!(setup.tls_fingerprint, None);
+        assert!(parse_server("http://127.0.0.1:8443").is_some());
+
+        let body =
+            serde_json::json!({ "u": "https://nas.example:8443", "f": "SHA256:abc" }).to_string();
+        let setup = parse_server(&format!("uwu1_{}", http::encode_base64(&body))).unwrap();
+        assert_eq!(setup.tls_fingerprint.as_deref(), Some("SHA256:abc"));
+
+        for nonsense in [
+            "",
+            "sync.example.com",
+            "http://sync.example.com",
+            "https://user:pw@sync.example.com",
+            "https://sync.example.com/?x=1",
+            "ftp://sync.example.com",
+        ] {
+            assert!(parse_server(nonsense).is_none(), "{nonsense}");
         }
     }
 

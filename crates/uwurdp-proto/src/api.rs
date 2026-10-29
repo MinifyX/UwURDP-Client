@@ -89,6 +89,11 @@ pub struct NewDevice {
 pub struct CreateAccount {
     #[serde(default)]
     pub invite: String,
+    /// A ticket from signing in with UwUAuth ([`SsoTicket`]), in place of the
+    /// invite. The master password and the account key stay the device's own:
+    /// signing in only proves who may make the account, never what opens it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sso_ticket: Option<String>,
     pub vault: WireVault,
     /// Derived from the master password and the account key. The server keeps
     /// only its hash.
@@ -100,8 +105,13 @@ pub struct CreateAccount {
 #[serde(rename_all = "camelCase")]
 pub struct EnrolDevice {
     /// The one-time token the device that is already in handed over through
-    /// the pairing channel.
+    /// the pairing channel. Empty when the device comes in with an SSO ticket.
+    #[serde(default)]
     pub enrolment: String,
+    /// A ticket from signing in with UwUAuth, in place of the enrolment
+    /// token. The device still proves the master password with `auth_key`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sso_ticket: Option<String>,
     pub auth_key: String,
     pub device: NewDevice,
 }
@@ -145,7 +155,67 @@ pub struct RevokeDevice {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultParamsRequest {
+    #[serde(default)]
     pub enrolment: String,
+    /// An SSO ticket in place of the enrolment token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sso_ticket: Option<String>,
+}
+
+/// Starting to sign in with UwUAuth: where the browser comes back to, and the
+/// challenge for the verifier only this device knows (PKCE, S256).
+///
+/// The redirect address is a loopback one (`http://127.0.0.1:<port>/…`,
+/// RFC 8252): the device listens there for the one answer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SsoStart {
+    pub redirect_uri: String,
+    pub code_challenge: String,
+}
+
+/// Where to send the browser, and the `state` the answer has to carry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SsoStarted {
+    pub url: String,
+    pub state: String,
+    pub expires_ms: u64,
+}
+
+/// What came back to the loopback address, and the verifier for the challenge
+/// [`SsoStart`] sent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SsoFinish {
+    pub state: String,
+    pub code: String,
+    pub code_verifier: String,
+    /// The `iss` parameter of the answer (RFC 9207), when there was one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iss: Option<String>,
+}
+
+/// Proof, for a few minutes and one use, that someone signed in with UwUAuth
+/// as a person allowed on this server. It stands in for an invite
+/// ([`CreateAccount::sso_ticket`]) or an enrolment token
+/// ([`EnrolDevice::sso_ticket`]); it never opens a vault.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SsoTicket {
+    pub ticket: String,
+    pub expires_ms: u64,
+    /// Whether this person already has an account here: then the device
+    /// joins it (master password, and the account key if it has one),
+    /// otherwise it makes one.
+    pub has_account: bool,
+    /// Whether opening that account's vault also needs the account key.
+    #[serde(default)]
+    pub needs_account_key: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_name: Option<String>,
 }
 
 /// The header a joining device claims side `b` of a pairing session with: a
@@ -265,6 +335,7 @@ mod tests {
     fn the_names_on_the_wire_are_the_ones_the_server_writes() {
         let json = serde_json::to_value(&CreateAccount {
             invite: "ABCDE".into(),
+            sso_ticket: None,
             vault: WireVault {
                 vault_id: Uuid::nil(),
                 kdf_memory_kib: 65536,
@@ -289,6 +360,35 @@ mod tests {
         assert_eq!(json["vault"]["wrappedBlob"], "d3JhcA");
         assert_eq!(json["vault"]["needsAccountKey"], true);
         assert_eq!(json["device"]["publicKey"], "cHVi");
+        assert!(
+            json.get("ssoTicket").is_none(),
+            "an invite alone sends no ticket"
+        );
+    }
+
+    #[test]
+    fn a_device_may_come_in_with_a_ticket_instead_of_a_token() {
+        let enrol: EnrolDevice = serde_json::from_str(
+            r#"{"ssoTicket":"dGlj","authKey":"a2V5","device":{"name":"x","publicKey":"cHVi"}}"#,
+        )
+        .unwrap();
+        assert_eq!(enrol.enrolment, "");
+        assert_eq!(enrol.sso_ticket.as_deref(), Some("dGlj"));
+
+        let params: VaultParamsRequest = serde_json::from_str(r#"{"enrolment":"abc"}"#).unwrap();
+        assert!(params.sso_ticket.is_none());
+
+        let json = serde_json::to_value(SsoFinish {
+            state: "s".into(),
+            code: "c".into(),
+            code_verifier: "v".into(),
+            iss: None,
+        })
+        .unwrap();
+        assert_eq!(json["codeVerifier"], "v");
+        let ticket: SsoTicket =
+            serde_json::from_str(r#"{"ticket":"t","expiresMs":1,"hasAccount":true}"#).unwrap();
+        assert!(ticket.has_account && !ticket.needs_account_key);
     }
 
     #[test]

@@ -93,7 +93,8 @@ export type InputEvent =
   | { type: 'button'; button: MouseButton; down: boolean; x: number; y: number }
   | { type: 'wheel'; delta: number; horizontal: boolean }
   | { type: 'releaseAll' }
-  | { type: 'ctrlAltDel' };
+  | { type: 'ctrlAltDel' }
+  | { type: 'redraw' };
 
 /** The tab changed size: ask the server for a desktop of `width` × `height` device pixels. */
 export function resizeSession(

@@ -43,6 +43,9 @@ pub enum InputEvent {
     /// On blur: release every pressed key and button.
     ReleaseAll,
     CtrlAltDel,
+    /// Not input: the user asks for the whole picture again (handled by the
+    /// session, nothing goes to the server as input).
+    Redraw,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -165,6 +168,7 @@ impl InputState {
                     }
                 }
                 InputEvent::ReleaseAll => out.extend(self.db.release_all()),
+                InputEvent::Redraw => {}
                 InputEvent::CtrlAltDel => {
                     let ctrl = Scancode::from_u8(false, SCANCODE_CTRL);
                     let alt = Scancode::from_u8(false, SCANCODE_ALT);
@@ -398,5 +402,13 @@ mod tests {
                 FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1D),
             ]
         );
+    }
+
+    #[test]
+    fn redraw_is_not_input() {
+        let events: Vec<InputEvent> =
+            serde_json::from_value(serde_json::json!([{ "type": "redraw" }])).unwrap();
+        assert_eq!(events, vec![InputEvent::Redraw]);
+        assert!(state().translate(&events).is_empty());
     }
 }

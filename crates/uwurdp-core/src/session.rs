@@ -34,6 +34,8 @@ use ironrdp_core::WriteBuf;
 use ironrdp_displaycontrol::pdu::MonitorLayoutEntry;
 use ironrdp_graphics::image_processing::PixelFormat;
 use ironrdp_pdu::geometry::InclusiveRectangle;
+use ironrdp_pdu::rdp::headers::ShareDataPdu;
+use ironrdp_pdu::rdp::refresh_rectangle::RefreshRectanglePdu;
 use ironrdp_pdu::rdp::server_error_info::{ErrorInfo, ProtocolIndependentCode};
 use ironrdp_session::image::DecodedImage;
 use ironrdp_session::{fast_path, ActiveStage, ActiveStageBuilder, ActiveStageOutput};
@@ -317,8 +319,11 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                     Ok(Vec::new())
                 }
                 Some(Command::Input(events)) => {
-                    let events = input.translate(&events);
                     let mut outputs = Vec::new();
+                    if events.contains(&InputEvent::Redraw) {
+                        outputs.extend(redraw(&active_stage, &mut screen));
+                    }
+                    let events = input.translate(&events);
                     for chunk in events.chunks(MAX_EVENTS_PER_PDU) {
                         match active_stage.process_fastpath_input(&mut screen.image, chunk) {
                             Ok(o) => outputs.extend(o),
@@ -555,6 +560,33 @@ fn close_request(
     }
     *close_deadline = Some(Instant::now() + CLOSE_TIMEOUT);
     active_stage.graceful_shutdown()
+}
+
+/// Sends the whole picture again, both ways: our image to the page, and a
+/// Refresh Rect for the whole desktop to the server. Windows' graphics
+/// pipeline now and then leaves remnants (the Windows 11 taskbar while its
+/// icons slide) that no later update covers; only the server can repaint them.
+fn redraw(active_stage: &ActiveStage, screen: &mut Screen) -> Vec<ActiveStageOutput> {
+    screen.mark_all_dirty();
+    let pdu = ShareDataPdu::RefreshRectangle(RefreshRectanglePdu {
+        areas_to_refresh: vec![InclusiveRectangle {
+            left: 0,
+            top: 0,
+            right: screen.image.width().saturating_sub(1),
+            bottom: screen.image.height().saturating_sub(1),
+        }],
+    });
+    let mut buf = WriteBuf::new();
+    match active_stage.encode_static(&mut buf, pdu) {
+        Ok(_) => {
+            debug!("asked the server to redraw the desktop");
+            vec![ActiveStageOutput::ResponseFrame(buf.filled().to_vec())]
+        }
+        Err(e) => {
+            warn!(error = %e.report(), "refresh request could not be encoded");
+            Vec::new()
+        }
+    }
 }
 
 fn resize(

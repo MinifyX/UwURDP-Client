@@ -1042,6 +1042,14 @@ export function App() {
               },
             },
             {
+              text: t('Neu zeichnen'),
+              enabled: activeRdp?.status === 'live' && free,
+              action: () => {
+                const tab = rdp();
+                if (tab) drivers.current.get(tab.id)?.redraw();
+              },
+            },
+            {
               text: t('Einpassen'),
               checked: activeSmart,
               enabled: Boolean(activeRdp) && free,
@@ -1241,6 +1249,16 @@ export function App() {
           <Button
             variant="ghost"
             size="sm"
+            icon={ICONS.refresh}
+            disabled={activeTab.status !== 'live'}
+            onClick={() => drivers.current.get(activeTab.id)?.redraw()}
+            title={t('Das Bild komplett neu vom Server anfordern')}
+          >
+            {t('Neu zeichnen')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             icon={ICONS.fit}
             className="aria-pressed:bg-pink-tint aria-pressed:text-pink-ink"
             onClick={() =>
@@ -1340,6 +1358,15 @@ export function App() {
                   onClick={() => drivers.current.get(activeTab.id)?.ctrlAltDel()}
                 >
                   {t('Strg+Alt+Entf')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={ICONS.refresh}
+                  className="text-stage-ink hover:bg-white/10"
+                  onClick={() => drivers.current.get(activeTab.id)?.redraw()}
+                >
+                  {t('Neu zeichnen')}
                 </Button>
                 <Button
                   variant="ghost"

@@ -208,6 +208,12 @@ export class RdpDriver {
     this.focus();
   }
 
+  /** Asks for the whole picture again, for remnants Windows left behind. */
+  redraw() {
+    this.send([{ type: 'redraw' }]);
+    this.focus();
+  }
+
   /**
    * A ⌘ shortcut went to the app, not to the desktop, while ⌘ — the Windows
    * key there — was already down remotely. Windows opens the Start menu when

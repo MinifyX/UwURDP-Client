@@ -402,18 +402,35 @@ impl Store {
             rows
         };
 
-        let mut found = BTreeMap::<(u8, Uuid), Problem>::new();
+        // One version per record across every manifest: the newest one, and
+        // at the same clock the tombstone. A device that stopped syncing keeps
+        // listing what it last saw; a tombstone another device listed since
+        // accounts for that, and only it needs to be here. A tombstone older
+        // than a later edit does not: that edit must still arrive.
+        let mut newest = BTreeMap::<(u8, Uuid), ManifestEntry>::new();
         for (_, entries, _) in &manifests {
             let Some(manifest) = Manifest::decode(entries) else {
                 continue;
             };
-            for entry in &manifest.entries {
-                let Some(kind) = entry.kind().filter(|kind| SYNCED_KINDS.contains(kind)) else {
-                    continue;
-                };
-                if let Some(problem) = check_entry(&tx, kind, entry)? {
-                    found.insert((kind as u8, entry.id), problem);
-                }
+            for entry in manifest.entries {
+                newest
+                    .entry((entry.kind, entry.id))
+                    .and_modify(|kept| {
+                        if (entry.updated_at, entry.deleted) > (kept.updated_at, kept.deleted) {
+                            *kept = entry;
+                        }
+                    })
+                    .or_insert(entry);
+            }
+        }
+
+        let mut found = BTreeMap::<(u8, Uuid), Problem>::new();
+        for entry in newest.values() {
+            let Some(kind) = entry.kind().filter(|kind| SYNCED_KINDS.contains(kind)) else {
+                continue;
+            };
+            if let Some(problem) = check_entry(&tx, kind, entry)? {
+                found.insert((kind as u8, entry.id), problem);
             }
         }
 
@@ -652,6 +669,48 @@ mod tests {
 
         assert_eq!(store.check_manifests().unwrap(), Withheld::default());
         assert!(store.manifest_violations().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_tombstone_another_manifest_lists_later_accounts_for_a_stale_live_entry() {
+        let store = Store::open_in_memory().unwrap();
+        let [deleted_later, edited_later] = [(); 2].map(|_| Uuid::now_v7());
+        // A device that stopped syncing still lists both as they were.
+        manifest_from(
+            &store,
+            OTHER,
+            at(1_000),
+            vec![
+                listed(deleted_later, 100, false),
+                listed(edited_later, 300, false),
+            ],
+        );
+        // Another one saw the first deleted since, and the second deleted
+        // before its last edit.
+        manifest_from(
+            &store,
+            OTHER + 1,
+            at(2_000),
+            vec![
+                listed(deleted_later, 200, true),
+                listed(edited_later, 200, true),
+            ],
+        );
+
+        assert_eq!(
+            store.check_manifests().unwrap(),
+            Withheld {
+                records: 1,
+                host_keys: false
+            }
+        );
+        let problems: Vec<(Uuid, Problem)> = store
+            .manifest_violations()
+            .unwrap()
+            .into_iter()
+            .map(|v| (v.id, v.problem))
+            .collect();
+        assert_eq!(problems, vec![(edited_later, Problem::Missing)]);
     }
 
     #[test]

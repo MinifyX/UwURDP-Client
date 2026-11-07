@@ -70,6 +70,14 @@ pub struct ManifestFloor {
     pub clock: Hlc,
 }
 
+/// The floor of a device that joined with no other device to vouch for what
+/// it should see (signing in with UwUAuth): any other device's manifest
+/// counts, as long as it was made after this device joined. Until one is here
+/// nothing was found missing — the others may simply not have synced since —
+/// but host keys from other devices are not trusted, since an older manifest
+/// is one the server could pick to leave out a newer key.
+const ANY_MANIFEST: Uuid = Uuid::max();
+
 /// What was wrong with one record a manifest listed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -334,6 +342,16 @@ impl Store {
         Ok(())
     }
 
+    /// Wait for any other device's manifest made from now on before trusting
+    /// host keys from other devices — for a device that joined with nobody to
+    /// say which manifest to wait for.
+    pub fn wait_for_any_manifest(&self) -> Result<()> {
+        self.set_manifest_floor(Some(ManifestFloor {
+            id: ANY_MANIFEST,
+            clock: Hlc::new(crate::now_ms(), 0, 0),
+        }))
+    }
+
     /// Write down that a pull did not reach the end. Until one does and the
     /// check runs, this counts as something kept back — with host keys among
     /// it, since there is no telling what was.
@@ -435,14 +453,24 @@ impl Store {
         }
 
         if let Some(floor) = floor {
-            let held = manifests
-                .iter()
-                .find(|(id, _, _)| *id == floor.id.to_string())
-                .map(|(_, _, clock)| *clock);
-            let problem = match held {
-                Some(clock) if clock >= floor.clock => None,
-                Some(_) => Some(Problem::Older),
-                None => Some(Problem::Missing),
+            let problem = if floor.id == ANY_MANIFEST {
+                let own = manifest_id(current_vault(&tx)?, self.device).to_string();
+                let newest = manifests
+                    .iter()
+                    .filter(|(id, _, _)| *id != own)
+                    .map(|(_, _, clock)| *clock)
+                    .max();
+                (newest < Some(floor.clock)).then_some(Problem::Unchecked)
+            } else {
+                let held = manifests
+                    .iter()
+                    .find(|(id, _, _)| *id == floor.id.to_string())
+                    .map(|(_, _, clock)| *clock);
+                match held {
+                    Some(clock) if clock >= floor.clock => None,
+                    Some(_) => Some(Problem::Older),
+                    None => Some(Problem::Missing),
+                }
             };
             if let Some(problem) = problem {
                 found.insert((EntityKind::Manifest as u8, floor.id), problem);
@@ -907,6 +935,32 @@ mod tests {
         store.forget_enrolment().unwrap();
         assert_eq!(store.manifest_floor().unwrap(), None);
         assert_eq!(store.withheld().unwrap(), Withheld::default());
+    }
+
+    #[test]
+    fn a_device_that_joined_alone_waits_for_any_newer_manifest() {
+        let store = Store::open_in_memory().unwrap();
+        // What another device published before this one joined.
+        manifest_from(&store, OTHER, at(1_000), Vec::new());
+        store.wait_for_any_manifest().unwrap();
+
+        let unchecked = Withheld {
+            records: 0,
+            host_keys: true,
+        };
+        assert_eq!(store.withheld().unwrap(), unchecked);
+        assert_eq!(
+            store.check_manifests().unwrap(),
+            unchecked,
+            "an older manifest is no alarm, and no reason to trust host keys either"
+        );
+        // Its own manifest does not count.
+        store.refresh_manifest().unwrap();
+        assert_eq!(store.check_manifests().unwrap(), unchecked);
+
+        let later = crate::now_ms() + 1_000;
+        manifest_from(&store, OTHER + 1, at(later), Vec::new());
+        assert_eq!(store.check_manifests().unwrap(), Withheld::default());
     }
 
     #[test]

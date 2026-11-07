@@ -35,6 +35,8 @@ pub enum FlowError {
     NotPaired,
     #[error("the other device did not send an account key")]
     NoAccountKey,
+    #[error("the server says this account has no account key")]
+    UnexpectedAccountKey,
 }
 
 type Result<T> = std::result::Result<T, FlowError>;
@@ -371,8 +373,12 @@ pub fn join(
 /// Nothing arrives from another device here, so the person brings what
 /// opens the vault: the master password, and the account key from the
 /// recovery kit when the account has one. There is no manifest from another
-/// device either: this device starts like one restored from the kit, and
-/// takes what the server holds as the vault.
+/// device either, so host keys from other devices are not trusted until a
+/// manifest another device made after this one joined is here.
+///
+/// Whether the account has an account key is the server's word. A key the
+/// person typed is never dropped on it: a server claiming there is none would
+/// otherwise get a login key from the master password alone to guess at.
 pub fn join_sso(
     store: &Store,
     setup: &Setup,
@@ -390,9 +396,9 @@ pub fn join_sso(
     if params.needs_account_key && account_key.is_none() {
         return Err(FlowError::NoAccountKey);
     }
-    // An account without an account key leaves none to mix in, even when the
-    // person typed one.
-    let account_key = account_key.filter(|_| params.needs_account_key);
+    if !params.needs_account_key && account_key.is_some() {
+        return Err(FlowError::UnexpectedAccountKey);
+    }
     let login_key = login_key_from(&params, password, account_key)?;
 
     let (seed, public_key) = device_key();
@@ -419,6 +425,7 @@ pub fn join_sso(
         account_key,
         protect,
     )?;
+    store.wait_for_any_manifest()?;
     Ok((
         server,
         Paired {

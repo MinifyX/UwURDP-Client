@@ -161,6 +161,9 @@ impl From<FlowError> for SyncFailure {
             FlowError::NoAccountKey => Self::PairingFailed {
                 message: "the other device did not send the account key".into(),
             },
+            FlowError::UnexpectedAccountKey => Self::SsoFailed {
+                message: "the server says this account has no recovery code: leave it empty, or check the server".into(),
+            },
         }
     }
 }

@@ -33,7 +33,11 @@ function WindowTitleBar({ onSettings }: Props) {
       <SuiteTitleBar
         platform={desktop}
         controls={controls}
-        brand={<Wordmark product="RDP" shell="monitor" />}
+        brand={
+          <span data-uwu-reveal-origin>
+            <Wordmark product="RDP" shell="monitor" />
+          </span>
+        }
         actions={
           <TitleBarAction label={withKeys(t('Einstellungen'), 'CmdOrCtrl+,')} onClick={onSettings}>
             <Icon icon={ICONS.settings} size="md" />

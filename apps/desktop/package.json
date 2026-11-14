@@ -1,6 +1,6 @@
 {
   "name": "@uwurdp/desktop",
-  "version": "0.2.0-beta.2",
+  "version": "0.2.0-beta.3",
   "private": true,
   "type": "module",
   "license": "GPL-3.0-only",
@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
-    "@uwusuite/design": "https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.6.1/uwusuite-design-1.6.1.tgz",
+    "@uwusuite/design": "https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.15.0/uwusuite-design-1.15.0.tgz",
     "lucide-react": "^1.52.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

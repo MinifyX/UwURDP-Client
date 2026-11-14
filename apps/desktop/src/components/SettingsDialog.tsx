@@ -1,4 +1,4 @@
-import { Button, ICONS, Segmented, SettingRow, Switch } from '@uwusuite/design';
+import { Button, ICONS, NavIndicator, Segmented, SettingRow, Switch } from '@uwusuite/design';
 import { useEffect, useState, type ReactNode } from 'react';
 import pkg from '../../package.json';
 import { N_, t, useLanguage } from '../lib/i18n';
@@ -680,6 +680,7 @@ export function SettingsDialog({
     <Modal title={t('Einstellungen')} size="wide" onCancel={onClose}>
       <div className="settings">
         <nav className="settings-nav" aria-label={t('Bereiche')}>
+          <NavIndicator />
           {SECTIONS.filter(({ id }) => id !== 'updates' || buildInfo().updates).map(
             ({ id, label }) => (
               <button
@@ -693,7 +694,7 @@ export function SettingsDialog({
             ),
           )}
         </nav>
-        <div className="settings-content">
+        <div key={section} className="settings-content uwu-page">
           {section === 'appearance' && <Appearance />}
           {section === 'sessions' && <Sessions />}
           {section === 'vault' && <Vault onChanged={onChanged} />}

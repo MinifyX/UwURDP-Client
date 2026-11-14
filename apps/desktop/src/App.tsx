@@ -1,6 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Button, IconButton, ICONS } from '@uwusuite/design';
+import { Button, IconButton, ICONS, revealFrom } from '@uwusuite/design';
 import { hideWindowOnClose, onMacQuit, setMacMenu } from '@uwusuite/design/tauri';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CertificateChanged, LoginPrompt, TrustCertificate } from './components/ConnectDialogs';
@@ -679,6 +679,11 @@ export function App() {
   );
 
   // ── Start-up ──────────────────────────────────────────────────────────────
+
+  // Once per window: the app is uncovered from the logo (macOS has none: from the middle).
+  useEffect(() => {
+    if (backgroundRef.current) revealFrom(backgroundRef.current);
+  }, []);
 
   useEffect(() => {
     void refreshHosts();
@@ -1397,7 +1402,8 @@ export function App() {
               {tabs.map((tab) => (
                 <div
                   key={tab.id}
-                  className="session-pane"
+                  // The overview fades in each time it comes to the front; a desktop never moves.
+                  className={tab.kind === 'overview' ? 'session-pane uwu-page' : 'session-pane'}
                   data-kind={tab.kind}
                   data-status={tab.status}
                   hidden={tab.id !== activeId}

@@ -59,7 +59,7 @@ export function Overview({ entries, group, onShow, onConnect, onConnectAll, onDi
           </Button>
         </div>
       )}
-      <ul className="thumbs">
+      <ul className="thumbs uwu-stagger">
         {entries.map(({ host, tab }) => {
           const failed = tab?.status === 'failed';
           const live = tab?.status === 'live';

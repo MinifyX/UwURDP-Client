@@ -56,20 +56,20 @@ impl RdpsndClientHandler for CpalBackend {
         &self.formats
     }
 
-    fn wave(&mut self, format_no: usize, _ts: u32, data: Cow<'_, [u8]>) {
+    fn wave(&mut self, format: &AudioFormat, _ts: u32, data: Cow<'_, [u8]>) {
         if self
             .output
             .as_ref()
-            .is_some_and(|output| output.format_no != format_no)
+            .is_some_and(|output| output.format != *format)
         {
             self.output = None;
         }
         if self.output.is_none() {
-            let Some(format) = self.formats.get(format_no) else {
-                debug!(format_no, "wave in a format we never offered");
+            if !self.formats.contains(format) {
+                debug!(?format, "wave in a format we never offered");
                 return;
-            };
-            self.output = Some(Output::start(format_no, format.clone()));
+            }
+            self.output = Some(Output::start(format.clone()));
         }
         if let Some(output) = &self.output {
             output.pcm.lock().push(&data);
@@ -93,14 +93,14 @@ impl RdpsndClientHandler for CpalBackend {
 /// thread of its own; dropping this stops and joins that thread.
 #[derive(Debug)]
 struct Output {
-    format_no: usize,
+    format: AudioFormat,
     pcm: Arc<Mutex<Pcm>>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl Output {
-    fn start(format_no: usize, format: AudioFormat) -> Self {
+    fn start(format: AudioFormat) -> Self {
         let pcm = Arc::new(Mutex::new(Pcm::new(capacity(&format), frame_size(&format))));
         let stop = Arc::new(AtomicBool::new(false));
         let thread = std::thread::Builder::new()
@@ -108,6 +108,7 @@ impl Output {
             .spawn({
                 let pcm = pcm.clone();
                 let stop = stop.clone();
+                let format = format.clone();
                 move || play(&format, pcm, &stop)
             });
         let thread = match thread {
@@ -118,7 +119,7 @@ impl Output {
             }
         };
         Self {
-            format_no,
+            format,
             pcm,
             stop,
             thread,
@@ -303,9 +304,10 @@ mod tests {
     #[ignore]
     fn the_default_device_drains_the_queue() {
         let mut backend = CpalBackend::new();
+        let format = backend.formats[0].clone();
         let tenth = vec![0u8; 17_640];
         for _ in 0..5 {
-            backend.wave(0, 0, Cow::Borrowed(&tenth));
+            backend.wave(&format, 0, Cow::Borrowed(&tenth));
         }
         let pcm = backend.output.as_ref().expect("an output").pcm.clone();
         assert_eq!(pcm.lock().len(), 88_200);

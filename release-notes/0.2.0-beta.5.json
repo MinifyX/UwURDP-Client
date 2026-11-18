@@ -1,0 +1,4 @@
+{
+  "de": "UwURDP 0.2.0-beta.5 ✧ Neue RDP-Engine\n\n- Unter der Haube läuft die aktuelle IronRDP-Version. Verbindung, Anmeldung (NLA), Grafik mit H.264, Zwischenablage, Laufwerke, Ton und Größenänderung funktionieren wie bisher\n- Freigegebene Laufwerke bestätigen „Puffer leeren“ jetzt, statt es abzulehnen",
+  "en": "UwURDP 0.2.0-beta.5 ✧ New RDP engine\n\n- Under the hood runs the current IronRDP. Connecting, signing in (NLA), graphics with H.264, clipboard, drives, sound and resizing work as before\n- Shared drives now confirm “flush buffers” instead of refusing it"
+}

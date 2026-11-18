@@ -74,8 +74,8 @@
 //! - **Resize**: through the DisplayControl channel; servers without it keep
 //!   their size and the page scales. With the graphics pipeline the server
 //!   answers with a `ResetGraphics`.
-//! - **Admin/console session**: not possible with IronRDP 0.17 (it always
-//!   sends an empty cluster data block); `admin` is ignored.
+//! - **Admin/console session**: not requested yet (the cluster data block
+//!   stays empty); `admin` is ignored.
 //! - **RD Gateway**: not supported yet ([`RdpError::Gateway`]).
 //!   `ironrdp-mstsgu` 0.0.1 does not verify the gateway's certificate while
 //!   sending the gateway password in a Basic auth header, only does Basic

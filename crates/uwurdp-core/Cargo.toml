@@ -1,11 +1,11 @@
 [package]
 name = "uwurdp-core"
 description = "Session engine for UwURDP: RDP sessions on IronRDP, frames, input, clipboard"
-version = "0.2.0-beta.4"
+version = "0.2.0-beta.5"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/MinifyX/UwURDP-Client"
-# The floor IronRDP 0.17 itself declares.
+# The floor IronRDP itself declares.
 rust-version = "1.89"
 
 [features]
@@ -20,32 +20,33 @@ audio = ["dep:cpal"]
 h264 = ["dep:openh264"]
 
 [dependencies]
-ironrdp-connector = "0.10"
-ironrdp-core = { version = "0.2", features = ["alloc"] }
-ironrdp-cliprdr = "0.7"
-ironrdp-displaycontrol = "0.8"
-ironrdp-dvc = "0.8"
+ironrdp-connector = "0.12"
+# ironrdp-connector 0.12 pins picky =7.0.0-rc.26 but takes any sspi 0.23, and
+# sspi 0.23.1 pins picky =7.0.0-rc.27: without this pin the two don't resolve.
+# picky rc.26 takes p256 ^0.14, so russh 0.63 resolves next to us.
+sspi = "=0.23.0"
+ironrdp-core = { version = "0.3", features = ["alloc"] }
+ironrdp-cliprdr = "0.9"
+ironrdp-displaycontrol = "0.10"
+ironrdp-dvc = "0.10"
 # The graphics pipeline's PDUs; the client side is ours (src/gfx).
-ironrdp-egfx = "0.3"
-ironrdp-graphics = "0.9"
-# Progressive and ClearCodec as Windows sends them: 0.9 decodes neither
-# (Progressive stops at the coarse first pass, ClearCodec lacks NSCodec).
-# The fixes (IronRDP #1443, #1696, #1698, #1703, #1728) are on master only;
-# pinned until a release has them. Nothing crosses between the two copies.
-ironrdp-graphics-next = { package = "ironrdp-graphics", git = "https://github.com/Devolutions/IronRDP", rev = "9b151c4c2e47c6014e1e8e55909d4180aa8bdb99" }
-ironrdp-input = "0.7"
-ironrdp-pdu = "0.9"
-ironrdp-session = "0.11"
-ironrdp-svc = "0.8"
+ironrdp-egfx = "0.5"
+# Progressive and ClearCodec as Windows sends them (IronRDP #1443, #1696,
+# #1698, #1703, #1728, #2134), all in 0.11.
+ironrdp-graphics = "0.11"
+ironrdp-input = "0.9"
+ironrdp-pdu = "0.11"
+ironrdp-session = "0.13"
+ironrdp-svc = "0.10"
 # Only the framing and the sans-I/O drivers; the `reqwest` feature is left off
 # because we only speak NTLM (see `connect.rs`) and never need a KDC client.
-ironrdp-tokio = "0.10"
+ironrdp-tokio = "0.12"
 # Always in: drive redirection needs the sound channel announced too, even
 # with sound off (MS-RDPEFS, appendix A <1>).
-ironrdp-rdpsnd = "0.9"
+ironrdp-rdpsnd = "0.11"
 # Drive redirection; the file system backend is ours (src/drive.rs), since
 # ironrdp-rdpdr-native only builds on Unix.
-ironrdp-rdpdr = "0.7"
+ironrdp-rdpdr = "0.9"
 # Played through our own backend (src/audio.rs), not ironrdp-rdpsnd-native's:
 # that one never starts its stream. Plain PCM only, so no Opus and no CMake.
 cpal = { version = "0.17", optional = true }
@@ -91,9 +92,10 @@ tempfile = "3"
 # test build has both providers compiled in; every rustls config in this crate
 # names its provider explicitly, which keeps that ambiguity harmless. With
 # `egfx` it also serves the graphics pipeline.
-ironrdp-server = { version = "0.13", features = ["egfx"] }
-# The PDUs that go with ironrdp-graphics-next, to build Progressive streams.
-ironrdp-pdu-next = { package = "ironrdp-pdu", git = "https://github.com/Devolutions/IronRDP", rev = "9b151c4c2e47c6014e1e8e55909d4180aa8bdb99" }
+# From git: 0.13 on crates.io still pins picky rc.25 (p256 rc.14), which can't
+# share a lockfile with ours. This rev is the one IronRDP released connector
+# 0.12 from, so it pins picky rc.26 like we do.
+ironrdp-server = { git = "https://github.com/Devolutions/IronRDP", rev = "b13befa0db86f48f523a0b2b007e399f9811e0ec", features = ["egfx"] }
 rcgen = "0.14"
 anyhow = "1"
 async-trait = "0.1"

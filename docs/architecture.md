@@ -15,7 +15,7 @@ story.
 | --------- | --------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Shell     | Tauri 2                                 | Same as UwUSSH and UwUMail. Small, WebView2 on Windows, WebKit elsewhere.                    |
 | UI        | React + TypeScript, Node 24, pnpm 11    | UwUSSH's stack, so tokens, components and Nyu carry over.                                    |
-| RDP       | IronRDP 0.17 (Devolutions)              | Pure Rust, async, maintained, and the only RDP stack that isn't FreeRDP behind an FFI layer. |
+| RDP       | IronRDP (Devolutions; connector 0.12)   | Pure Rust, async, maintained, and the only RDP stack that isn't FreeRDP behind an FFI layer. |
 | TLS       | `rustls` with _ring_                    | No OpenSSL, no second TLS stack; the certificate check is ours.                              |
 | Clipboard | `arboard`                               | Text on Windows, macOS and X11/Wayland from one crate.                                       |
 | Sound     | `cpal`                                  | Plays the server's PCM on WASAPI, CoreAudio and ALSA.                                        |
@@ -83,9 +83,8 @@ The order matters for security, so it is fixed in `uwurdp-core::connect`:
    members reached by IP included.
 5. The rest of the RDP connection sequence: capabilities, licensing, channels.
    With the graphics pipeline on (the default), the client core data says so
-   (`RNS_UD_CS_SUPPORT_DYNVC_GFX_PROTOCOL`). IronRDP 0.17 never sets that
-   flag, so UwURDP takes the step that builds the MCS Connect Initial, sets it
-   and sends the amended PDU instead.
+   (`RNS_UD_CS_SUPPORT_DYNVC_GFX_PROTOCOL`, IronRDP's
+   `support_dyn_vc_gfx_protocol`), set only with our pipeline registered.
 
 Then one task per session owns the connection.
 
@@ -117,8 +116,8 @@ it, the server picks a codec per region and has cheap commands for the rest:
 | RemoteFX (CAVIDEO)                 | older servers                    | ours, on IronRDP's primitives    |
 | SolidFill, SurfaceToSurface, cache | fills, scrolling, repeats        | ours                             |
 
-`uwurdp-core::gfx` is the client side. IronRDP 0.17 only has the pipeline's
-PDUs (`ironrdp-egfx`); surfaces, the bitmap cache, composing and codec
+`uwurdp-core::gfx` is the client side. We take only the pipeline's PDUs
+from IronRDP (`ironrdp-egfx`); surfaces, the bitmap cache, composing and codec
 dispatch are ours:
 
 ```
@@ -142,20 +141,12 @@ DVC ──zgfx──▶ GfxChannel ──▶ Pipeline: surfaces ──(mapped)�
   skipped; the stats count every one. Surfaces are capped at
   8192 px per edge and 512 MiB together, the cache at the small cache's 4096
   slots and 64 MiB.
-- Progressive and ClearCodec come from IronRDP's master branch, pinned to a
-  commit (`ironrdp-graphics-next` in `uwurdp-core/Cargo.toml`): the released
-  0.9 decodes neither as Windows sends them. It rejects Progressive's
-  full-quality tiles and then every frame after them, and it reads
-  ClearCodec's short V-bars in the wrong bit order, so text and UI tiles stay
-  flat or black. Back to a release once one has IronRDP #1443, #1694, #1696,
-  #1698 and #1728.
-- On top of that commit, `vendor/ironrdp-graphics` (a `[patch]` in the root
-  `Cargo.toml`) decodes Progressive's refinement passes (SRL) the way FreeRDP
-  does: Windows ends the stream without the trailing zero byte and cuts it off
-  inside the last zero run. Upstream rejects both, and the tile stays at its
-  coarse first pass: text that looks pixelated until it is redrawn. Against
-  Windows 11 this failed a third of all Progressive updates; see
-  `vendor/README.md`.
+- Progressive and ClearCodec are `ironrdp-graphics` 0.11's, which decodes
+  both as Windows sends them (IronRDP #1443, #1696, #1698, #1703, #1728) and
+  reads Progressive's refinement passes (SRL) the way FreeRDP does: Windows
+  ends the stream without the trailing zero byte and cuts it off inside the
+  last zero run (#2134). Until then UwURDP carried these fixes as a pinned
+  master commit plus a vendored patch.
 - What we advertise: with H.264, every version from 10.7 down to 8.1 with
   AVC on, like mstsc; a server set up for H.264 then sends AVC444. Without,
   10.7 with AVC off. A Windows 11 desktop with default settings sends no H.264

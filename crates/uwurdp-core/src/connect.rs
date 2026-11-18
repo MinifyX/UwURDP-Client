@@ -10,7 +10,7 @@
 //! 4. CredSSP (NTLM) when NLA was negotiated.
 //! 5. The rest of the connection sequence (capabilities, licensing, ...).
 //!    With the graphics pipeline on, the client core data announces it
-//!    (see [`send_connect_initial_with_gfx`]).
+//!    (`support_dyn_vc_gfx_protocol`).
 //!
 //! We drive CredSSP ourselves instead of calling `ironrdp_tokio::connect_finalize`
 //! for two reasons: knowing that an error happened *during authentication* is
@@ -28,18 +28,16 @@ use ironrdp_connector::credssp::{CredsspProcessGenerator, CredsspSequence};
 use ironrdp_connector::sspi::credssp::ClientState;
 use ironrdp_connector::sspi::generator::GeneratorState;
 use ironrdp_connector::{
-    custom_err, encode_x224_packet, general_err, BitmapConfig, ClientConnector,
-    ClientConnectorState, ConnectionResult, ConnectorError, ConnectorErrorKind, ConnectorResult,
-    Credentials, DesktopSize, Sequence as _, ServerName,
+    general_err, BitmapConfig, ClientConnector, ClientConnectorState, ConnectionResult,
+    ConnectorError, ConnectorErrorKind, ConnectorResult, Credentials, DesktopSize, ServerName,
 };
 use ironrdp_core::WriteBuf;
 use ironrdp_displaycontrol::client::DisplayControlClient;
 use ironrdp_dvc::DrdynvcClient;
-use ironrdp_pdu::gcc::{ClientEarlyCapabilityFlags, ConferenceCreateRequest, KeyboardType};
-use ironrdp_pdu::mcs::ConnectInitial;
+use ironrdp_pdu::gcc::{ConnectionType, KeyboardType};
 use ironrdp_pdu::nego::FailureCode;
 use ironrdp_pdu::rdp::capability_sets::{
-    client_codecs_capabilities, BitmapCodecs, CodecProperty, MajorPlatformType,
+    client_codecs_capabilities, BitmapCodecs, CodecProperty, MajorPlatformType, RailSupportLevel,
 };
 use ironrdp_pdu::rdp::client_info::{PerformanceFlags, TimezoneInfo};
 use ironrdp_tokio::{FramedRead, FramedWrite, TokioFramed};
@@ -99,14 +97,10 @@ pub(crate) async fn establish(
         message: e.to_string(),
     })?;
 
-    let graphics = channels.graphics.is_some();
     let connector = build_connector(target, client_addr, channels);
-    tokio::time::timeout(
-        HANDSHAKE_TIMEOUT,
-        handshake(tcp, connector, target, graphics),
-    )
-    .await
-    .map_err(|_| RdpError::Timeout)?
+    tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(tcp, connector, target))
+        .await
+        .map_err(|_| RdpError::Timeout)?
 }
 
 fn build_connector(
@@ -115,7 +109,10 @@ fn build_connector(
     channels: Channels,
 ) -> ClientConnector {
     let (username, domain) = split_username(&target.username, target.domain.as_deref());
-    let config = connector_config(&target.settings, username, domain, target.password.as_str());
+    let mut config = connector_config(&target.settings, username, domain, target.password.as_str());
+    // Windows only opens the pipeline's channel for clients that announce it
+    // in the client core data; announced only with our processor registered.
+    config.support_dyn_vc_gfx_protocol = channels.graphics.is_some();
 
     let mut drdynvc =
         DrdynvcClient::new().with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new())));
@@ -204,12 +201,19 @@ pub(crate) fn connector_config(
 
     ironrdp_connector::Config {
         desktop_size: DesktopSize { width, height },
+        monitor_layout: None,
+        monitor_extended_layout: None,
         desktop_scale_factor: scale_factor,
+        desktop_physical_size: None,
+        desktop_orientation: None,
+        device_scale_factor: None,
+        relative_mouse_input: false,
         // NLA on means NLA only: offering plain TLS as a fallback would let
         // anyone in the middle downgrade us and collect the password from
         // the logon packet.
         enable_tls: !settings.nla,
         enable_credssp: settings.nla,
+        enable_standard_rdp_security: false,
         credentials: Credentials::UsernamePassword {
             username,
             password: password.to_owned(),
@@ -217,10 +221,11 @@ pub(crate) fn connector_config(
         domain,
         client_build: 0,
         client_name: settings.client_name.clone(),
-        keyboard_type: KeyboardType::IbmEnhanced,
+        keyboard_type: KeyboardType::IBM_ENHANCED,
         keyboard_subtype: 0,
         keyboard_functional_keys_count: 12,
         keyboard_layout: settings.keyboard_layout,
+        connection_type: ConnectionType::Lan,
         ime_file_name: String::new(),
         bitmap: Some(BitmapConfig {
             lossy_compression: true,
@@ -231,6 +236,8 @@ pub(crate) fn connector_config(
         client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
         alternate_shell: String::new(),
         work_dir: String::new(),
+        remote_application_mode: false,
+        rail_support_level: RailSupportLevel::empty(),
         platform,
         hardware_id: None,
         request_data: None,
@@ -238,6 +245,7 @@ pub(crate) fn connector_config(
         // server to use it instead of showing its own logon screen.
         autologon: !settings.nla && !password.is_empty(),
         enable_audio_playback: settings.audio == AudioMode::Local && cfg!(feature = "audio"),
+        enable_audio_capture: false,
         performance_flags: performance_flags(settings),
         license_cache: None,
         timezone_info: TimezoneInfo::default(),
@@ -250,6 +258,8 @@ pub(crate) fn connector_config(
         // the page draws the cursor itself.
         pointer_software_rendering: false,
         multitransport_flags: None,
+        // Set by `build_connector`, which knows whether the pipeline is on.
+        support_dyn_vc_gfx_protocol: false,
     }
 }
 
@@ -278,7 +288,6 @@ async fn handshake(
     tcp: TcpStream,
     mut connector: ClientConnector,
     target: &RdpTarget,
-    graphics: bool,
 ) -> Result<Established, RdpError> {
     let mut framed = TokioFramed::new(tcp);
 
@@ -317,15 +326,7 @@ async fn handshake(
 
     let mut buf = WriteBuf::new();
     let result = loop {
-        let sends_connect_initial = matches!(
-            connector.state,
-            ClientConnectorState::BasicSettingsExchangeSendInitial { .. }
-        );
-        let step = if graphics && sends_connect_initial {
-            send_connect_initial_with_gfx(&mut framed, &mut connector, &mut buf).await
-        } else {
-            ironrdp_tokio::single_sequence_step(&mut framed, &mut connector, &mut buf).await
-        };
+        let step = ironrdp_tokio::single_sequence_step(&mut framed, &mut connector, &mut buf).await;
         if let Err(e) = step {
             forget_password(&mut connector);
             return Err(map_connector_error(
@@ -348,50 +349,6 @@ async fn handshake(
         "RDP session active"
     );
     Ok(Established { result, framed })
-}
-
-/// IronRDP 0.17 never tells the server that it speaks the graphics pipeline
-/// (`RNS_UD_CS_SUPPORT_DYNVC_GFX_PROTOCOL` in the client core data), and
-/// Windows only opens the pipeline's channel for clients that do. So this
-/// takes the step that produces the MCS Connect Initial, sets the flag and
-/// sends that instead. The connector keeps the amended PDU, as it would
-/// have kept its own.
-async fn send_connect_initial_with_gfx(
-    framed: &mut Framed,
-    connector: &mut ClientConnector,
-    buf: &mut WriteBuf,
-) -> ConnectorResult<()> {
-    buf.clear();
-    connector.step_no_input(buf)?;
-    let ClientConnectorState::BasicSettingsExchangeWaitResponse { connect_initial } =
-        &mut connector.state
-    else {
-        return Err(general_err!("no Connect Initial where one was expected"));
-    };
-    announce_gfx(connect_initial)?;
-    buf.clear();
-    let written = encode_x224_packet(connect_initial, buf)?;
-    framed
-        .write_all(&buf[..written])
-        .await
-        .map_err(|e| custom_err!("write Connect Initial", e))?;
-    Ok(())
-}
-
-pub(crate) fn announce_gfx(connect_initial: &mut ConnectInitial) -> ConnectorResult<()> {
-    let mut blocks = connect_initial
-        .conference_create_request
-        .gcc_blocks()
-        .clone();
-    let flags = blocks
-        .core
-        .optional_data
-        .early_capability_flags
-        .get_or_insert(ClientEarlyCapabilityFlags::empty());
-    *flags |= ClientEarlyCapabilityFlags::SUPPORT_DYN_VC_GFX_PROTOCOL;
-    connect_initial.conference_create_request = ConferenceCreateRequest::new(blocks)
-        .map_err(|e| custom_err!("announce the graphics pipeline", e))?;
-    Ok(())
 }
 
 /// The connector keeps a plain `String` copy of the password in its config;

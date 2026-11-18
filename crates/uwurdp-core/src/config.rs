@@ -18,9 +18,9 @@ pub struct SessionSettings {
     pub audio: AudioMode,
     /// Text clipboard in both directions.
     pub clipboard: bool,
-    /// Console / admin session. IronRDP 0.17 hard-codes the GCC cluster data
-    /// block to "none", so there is no way to request the console session:
-    /// this flag is accepted and ignored (see the crate docs).
+    /// Console / admin session. Not requested yet (the GCC cluster data
+    /// block stays empty): this flag is accepted and ignored (see the crate
+    /// docs).
     pub admin: bool,
     /// Network Level Authentication (CredSSP). `true` requires it; `false`
     /// connects with plain TLS and sends the credentials in the logon packet.

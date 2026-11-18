@@ -28,18 +28,18 @@ use ironrdp_egfx::pdu::{
     CapabilitiesV81Flags, CapabilitySet,
 };
 use ironrdp_egfx::server::{GraphicsPipelineHandler, GraphicsPipelineServer};
-use ironrdp_server::tokio_rustls::rustls;
-use ironrdp_server::tokio_rustls::TlsAcceptor;
 use ironrdp_server::{
-    BitmapUpdate, Credentials, DesktopSize, DisplayUpdate, EgfxServerMessage, GfxDvcBridge,
-    GfxServerFactory, GfxServerHandle, KeyboardEvent, MouseEvent, PixelFormat, RdpServer,
-    RdpServerDisplay, RdpServerDisplayUpdates, RdpServerInputHandler, ServerEvent,
-    ServerEventSender,
+    BitmapUpdate, Credentials, DesktopSize, DisplayContext, DisplayUpdate, EgfxServerMessage,
+    GfxContext, GfxDvcBridge, GfxServerFactory, GfxServerHandle, KeyboardEvent, MouseButton,
+    MouseEvent, PixelFormat, RdpServer, RdpServerDisplay, RdpServerDisplayUpdates,
+    RdpServerInputHandler, ServerEvent, ServerEventSender, ServerResult,
 };
 use std::net::SocketAddr;
 use std::num::{NonZeroU16, NonZeroUsize};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot, Notify};
+use tokio_rustls::rustls;
+use tokio_rustls::TlsAcceptor;
 
 pub const DEFAULT_ADDR: &str = "127.0.0.1:3390";
 pub const USERNAME: &str = "uwu";
@@ -266,7 +266,10 @@ impl RdpServerDisplay for Display {
         DesktopSize { width, height }
     }
 
-    async fn updates(&mut self) -> anyhow::Result<Box<dyn RdpServerDisplayUpdates>> {
+    async fn updates(
+        &mut self,
+        _: DisplayContext,
+    ) -> ServerResult<Box<dyn RdpServerDisplayUpdates>> {
         // Called on connect and after each reactivation: start with a full frame.
         self.0.update(|_| {});
         Ok(Box::new(Updates(self.0.clone())))
@@ -289,7 +292,7 @@ struct Updates(Arc<Shared>);
 
 #[async_trait::async_trait]
 impl RdpServerDisplayUpdates for Updates {
-    async fn next_update(&mut self) -> anyhow::Result<Option<DisplayUpdate>> {
+    async fn next_update(&mut self) -> ServerResult<Option<DisplayUpdate>> {
         loop {
             {
                 let mut scene = self.0.scene.lock().expect("scene lock");
@@ -464,12 +467,12 @@ impl ServerEventSender for GfxFactory {
 }
 
 impl GfxServerFactory for GfxFactory {
-    fn build_gfx_handler(&self) -> Box<dyn GraphicsPipelineHandler> {
+    fn build_gfx_handler(&self, _: GfxContext) -> Box<dyn GraphicsPipelineHandler> {
         Box::new(GfxHandler(self.0.clone()))
     }
 
-    fn build_server_with_handle(&self) -> Option<(GfxDvcBridge, GfxServerHandle)> {
-        let server = GraphicsPipelineServer::new(self.build_gfx_handler());
+    fn build_server_with_handle(&self, ctx: GfxContext) -> Option<(GfxDvcBridge, GfxServerHandle)> {
+        let server = GraphicsPipelineServer::new(self.build_gfx_handler(ctx));
         let handle: GfxServerHandle = Arc::new(Mutex::new(server));
         let mut gfx = self.0.gfx.lock().expect("gfx lock");
         gfx.handle = Some(handle.clone());
@@ -532,7 +535,11 @@ impl RdpServerInputHandler for Input {
     fn mouse(&mut self, event: MouseEvent) {
         match event {
             MouseEvent::Move { x, y } => self.0.update(|s| s.cursor = (x, y)),
-            MouseEvent::LeftPressed => self.0.update(|s| {
+            MouseEvent::Button {
+                button: MouseButton::Left,
+                pressed: true,
+                ..
+            } => self.0.update(|s| {
                 if s.dots.len() < MAX_DOTS {
                     let cursor = s.cursor;
                     s.dots.push(cursor);
@@ -606,7 +613,10 @@ pub fn start(options: DevServerOptions) -> Result<DevServer, BoxError> {
                 .with_input_handler(Input(thread_shared.clone()))
                 .with_display_handler(Display(thread_shared))
                 .with_gfx_factory(gfx_factory)
-                .with_honor_client_desktop_size(true)
+                .with_honor_client_desktop_size(Some(DesktopSize {
+                    width: 8192,
+                    height: 8192,
+                }))
                 .build();
             server.set_credentials(Some(Credentials {
                 username: USERNAME.to_owned(),

@@ -239,3 +239,47 @@ shipped with 0.4.0-beta.1 and had the same gaps.
   skipped, and host-key superseding works as before. Someone holding the vault
   key could seal a manifest of tombstones to mask entries, but could just as
   well push the records themselves, so no new power comes from it.
+
+## Addendum: 0.2.0-beta.5, IronRDP upgrade
+
+Dated 2026-11-18, against `git diff v0.2.0-beta.4 HEAD -- . ':!*.lock'
+':!release-notes'`, the vendored `ironrdp-pdu` sources compared with
+crates.io's 0.11.0 instead of read line by line. IronRDP moves from
+ironrdp-connector 0.10 / session 0.11 / pdu 0.9 to 0.12 / 0.13 / 0.11
+(graphics 0.11, rdpdr 0.9, rdpsnd 0.11, egfx 0.5); `sspi` is pinned to
+`=0.23.0`, `ed25519-dalek` in `uwurdp-sync` goes from `=3.0.0-rc.1` to 3.0.0.
+
+No high or medium findings. Fixed before the release:
+
+- **Connection broker redirects** (low, fails closed). connector 0.12 can end
+  the handshake in `Redirected`; our own loop only knew `Connected` and ended
+  with an unclear finalization error. It now stops there with a clear message
+  and wipes the password, and does not follow the redirect (that would be a
+  new connection with its own certificate check).
+- **`RdpdrBackend::reset`** (low). rdpdr 0.9 calls it on a new Server
+  Announce; `FsBackend` now drops the files opened in the old sequence instead
+  of keeping them. They stayed inside their shared folder either way.
+
+Left as they are:
+
+- **Ignored session outputs** (info). Server Redirection PDUs during a
+  session, auto-reconnect cookies, logon notices and monitor layouts hit the
+  new catch-all in `session.rs`. IronRDP only reports a redirection and acts
+  on none, so we keep talking to the pinned server; the reconnect cookie is
+  not kept anywhere.
+- **Password left in the connector when negotiation, TLS, the pin check or
+  CredSSP fail** (low, not new). Only the finalization path zeroizes it. The
+  pin check still runs before any credential is sent.
+
+Checked and fine: X.224 → TLS → `tls::check_trust` → CredSSP is unchanged; NLA
+on asks for `HYBRID|HYBRID_EX` only and `enable_standard_rdp_security` stays
+false, so no downgrade path; the graphics pipeline is announced only with our
+processor registered (now IronRDP's `support_dyn_vc_gfx_protocol` rather than
+rewriting the Connect Initial); compression, RAIL, audio capture, relative
+mouse and multitransport stay off; drive path confinement is untouched, the
+new security IRPs are answered `NOT_SUPPORTED`, flush `SUCCESS`; audio still
+refuses formats it never offered; `reactivate` checks the channel chunk size
+and the session ends if it fails; the vendored `ironrdp-pdu` differs from
+crates.io's 0.11.0 only in `server_error_info.rs`; `ed25519-dalek` is used for
+signing only. The test server (`ironrdp-server` from git at `b13befa0`) is a
+dev-dependency and not shipped.

@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.94"
 name = "ironrdp-pdu"
-version = "0.9.0"
+version = "0.11.0"
 authors = [
     "Devolutions Inc. <infos@devolutions.net>",
     "Teleport <goteleport.com>",
@@ -80,8 +80,12 @@ version = "1.5"
 [dependencies.der-parser]
 version = "10.0"
 
+[dependencies.hmac]
+version = "0.12"
+default-features = false
+
 [dependencies.ironrdp-core]
-version = "0.2"
+version = "0.3"
 features = ["std"]
 
 [dependencies.ironrdp-error]
@@ -95,7 +99,7 @@ package = "md-5"
 version = "0.4"
 
 [dependencies.num-derive]
-version = "0.4"
+version = "0.5"
 
 [dependencies.num-integer]
 version = "0.1"
@@ -105,15 +109,16 @@ version = "0.2"
 
 [dependencies.pkcs1]
 version = "0.7"
+features = ["std"]
 
 [dependencies.sha1]
-version = "0.10"
+version = "0.11"
 
 [dependencies.tap]
 version = "1"
 
 [dependencies.x509-cert]
-version = "0.2"
+version = "0.3"
 features = ["std"]
 default-features = false
 

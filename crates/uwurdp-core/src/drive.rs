@@ -31,12 +31,13 @@ use ironrdp_pdu::gcc::ChannelName;
 use ironrdp_pdu::PduResult;
 use ironrdp_rdpdr::pdu::efs::{
     Boolean, Characteristics, ClientDriveQueryDirectoryResponse,
-    ClientDriveQueryInformationResponse, ClientDriveQueryVolumeInformationResponse,
-    ClientDriveSetInformationResponse, CreateDisposition, CreateOptions, DesiredAccess,
+    ClientDriveQueryInformationResponse, ClientDriveQuerySecurityResponse,
+    ClientDriveQueryVolumeInformationResponse, ClientDriveSetInformationResponse,
+    ClientDriveSetSecurityResponse, CreateDisposition, CreateOptions, DesiredAccess,
     DeviceCloseRequest, DeviceCloseResponse, DeviceControlRequest, DeviceControlResponse,
-    DeviceCreateRequest, DeviceCreateResponse, DeviceIoRequest, DeviceIoResponse,
-    DeviceReadRequest, DeviceReadResponse, DeviceWriteRequest, DeviceWriteResponse,
-    FileAttributeTagInformation, FileAttributes, FileBasicInformation,
+    DeviceCreateRequest, DeviceCreateResponse, DeviceFlushBuffersResponse, DeviceIoRequest,
+    DeviceIoResponse, DeviceReadRequest, DeviceReadResponse, DeviceWriteRequest,
+    DeviceWriteResponse, FileAttributeTagInformation, FileAttributes, FileBasicInformation,
     FileBothDirectoryInformation, FileDirectoryInformation, FileFsAttributeInformation,
     FileFsDeviceInformation, FileFsFullSizeInformation, FileFsSizeInformation,
     FileFsVolumeInformation, FileFullDirectoryInformation, FileInformationClass,
@@ -742,6 +743,13 @@ impl FsBackend {
 }
 
 impl RdpdrBackend for FsBackend {
+    /// A new Server Announce starts the channel over: files opened before
+    /// it belong to the old sequence.
+    fn reset(&mut self) -> PduResult<()> {
+        self.open.clear();
+        Ok(())
+    }
+
     fn handle_server_device_announce_response(
         &mut self,
         pdu: ServerDeviceAnnounceResponse,
@@ -756,8 +764,8 @@ impl RdpdrBackend for FsBackend {
         &mut self,
         _req: DeviceControlRequest<ScardIoCtlCode>,
         _call: ScardCall,
-    ) -> PduResult<()> {
-        Ok(())
+    ) -> PduResult<Vec<SvcMessage>> {
+        Ok(Vec::new())
     }
 
     fn handle_drive_io_request(&mut self, req: ServerDriveIoRequest) -> PduResult<Vec<SvcMessage>> {
@@ -842,6 +850,36 @@ impl RdpdrBackend for FsBackend {
             ServerDriveIoRequest::DeviceControlRequest(req) => RdpdrPdu::DeviceControlResponse(
                 DeviceControlResponse::new(req, NtStatus::SUCCESS, None),
             ),
+            // Writes go straight to the file (no buffer of ours), so there
+            // is nothing to flush.
+            ServerDriveIoRequest::DeviceFlushBuffersRequest(req) => {
+                RdpdrPdu::DeviceFlushBuffersResponse(DeviceFlushBuffersResponse {
+                    device_io_response: DeviceIoResponse::new(
+                        req.device_io_request,
+                        NtStatus::SUCCESS,
+                    ),
+                })
+            }
+            // Security descriptors are not offered (`supports_drive_security`
+            // stays false), so a server asking anyway is told no.
+            ServerDriveIoRequest::ServerDriveQuerySecurityRequest(req) => {
+                RdpdrPdu::ClientDriveQuerySecurityResponse(ClientDriveQuerySecurityResponse {
+                    device_io_response: DeviceIoResponse::new(
+                        req.device_io_request,
+                        NtStatus::NOT_SUPPORTED,
+                    ),
+                    security_descriptor: None,
+                })
+            }
+            ServerDriveIoRequest::ServerDriveSetSecurityRequest(req) => {
+                match ClientDriveSetSecurityResponse::new(&req, NtStatus::NOT_SUPPORTED) {
+                    Ok(reply) => RdpdrPdu::ClientDriveSetSecurityResponse(reply),
+                    Err(error) => {
+                        warn!(%error, "set-security reply could not be built");
+                        return Ok(Vec::new());
+                    }
+                }
+            }
             // Byte-range locks are accepted and not enforced, like FreeRDP.
             ServerDriveIoRequest::ServerDriveLockControlRequest(req) => {
                 RdpdrPdu::DeviceCloseResponse(DeviceCloseResponse {

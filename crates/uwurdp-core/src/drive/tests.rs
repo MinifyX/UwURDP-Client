@@ -2,9 +2,10 @@
 //! and what it may not.
 
 use super::*;
+use ironrdp_core::encode_vec;
 use ironrdp_rdpdr::pdu::efs::{
     FileDispositionInformation, FileEndOfFileInformation, FileRenameInformation, MajorFunction,
-    MinorFunction, SharedAccess,
+    MinorFunction, SharedAccess, VersionAndIdPdu, VersionAndIdPduKind, VERSION_MINOR_12,
 };
 
 /// A folder of its own per test, removed afterwards.
@@ -469,6 +470,38 @@ fn a_request_ironrdp_cannot_read_is_answered_not_fatal() {
     let rdpdr = Rdpdr::new(Box::new(FsBackend::new(shares)), "test".into())
         .with_drives(Some(vec![(1, "Share".into())]));
     let mut channel = SafeRdpdr(rdpdr);
+
+    // IronRDP ignores requests for a drive the server hasn't accepted yet:
+    // announce, confirm, log on, accept.
+    let version = |kind| {
+        encode_vec(&RdpdrPdu::VersionAndIdPdu(VersionAndIdPdu {
+            version_major: 1,
+            version_minor: VERSION_MINOR_12,
+            client_id: 0x1234,
+            kind,
+        }))
+        .unwrap()
+    };
+    channel
+        .process(&version(VersionAndIdPduKind::ServerAnnounceRequest))
+        .unwrap();
+    channel
+        .process(&version(VersionAndIdPduKind::ServerClientIdConfirm))
+        .unwrap();
+    channel
+        .process(&encode_vec(&RdpdrPdu::UserLoggedon).unwrap())
+        .unwrap();
+    channel
+        .process(
+            &encode_vec(&RdpdrPdu::ServerDeviceAnnounceResponse(
+                ServerDeviceAnnounceResponse {
+                    device_id: 1,
+                    result_code: NtStatus::SUCCESS,
+                },
+            ))
+            .unwrap(),
+        )
+        .unwrap();
 
     // A set-information request with a class no one knows.
     let mut pdu = Vec::new();

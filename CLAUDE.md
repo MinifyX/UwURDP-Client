@@ -16,7 +16,8 @@ Tauri-RDP-Client (RDCMan-Dichte) auf IronRDP mit eigenem Sync (UwUSync/UwULock).
 
 ## Fallen
 
-- `vendor/` nie von Hand umbauen, nicht linten/testen (in `.prettierignore`). Patches gelten für IronRDP-Rev `9b151c4c` bzw. ironrdp-pdu 0.9.0 (`[patch]` in `Cargo.toml`); bei IronRDP-Update `vendor/README.md` prüfen, ob die Kopie entfallen kann.
+- `vendor/` nie von Hand umbauen, nicht linten/testen (in `.prettierignore`). Patch gilt für ironrdp-pdu 0.11.0 (`[patch.crates-io]` in `Cargo.toml`); bei IronRDP-Update `vendor/README.md` prüfen, ob die Kopie entfallen kann.
+- IronRDP: `sspi = "=0.23.0"` in `uwurdp-core` hält picky auf rc.26 (wie ironrdp-connector 0.12), damit es neben russh 0.63 auflöst. Test-Server `ironrdp-server` kommt aus Git; seine Geschwister biegt `[patch."https://github.com/Devolutions/IronRDP"]` auf crates.io um.
 - `uwulock-core` ist per git-`rev` auf UwULock-Client `client-0.3` gepinnt (`Cargo.toml`); Pin bewusst anheben.
 - UI-Texte deutsch in `t()`/`N_()`, Englisch in `apps/desktop/src/i18n/en/*.json`; danach `node scripts/check-i18n.mjs`.
 - `@uwusuite/design` kommt als Release-Tarball-URL (`apps/desktop/package.json`); UI-Änderungen zuerst in UwUSuite-Design.

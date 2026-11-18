@@ -9,7 +9,7 @@ Done. The fork from UwUSSH, and the question everything else hung on: can a
 Tauri app show a remote desktop smoothly, with the pixels crossing the IPC
 boundary into a web page?
 
-- **The RDP engine** on IronRDP 0.17: TCP, X.224, TLS with rustls, the
+- **The RDP engine** on IronRDP (connector 0.12, session 0.13): TCP, X.224, TLS with rustls, the
   certificate check before anything secret is sent, CredSSP with NTLM, the
   active session. See [architecture](architecture.md#connecting).
 - **The frame path**: the engine keeps the desktop image, merges what changed,
@@ -91,8 +91,9 @@ Next, roughly in this order:
   ship, so this waits for either IronRDP or a pinned-certificate path of my
   own.
 - **Console / admin session** (`mstsc /admin`). The setting is stored and
-  imported, but IronRDP 0.17 always sends an empty cluster data block, so it
-  isn't requested yet.
+  imported but not requested yet. IronRDP now takes a cluster data block
+  (`ClientConnector::with_cluster_data`), so this needs wiring up and a test
+  against a real server.
 - **Kerberos**, for domains where NTLM is switched off. Needs a KDC client
   without dragging a second TLS stack into the app.
 - **Several monitors.**

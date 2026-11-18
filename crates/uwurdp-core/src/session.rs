@@ -36,7 +36,7 @@ use ironrdp_graphics::image_processing::PixelFormat;
 use ironrdp_pdu::geometry::InclusiveRectangle;
 use ironrdp_pdu::rdp::server_error_info::{ErrorInfo, ProtocolIndependentCode};
 use ironrdp_session::image::DecodedImage;
-use ironrdp_session::{fast_path, ActiveStage, ActiveStageBuilder, ActiveStageOutput};
+use ironrdp_session::{ActiveStage, ActiveStageBuilder, ActiveStageOutput};
 use ironrdp_session::{GracefulDisconnectReason, SessionResult};
 use ironrdp_tokio::{split_tokio_framed, FramedWrite as _};
 use std::path::PathBuf;
@@ -292,7 +292,7 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
             frame = reader.read_pdu() => match frame {
                 Ok((action, payload)) => {
                     trace!(?action, len = payload.len(), "PDU");
-                    active_stage.process(&mut screen.image, action, &payload)
+                    active_stage.process(&mut screen.image, action, &payload, None)
                 }
                 Err(e) => {
                     return if close_deadline.is_some() {
@@ -450,25 +450,26 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                         if let ConnectionActivationState::Finalized {
                             desktop_size,
                             share_id,
+                            static_channel_chunk_size,
                             enable_server_pointer,
                             pointer_software_rendering,
+                            ..
                         } = activation.connection_activation_state()
                         {
                             debug!(?desktop_size, "reactivated");
-                            active_stage.set_fastpath_processor(
-                                fast_path::ProcessorBuilder {
-                                    io_channel_id: activation.io_channel_id(),
-                                    user_channel_id: activation.user_channel_id(),
-                                    share_id,
-                                    enable_server_pointer,
-                                    pointer_software_rendering,
-                                    // We never negotiate bulk compression.
-                                    bulk_decompressor: None,
-                                }
-                                .build(),
-                            );
-                            active_stage.set_share_id(share_id);
-                            active_stage.set_enable_server_pointer(enable_server_pointer);
+                            if !active_stage.reactivate(
+                                activation.io_channel_id(),
+                                activation.user_channel_id(),
+                                share_id,
+                                enable_server_pointer,
+                                pointer_software_rendering,
+                                static_channel_chunk_size,
+                            ) {
+                                return Ending::new(
+                                    CloseReason::Error,
+                                    "The server sent an invalid channel chunk size.",
+                                );
+                            }
 
                             // The page must see the new size before any
                             // pixels of it; everything old is void.
@@ -491,6 +492,10 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                 ActiveStageOutput::AutoDetect(request) => {
                     trace!(?request, "auto-detect");
                 }
+                // Monitor layouts, RemoteApp windows, session info and
+                // reconnect cookies, logon notices, redirection: nothing a
+                // single-desktop client without auto-reconnect acts on.
+                _ => trace!("ignoring a session output"),
             }
         }
 

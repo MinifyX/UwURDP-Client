@@ -10,11 +10,11 @@
 use super::surface::{from_edges, intersect, Pixels};
 use crate::dirty::Rect;
 use ironrdp_core::{Decode as _, ReadCursor};
+use ironrdp_graphics::clearcodec::ClearCodecDecoder;
 use ironrdp_graphics::color_conversion::{self, YCbCrBuffer};
+use ironrdp_graphics::progressive::ProgressiveDecoder;
 use ironrdp_graphics::rdp6::BitmapStreamDecoder;
 use ironrdp_graphics::{dwt, quantization, rlgr, subband_reconstruction};
-use ironrdp_graphics_next::clearcodec::ClearCodecDecoder;
-use ironrdp_graphics_next::progressive::ProgressiveDecoder;
 use ironrdp_pdu::codecs::rfx::{self, Quant, RfxRectangle};
 
 /// RemoteFX and progressive tiles are 64×64.
@@ -320,8 +320,8 @@ mod tests {
     /// quality (0xFF) with no progressive quant table, SYNC + CONTEXT only in
     /// the context's first frame.
     fn windows_progressive(with_context: bool, x_idx: u16, y_data: &[u8]) -> Vec<u8> {
-        use ironrdp_pdu_next::codecs::rfx::progressive::*;
-        use ironrdp_pdu_next::codecs::rfx::RfxRectangle;
+        use ironrdp_pdu::codecs::rfx::progressive::*;
+        use ironrdp_pdu::codecs::rfx::RfxRectangle;
         let mut blocks = vec![ProgressiveBlock::Sync(ProgressiveSyncPdu)];
         if with_context {
             blocks.push(ProgressiveBlock::Context(ProgressiveContextPdu {
@@ -367,8 +367,8 @@ mod tests {
 
     /// One component of a flat tile, RLGR1-coded.
     fn flat_component(value: i16) -> Vec<u8> {
-        use ironrdp_graphics_next::progressive::{encode_first_pass, COEFFICIENTS_PER_COMPONENT};
-        use ironrdp_pdu_next::codecs::rfx::progressive::ComponentCodecQuant;
+        use ironrdp_graphics::progressive::{encode_first_pass, COEFFICIENTS_PER_COMPONENT};
+        use ironrdp_pdu::codecs::rfx::progressive::ComponentCodecQuant;
         let mut coefficients = [value; COEFFICIENTS_PER_COMPONENT];
         let mut out = vec![0; 8192];
         let len = encode_first_pass(
@@ -426,7 +426,7 @@ mod tests {
     /// IronRDP rejected both, which left tiles at their blurry first pass.
     #[test]
     fn srl_reads_windows_streams() {
-        use ironrdp_graphics_next::srl::{decode_srl, SrlDecoder, SrlEncoder};
+        use ironrdp_graphics::srl::{decode_srl, SrlDecoder, SrlEncoder};
 
         // Run '1' + 1 bit 0 (no zeros), sign 0, magnitude 5: 0000 1.
         assert_eq!(decode_srl(&[0x81], 1, 4), Ok(vec![5]));

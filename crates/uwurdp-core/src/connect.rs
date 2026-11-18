@@ -335,6 +335,15 @@ async fn handshake(
                 &target.settings,
             ));
         }
+        // An RD Connection Broker sending us elsewhere. Following it would
+        // mean a new connection with its own certificate check; not done yet.
+        if matches!(connector.state, ClientConnectorState::Redirected { .. }) {
+            forget_password(&mut connector);
+            return Err(RdpError::Protocol {
+                message: "The server redirects to another host (RD Connection Broker),                           which UwURDP does not follow yet."
+                    .into(),
+            });
+        }
         if matches!(connector.state, ClientConnectorState::Connected { .. }) {
             forget_password(&mut connector);
             if let ClientConnectorState::Connected { result } = std::mem::take(&mut connector.state)

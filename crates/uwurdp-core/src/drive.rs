@@ -743,6 +743,13 @@ impl FsBackend {
 }
 
 impl RdpdrBackend for FsBackend {
+    /// A new Server Announce starts the channel over: files opened before
+    /// it belong to the old sequence.
+    fn reset(&mut self) -> PduResult<()> {
+        self.open.clear();
+        Ok(())
+    }
+
     fn handle_server_device_announce_response(
         &mut self,
         pdu: ServerDeviceAnnounceResponse,

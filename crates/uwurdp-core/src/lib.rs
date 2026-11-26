@@ -76,10 +76,21 @@
 //!   answers with a `ResetGraphics`.
 //! - **Admin/console session**: not requested yet (the cluster data block
 //!   stays empty); `admin` is ignored.
-//! - **RD Gateway**: not supported yet ([`RdpError::Gateway`]).
-//!   `ironrdp-mstsgu` 0.0.1 does not verify the gateway's certificate while
-//!   sending the gateway password in a Basic auth header, only does Basic
-//!   auth, and hard-codes port 3389 for the target.
+//! - **RD Gateway** ([`RdpTarget::gateway`]): our own client for the
+//!   gateway's WebSocket transport (MS-TSGU, Windows Server 2016 and later).
+//!   The gateway's certificate is checked against the system's roots and
+//!   host name, the login is NTLM with a channel binding to that
+//!   certificate, and the target's port is the host's. Failures are
+//!   [`RdpError::Gateway`]. Not done: the legacy two-connection HTTP
+//!   transport, RPC over HTTP, smart card/PAA logins, re-authentication,
+//!   and UDP through the gateway. (`ironrdp-mstsgu` 0.0.1 is not used: it
+//!   skips the certificate check and only does Basic auth.)
+//! - **UDP** ([`SessionSettings::udp`], on by default): on direct
+//!   connections the client offers reliable UDP (multitransport with
+//!   Soft-Sync); when the server asks, the dynamic channels (graphics
+//!   pipeline above all) move onto RDP-UDP2 + TLS, pinned to the same
+//!   certificate as TCP. Lossy UDP (DTLS) is not available in IronRDP.
+//!   Without an answer within a few seconds the session stays on TCP.
 //!
 //! [IronRDP]: https://github.com/Devolutions/IronRDP
 
@@ -99,12 +110,15 @@ pub mod dirty;
 mod drive;
 mod error;
 pub mod frame;
+mod gateway;
 mod gfx;
 mod input;
 mod manager;
 mod session;
 mod sink;
 mod tls;
+mod transport;
+mod udp;
 
 pub use config::{AudioMode, DriveShare, GatewayTarget, RdpTarget, SessionSettings};
 pub use connect::{CONNECT_TIMEOUT, HANDSHAKE_TIMEOUT};

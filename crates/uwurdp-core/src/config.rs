@@ -47,6 +47,10 @@ pub struct SessionSettings {
     /// skipped with a log line; the session goes on without it.
     #[serde(default)]
     pub drives: Vec<DriveShare>,
+    /// Use UDP next to TCP when the server offers it (multitransport). Only
+    /// on direct connections; through an RD Gateway the session stays on TCP.
+    #[serde(default = "yes")]
+    pub udp: bool,
 }
 
 /// One local folder or drive to share. `path` is [`DriveShare::ALL`] for
@@ -85,6 +89,7 @@ impl Default for SessionSettings {
             graphics_pipeline: true,
             h264_library: None,
             drives: Vec::new(),
+            udp: true,
         }
     }
 }

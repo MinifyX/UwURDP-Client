@@ -1,0 +1,4 @@
+{
+  "de": "UwURDP ✧ RD-Gateway und UDP\n\n- Verbindungen über ein RD-Gateway (Windows Server 2016 und neuer) funktionieren jetzt. Das Zertifikat des Gateways wird wie im Browser geprüft, die Anmeldung läuft über NTLM mit Kanalbindung\n- Direkte Verbindungen nutzen UDP, wenn der Server es anbietet: Bild und Ton laufen dann flüssiger, vor allem bei schwankendem Netz. Klappt UDP nicht, bleibt die Sitzung einfach bei TCP\n- Über ein Gateway läuft die Sitzung weiter über TCP",
+  "en": "UwURDP ✧ RD Gateway and UDP\n\n- Connections through an RD Gateway (Windows Server 2016 and later) work now. The gateway's certificate is checked like in a browser, and signing in uses NTLM with channel binding\n- Direct connections use UDP when the server offers it, so the picture and sound run smoother, especially on a shaky network. If UDP does not work, the session simply stays on TCP\n- Through a gateway the session still runs over TCP"
+}

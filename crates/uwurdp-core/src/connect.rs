@@ -2,7 +2,9 @@
 //!
 //! The order matters for security, so here it is spelled out:
 //!
-//! 1. TCP connect (with [`CONNECT_TIMEOUT`]).
+//! 1. TCP connect (with [`CONNECT_TIMEOUT`]), or the tunnel through an RD
+//!    Gateway (see `gateway`), whose own certificate and NTLM login come
+//!    first. Everything below then runs inside that tunnel unchanged.
 //! 2. X.224 negotiation: we offer CredSSP only (`nla`) or TLS only.
 //! 3. TLS handshake (rustls/ring), then the certificate pin check. An unknown
 //!    or changed certificate ends the connection *here*: the only thing the
@@ -10,7 +12,9 @@
 //! 4. CredSSP (NTLM) when NLA was negotiated.
 //! 5. The rest of the connection sequence (capabilities, licensing, ...).
 //!    With the graphics pipeline on, the client core data announces it
-//!    (`support_dyn_vc_gfx_protocol`).
+//!    (`support_dyn_vc_gfx_protocol`). On a direct connection with `udp` on,
+//!    the client also offers UDP; a request for it from the server is
+//!    answered here, after the certificate check (see `udp`).
 //!
 //! We drive CredSSP ourselves instead of calling `ironrdp_tokio::connect_finalize`
 //! for two reasons: knowing that an error happened *during authentication* is
@@ -23,13 +27,15 @@
 use crate::clipboard::ClipboardBackend;
 use crate::config::{AudioMode, RdpTarget, SessionSettings};
 use crate::error::RdpError;
-use crate::tls;
+use crate::transport::Transport;
+use crate::{gateway, tls, udp};
 use ironrdp_connector::credssp::{CredsspProcessGenerator, CredsspSequence};
 use ironrdp_connector::sspi::credssp::ClientState;
 use ironrdp_connector::sspi::generator::GeneratorState;
 use ironrdp_connector::{
     general_err, BitmapConfig, ClientConnector, ClientConnectorState, ConnectionResult,
-    ConnectorError, ConnectorErrorKind, ConnectorResult, Credentials, DesktopSize, ServerName,
+    ConnectorError, ConnectorErrorKind, ConnectorResult, Credentials, DesktopSize,
+    MultitransportResult, ServerName,
 };
 use ironrdp_core::WriteBuf;
 use ironrdp_displaycontrol::client::DisplayControlClient;
@@ -40,6 +46,8 @@ use ironrdp_pdu::rdp::capability_sets::{
     client_codecs_capabilities, BitmapCodecs, CodecProperty, MajorPlatformType, RailSupportLevel,
 };
 use ironrdp_pdu::rdp::client_info::{PerformanceFlags, TimezoneInfo};
+use ironrdp_pdu::rdp::multitransport::MultitransportResponsePdu;
+use ironrdp_rdpeudp_tokio::UdpTransport;
 use ironrdp_tokio::{FramedRead, FramedWrite, TokioFramed};
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -57,11 +65,14 @@ pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The stream an active session runs on.
 pub(crate) type Framed = TokioFramed<Stream>;
-pub(crate) type Stream = TlsStream<TcpStream>;
+pub(crate) type Stream = TlsStream<Transport>;
 
 pub(crate) struct Established {
     pub result: ConnectionResult,
     pub framed: Framed,
+    /// The UDP transport, when the server asked for one and it came up.
+    /// Dynamic channels move onto it once the session runs.
+    pub udp: Option<UdpTransport>,
 }
 
 /// Optional channels built by the caller (they need the session's channels).
@@ -75,44 +86,72 @@ pub(crate) async fn establish(
     target: &RdpTarget,
     channels: Channels,
 ) -> Result<Established, RdpError> {
-    if target.gateway.is_some() {
-        // See the crate docs for why ironrdp-mstsgu 0.0.1 is not used.
-        return Err(RdpError::Gateway {
-            message: "RD Gateway is not supported yet".into(),
-        });
-    }
+    let (transport, client_addr, server_addr) = match &target.gateway {
+        Some(gateway) => {
+            let tunnel = tokio::time::timeout(
+                HANDSHAKE_TIMEOUT,
+                gateway::connect(
+                    gateway,
+                    &target.address,
+                    target.port,
+                    &target.settings.client_name,
+                ),
+            )
+            .await
+            .map_err(|_| RdpError::Timeout)??;
+            (Transport::Gateway(tunnel.stream), tunnel.local_addr, None)
+        }
+        None => {
+            let tcp = tokio::time::timeout(
+                CONNECT_TIMEOUT,
+                TcpStream::connect((target.address.as_str(), target.port)),
+            )
+            .await
+            .map_err(|_| RdpError::Timeout)?
+            .map_err(|e| RdpError::Unreachable {
+                message: format!("{}:{}: {e}", target.address, target.port),
+            })?;
+            // Input latency matters more than packet count.
+            let _ = tcp.set_nodelay(true);
+            let client_addr = tcp.local_addr().map_err(|e| RdpError::Unreachable {
+                message: e.to_string(),
+            })?;
+            let server_addr = tcp.peer_addr().ok();
+            (Transport::Tcp(tcp), client_addr, server_addr)
+        }
+    };
 
-    let tcp = tokio::time::timeout(
-        CONNECT_TIMEOUT,
-        TcpStream::connect((target.address.as_str(), target.port)),
+    // UDP only straight to the host: through a gateway it would need the
+    // gateway's DTLS side channel (see `gateway`).
+    let offer_udp = target.settings.udp && !transport.is_gateway() && server_addr.is_some();
+    let connector = build_connector(target, client_addr, channels, offer_udp);
+    tokio::time::timeout(
+        HANDSHAKE_TIMEOUT,
+        handshake(
+            transport,
+            connector,
+            target,
+            server_addr.filter(|_| offer_udp),
+        ),
     )
     .await
     .map_err(|_| RdpError::Timeout)?
-    .map_err(|e| RdpError::Unreachable {
-        message: format!("{}:{}: {e}", target.address, target.port),
-    })?;
-    // Input latency matters more than packet count.
-    let _ = tcp.set_nodelay(true);
-    let client_addr = tcp.local_addr().map_err(|e| RdpError::Unreachable {
-        message: e.to_string(),
-    })?;
-
-    let connector = build_connector(target, client_addr, channels);
-    tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(tcp, connector, target))
-        .await
-        .map_err(|_| RdpError::Timeout)?
 }
 
 fn build_connector(
     target: &RdpTarget,
     client_addr: std::net::SocketAddr,
     channels: Channels,
+    offer_udp: bool,
 ) -> ClientConnector {
     let (username, domain) = split_username(&target.username, target.domain.as_deref());
     let mut config = connector_config(&target.settings, username, domain, target.password.as_str());
     // Windows only opens the pipeline's channel for clients that announce it
     // in the client core data; announced only with our processor registered.
     config.support_dyn_vc_gfx_protocol = channels.graphics.is_some();
+    if offer_udp {
+        config.multitransport_flags = Some(udp::offered_flags());
+    }
 
     let mut drdynvc =
         DrdynvcClient::new().with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new())));
@@ -285,11 +324,12 @@ enum Phase {
 }
 
 async fn handshake(
-    tcp: TcpStream,
+    transport: Transport,
     mut connector: ClientConnector,
     target: &RdpTarget,
+    udp_server: Option<std::net::SocketAddr>,
 ) -> Result<Established, RdpError> {
-    let mut framed = TokioFramed::new(tcp);
+    let mut framed = TokioFramed::new(transport);
 
     let should_upgrade = ironrdp_tokio::connect_begin(&mut framed, &mut connector)
         .await
@@ -324,6 +364,14 @@ async fn handshake(
         .map_err(|e| map_connector_error(&e, Phase::Authentication, &target.settings))?;
     }
 
+    // Where UDP may go, now that the certificate is the trusted one.
+    let udp_plan = udp_server.map(|server| udp::Plan {
+        server,
+        server_name: target.address.clone(),
+        fingerprint: certificate.observed.fingerprint.clone(),
+    });
+    let mut udp_transport: Option<UdpTransport> = None;
+
     let mut buf = WriteBuf::new();
     let result = loop {
         let step = ironrdp_tokio::single_sequence_step(&mut framed, &mut connector, &mut buf).await;
@@ -334,6 +382,48 @@ async fn handshake(
                 Phase::Finalization,
                 &target.settings,
             ));
+        }
+        // The server asks for a UDP transport (MS-RDPBCGR 2.2.15.1): try it,
+        // then report how it went. Failing only means staying on TCP.
+        if let Some(request) = connector.multitransport_request().cloned() {
+            let soft_sync = connector
+                .multitransport_soft_sync_negotiated()
+                .unwrap_or(false);
+            let outcome = match &udp_plan {
+                Some(plan) if udp_transport.is_none() && udp::wanted(&request, soft_sync) => {
+                    match udp::open(&request, plan).await {
+                        Ok(transport) => {
+                            udp_transport = Some(transport);
+                            MultitransportResult::Success
+                        }
+                        Err(e) => {
+                            info!(error = %e, "UDP not available, staying on TCP");
+                            MultitransportResult::Failure(MultitransportResponsePdu::E_ABORT)
+                        }
+                    }
+                }
+                _ => {
+                    debug!(
+                        protocol = ?request.requested_protocol,
+                        soft_sync,
+                        "declining a multitransport request"
+                    );
+                    MultitransportResult::Failure(MultitransportResponsePdu::E_ABORT)
+                }
+            };
+            buf.clear();
+            let written = connector
+                .complete_multitransport(outcome, &mut buf)
+                .map_err(|e| map_connector_error(&e, Phase::Finalization, &target.settings))?;
+            if let Some(len) = written.size() {
+                framed
+                    .write_all(&buf[..len])
+                    .await
+                    .map_err(|e| RdpError::Protocol {
+                        message: format!("could not answer the UDP request: {e}"),
+                    })?;
+            }
+            continue;
         }
         // An RD Connection Broker sending us elsewhere. Following it would
         // mean a new connection with its own certificate check; not done yet.
@@ -355,9 +445,15 @@ async fn handshake(
     info!(
         width = result.desktop_size.width,
         height = result.desktop_size.height,
+        udp = udp_transport.is_some(),
+        gateway = target.gateway.is_some(),
         "RDP session active"
     );
-    Ok(Established { result, framed })
+    Ok(Established {
+        result,
+        framed,
+        udp: udp_transport,
+    })
 }
 
 /// The connector keeps a plain `String` copy of the password in its config;

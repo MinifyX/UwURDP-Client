@@ -7794,7 +7794,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-core"
-version = "0.2.0-beta.5"
+version = "0.2.0-beta.6"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7811,16 +7811,20 @@ dependencies = [
  "ironrdp-input",
  "ironrdp-pdu",
  "ironrdp-rdpdr",
+ "ironrdp-rdpeudp",
+ "ironrdp-rdpeudp-tokio",
  "ironrdp-rdpsnd",
  "ironrdp-server",
  "ironrdp-session",
  "ironrdp-svc",
+ "ironrdp-tls",
  "ironrdp-tokio",
  "libc",
  "objc2-app-kit",
  "openh264",
  "parking_lot",
  "rcgen",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -7839,7 +7843,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-desktop"
-version = "0.2.0-beta.5"
+version = "0.2.0-beta.6"
 dependencies = [
  "base64 0.22.1",
  "bzip2",
@@ -7882,7 +7886,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-import"
-version = "0.2.0-beta.5"
+version = "0.2.0-beta.6"
 dependencies = [
  "base64 0.22.1",
  "roxmltree",
@@ -7894,7 +7898,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-proto"
-version = "0.2.0-beta.5"
+version = "0.2.0-beta.6"
 dependencies = [
  "serde",
  "serde_json",
@@ -7903,7 +7907,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-setup"
-version = "0.2.0-beta.5"
+version = "0.2.0-beta.6"
 dependencies = [
  "libc",
  "semver",
@@ -7921,7 +7925,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-store"
-version = "0.2.0-beta.5"
+version = "0.2.0-beta.6"
 dependencies = [
  "base64 0.22.1",
  "parking_lot",
@@ -7940,7 +7944,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-sync"
-version = "0.2.0-beta.5"
+version = "0.2.0-beta.6"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -7971,7 +7975,7 @@ dependencies = [
 
 [[package]]
 name = "uwurdp-vault"
-version = "0.2.0-beta.5"
+version = "0.2.0-beta.6"
 dependencies = [
  "argon2",
  "chacha20poly1305",

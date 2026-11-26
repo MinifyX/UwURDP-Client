@@ -332,7 +332,12 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                     };
                 }
             },
-            data = recv_udp(&mut udp_transport), if udp_transport.is_some() => match data {
+            // UDP is read only once Soft-Sync (on TCP) has switched to it: a
+            // server may send on UDP right after its Soft-Sync request, and
+            // those datagrams must wait in the transport's (bounded) queue
+            // until the request is processed, or they would be refused.
+            data = recv_udp(&mut udp_transport),
+                if udp_transport.is_some() && active_stage.reliable_udp_dvc_tunnel_in_use() => match data {
                 Some(data) => match active_stage.process_dvc_tunnel(
                     &mut screen.image,
                     SoftSyncTunnelType::RELIABLE_UDP,

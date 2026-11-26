@@ -9,9 +9,10 @@
 //! fast-path input and the control PDUs stay on TCP.
 //!
 //! The UDP side's TLS must present the very certificate the user trusted for
-//! the TCP connection; a publicly valid certificate for the host name is
-//! taken as well (`ironrdp-tls` checks the chain first and asks us only when
-//! that fails).
+//! the TCP connection, nothing else. `ironrdp-tls` checks the chain against
+//! the system roots first and asks our pin only when that fails, so the UDP
+//! TLS is given a name no CA issues for ([`PIN_ONLY_NAME`]): the chain check
+//! always fails and the pin decides, as on TCP.
 //!
 //! Anything going wrong here is not fatal: the server is told `E_ABORT` and
 //! the session stays on TCP.
@@ -32,6 +33,11 @@ use tracing::{debug, info};
 /// connection sequence waits meanwhile, so keep it short.
 pub(crate) const UDP_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The TLS server name for the UDP side. `.invalid` is reserved (RFC 2606),
+/// so no publicly or enterprise-trusted certificate can match it and only
+/// the pinned certificate gets through. Windows does not look at SNI here.
+pub(crate) const PIN_ONLY_NAME: &str = "uwurdp.invalid";
+
 /// What the client announces when it wants UDP.
 pub(crate) fn offered_flags() -> MultiTransportFlags {
     MultiTransportFlags::TRANSPORT_TYPE_UDP_FECR | MultiTransportFlags::SOFT_SYNC_TCP_TO_UDP
@@ -43,7 +49,7 @@ pub(crate) struct Plan {
     /// The address the TCP connection went to; RDP's UDP listens on the
     /// same port.
     pub server: SocketAddr,
-    /// The host name, for the UDP side's TLS.
+    /// The host name, for logs (the UDP TLS itself uses [`PIN_ONLY_NAME`]).
     pub server_name: String,
     /// Fingerprint of the certificate trusted on TCP.
     pub fingerprint: String,
@@ -81,7 +87,7 @@ pub(crate) async fn open(
     let mut bootstrap = MultitransportBootstrap::new(request.clone());
     let attempt = bootstrap.connect(
         plan.server,
-        plan.server_name.clone(),
+        PIN_ONLY_NAME.to_owned(),
         ironrdp_rdpeudp::ConnectionConfig::default(),
         tls,
     );

@@ -294,7 +294,10 @@ where
     W: AsyncWrite + Unpin + Send + 'static,
 {
     let (pipe_read, pipe_write) = tokio::io::split(pipe);
-    let (pong_tx, pong_rx) = mpsc::unbounded_channel();
+    // One pong in flight is enough: answering only the latest ping is
+    // allowed (RFC 6455 5.5.3), and a gateway that floods pings while not
+    // reading cannot pile them up here.
+    let (pong_tx, pong_rx) = mpsc::channel(1);
     let mut inbound = tokio::spawn(inbound(reader, pipe_write, pong_tx));
     let mut outbound = tokio::spawn(outbound(writer, pipe_read, pong_rx));
     tokio::select! {
@@ -304,7 +307,7 @@ where
     debug!("gateway tunnel closed");
 }
 
-async fn inbound<R, P>(mut reader: Inbound<R>, mut pipe: P, pong: mpsc::UnboundedSender<Vec<u8>>)
+async fn inbound<R, P>(mut reader: Inbound<R>, mut pipe: P, pong: mpsc::Sender<Vec<u8>>)
 where
     R: AsyncRead + Unpin,
     P: AsyncWrite + Unpin,
@@ -340,7 +343,7 @@ where
                 other => debug!(packet_type = other, "ignoring a gateway packet"),
             },
             Ok(Event::Ping(payload)) => {
-                if pong.send(payload).is_err() {
+                if let Err(mpsc::error::TrySendError::Closed(_)) = pong.try_send(payload) {
                     break;
                 }
             }
@@ -354,7 +357,7 @@ where
     let _ = pipe.shutdown().await;
 }
 
-async fn outbound<W, P>(mut writer: W, mut pipe: P, mut pong: mpsc::UnboundedReceiver<Vec<u8>>)
+async fn outbound<W, P>(mut writer: W, mut pipe: P, mut pong: mpsc::Receiver<Vec<u8>>)
 where
     W: AsyncWrite + Unpin,
     P: AsyncRead + Unpin,

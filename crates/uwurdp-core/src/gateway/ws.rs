@@ -106,6 +106,10 @@ impl MessageReader {
             } else {
                 None
             };
+            // Control frames are final and carry at most 125 bytes (5.5).
+            if opcode & 0x8 != 0 && (!fin || len > 125) {
+                return Err(invalid("oversized or fragmented WebSocket control frame"));
+            }
             let mut payload = vec![0u8; len];
             reader.read_exact(&mut payload).await?;
             if let Some(k) = key {
@@ -202,6 +206,14 @@ mod tests {
         assert_eq!(&joined[..3], b"hel");
         assert_eq!(joined.len(), 203);
         assert_eq!(reader.read(&mut input).await.unwrap(), Message::Close);
+    }
+
+    #[tokio::test]
+    async fn oversized_or_fragmented_control_frames_are_errors() {
+        let bytes = server_frame(true, OP_PING, &[0u8; 126]);
+        assert!(MessageReader::new().read(&mut &bytes[..]).await.is_err());
+        let bytes = server_frame(false, OP_PING, b"p");
+        assert!(MessageReader::new().read(&mut &bytes[..]).await.is_err());
     }
 
     #[tokio::test]

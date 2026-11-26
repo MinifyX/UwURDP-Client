@@ -143,29 +143,35 @@ const MAX_PACKET: usize = 0x2_0000;
 #[derive(Default)]
 pub(crate) struct Reader {
     buf: Vec<u8>,
+    /// Where the next packet starts in `buf`; consumed bytes are dropped
+    /// once per `push`, not once per packet.
+    pos: usize,
 }
 
 impl Reader {
     pub(crate) fn push(&mut self, bytes: &[u8]) {
+        self.buf.drain(..self.pos);
+        self.pos = 0;
         self.buf.extend_from_slice(bytes);
     }
 
     /// The next complete packet, if one is buffered.
     pub(crate) fn next(&mut self) -> Result<Option<Packet>, String> {
-        if self.buf.len() < HEADER_LEN {
+        let rest = &self.buf[self.pos..];
+        if rest.len() < HEADER_LEN {
             return Ok(None);
         }
-        let packet_type = u16::from_le_bytes([self.buf[0], self.buf[1]]);
-        let len = u32::from_le_bytes([self.buf[4], self.buf[5], self.buf[6], self.buf[7]]);
+        let packet_type = u16::from_le_bytes([rest[0], rest[1]]);
+        let len = u32::from_le_bytes([rest[4], rest[5], rest[6], rest[7]]);
         let len = usize::try_from(len).unwrap_or(usize::MAX);
         if !(HEADER_LEN..=MAX_PACKET).contains(&len) {
             return Err(format!("invalid gateway packet length {len}"));
         }
-        if self.buf.len() < len {
+        if rest.len() < len {
             return Ok(None);
         }
-        let body = self.buf[HEADER_LEN..len].to_vec();
-        self.buf.drain(..len);
+        let body = rest[HEADER_LEN..len].to_vec();
+        self.pos += len;
         Ok(Some(Packet { packet_type, body }))
     }
 }

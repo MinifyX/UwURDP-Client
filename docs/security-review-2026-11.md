@@ -283,3 +283,89 @@ and the session ends if it fails; the vendored `ironrdp-pdu` differs from
 crates.io's 0.11.0 only in `server_error_info.rs`; `ed25519-dalek` is used for
 signing only. The test server (`ironrdp-server` from git at `b13befa0`) is a
 dev-dependency and not shipped.
+
+## Addendum: 0.2.0-beta.6, RD Gateway and UDP
+
+Dated 2026-11-26, against `git diff v0.2.0-beta.5 4d26674 -- . ':!*.lock'
+':!release-notes'`. Two new features: our own RD Gateway client (MS-TSGU over
+WebSocket, `gateway/{mod,http,ws,tsgu}.rs`) with NTLM from `sspi` 0.23, and
+UDP multitransport for direct connections (`udp.rs`, `connect.rs`,
+`session.rs`) on `ironrdp-rdpeudp` 0.1, `ironrdp-rdpeudp-tokio` 0.2 and
+`ironrdp-tls` 0.3. The beta.5 note "multitransport stay off" no longer holds:
+the client now offers `TRANSPORT_TYPE_UDP_FECR | SOFT_SYNC_TCP_TO_UDP` by
+default.
+
+One medium finding, three low. The medium and two lows were fixed before the
+release.
+
+### Fixed before the release
+
+- **UDP leg took a CA-valid certificate instead of the pinned one** (medium).
+  `ironrdp-tls` (`CallbackVerifier::verify_server_cert`) runs our pin callback
+  only when the WebPKI check against the system roots and the host name
+  fails, so a certificate from a public or enterprise CA for the host name
+  was accepted on UDP although TCP (`tls::check_trust`, pin only) would
+  refuse it. An on-path attacker with such a certificate could relay the UDP
+  leg (the RDPEMT cookie arrives inside that TLS session) and read or change
+  the dynamic channels: graphics, display control, audio. Clipboard, drives
+  and input stay on TCP. Fixed: the UDP TLS gets the server name
+  `uwurdp.invalid` (`udp::PIN_ONLY_NAME`, RFC 2606), so the chain check always
+  fails and the pin decides. Handshake signatures are still verified against
+  the presented certificate; Windows ignores SNI on RDP-UDP.
+- **Unbounded pong queue** (low). Ping frames up to 1 MiB, non-final ones
+  included, each went into an unbounded channel. Control frames over 125
+  bytes or without FIN are now an error (`ws.rs`, RFC 6455 5.5), and the
+  pong channel holds one (only the latest ping is answered, as 5.5.3 allows).
+  Test: `oversized_or_fragmented_control_frames_are_errors`.
+- **Quadratic reassembly in the TSGU reader** (low). `drain` per packet is
+  now a read offset that is compacted once per `push`.
+
+### Left as they are
+
+- **`SSLKEYLOGFILE` honoured on the UDP leg** (low). `ironrdp-tls` 0.3.0 sets
+  `key_log = KeyLogFile::new()`, so with that variable set the UDP session
+  keys are written out. Our TCP and gateway TLS leave it off. Needs a change
+  upstream.
+- **No UDP setting in the app** (info). `hosts.rs` always passes `udp: true`.
+- **`Sec-WebSocket-Accept` not checked** (info, `http.rs`). The stream is
+  already authenticated by TLS to the gateway.
+- **No revocation check for the gateway certificate** (info). rustls' WebPKI
+  verifier does not check CRLs or OCSP; mstsc does.
+- **Gateway text in logs and errors** (info). Service messages and HTTP
+  status lines are gateway-controlled and shown as text, never interpreted.
+- **No re-authentication** (info). `PKT_REAUTH_MESSAGE` is only logged; the
+  gateway ends the tunnel when its policy runs out, which fails closed.
+
+### Checked and fine
+
+- **Gateway TLS.** Ring provider, TLS 1.2/1.3, system roots and host name via
+  `ServerName::try_from(gateway.address)`; no setting or fallback turns it
+  off. A name with CR/LF is not a valid `ServerName`, so the `Host:` header
+  cannot be injected.
+- **NTLM.** Starts only after the TLS handshake; two requests on the same
+  stream, no retry loop; a second 401 ends with `UpgradeError::Auth`, 3xx is
+  not followed, credentials only go to `gateway.address`. Channel binding is
+  `tls-server-end-point:` plus the leaf hash by its signature hash (SHA-256,
+  or SHA-384/512), through `Ntlm::set_channel_bindings` (RFC 5929 4.1).
+  NTLMv2 only.
+- **Gateway password.** `Zeroizing<String>` in `GatewayTarget` (Debug
+  redacted); the copy for sspi is a `Secret<String>`. A refused gateway login
+  stays `RdpError::Gateway`, not the host's credentials.
+- **Parsers.** HTTP head capped at 32 KiB, 401 body at 256 KiB; WebSocket
+  frames checked against 1 MiB before allocation, fragments capped; TSGU
+  packets between 8 bytes and 128 KiB, every field through a bounds-checked
+  cursor, no `unwrap` or index on gateway data.
+- **Tunnel pump.** 256 KiB duplex with backpressure both ways; outbound DATA
+  split at `MAX_DATA`; gateway setup under `HANDSHAKE_TIMEOUT`.
+- **RDP inside the tunnel.** X.224, TLS, `check_trust` against the host's pin
+  and CredSSP run unchanged through the tunnel, so a hostile gateway is no
+  stronger than a network attacker. UDP is never offered through a gateway.
+- **UDP address and timing.** UDP always goes to the TCP peer address; the
+  server's request only supplies request id, cookie and protocol. Attempted
+  only after the pin check and CredSSP, at most once, only `UdpFecR` with
+  Soft-Sync; lossy and late requests get `E_ABORT`; 5 s cap, failure stays on
+  TCP.
+- **Data over UDP** only reaches `process_dvc_tunnel`, the same dynamic
+  channel processors as on TCP; static channels, fast-path input and control
+  PDUs cannot arrive over UDP. Queues bounded (64). Losing UDP after channels
+  moved ends the session. Frame kind 9 carries a fixed boolean JSON.

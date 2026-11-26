@@ -541,6 +541,9 @@ pub(crate) async fn connect_host(
             graphics_pipeline: rdp.graphics_pipeline,
             h264_library: rdp.graphics_pipeline.then(|| codec.library()).flatten(),
             drives,
+            // UDP whenever the server offers it on a direct connection; it
+            // falls back to TCP by itself.
+            udp: true,
         },
         gateway,
     };

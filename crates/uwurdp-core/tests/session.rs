@@ -98,6 +98,8 @@ struct Page {
     first_kinds: Vec<u8>,
     closed: Option<serde_json::Value>,
     finished: bool,
+    /// The last `TRANSPORT` message said the channels run over UDP.
+    udp: bool,
 }
 
 impl Page {
@@ -118,6 +120,7 @@ impl Page {
             first_kinds: Vec::new(),
             closed: None,
             finished: false,
+            udp: false,
         }
     }
 }
@@ -128,7 +131,8 @@ fn u16_at(bytes: &[u8], at: usize) -> u16 {
 
 impl Page {
     fn apply(&mut self, message: &[u8]) {
-        if self.first_kinds.len() < 2 {
+        // TRANSPORT is a status line and may come at any time.
+        if self.first_kinds.len() < 2 && message[0] != 9 {
             self.first_kinds.push(message[0]);
         }
         match message[0] {
@@ -173,6 +177,11 @@ impl Page {
             7 => {
                 assert!(self.closed.is_none(), "CLOSED sent twice");
                 self.closed = Some(serde_json::from_slice(&message[1..]).expect("CLOSED json"));
+            }
+            9 => {
+                let status: serde_json::Value =
+                    serde_json::from_slice(&message[1..]).expect("TRANSPORT json");
+                self.udp = status["udp"] == true;
             }
             other => panic!("unknown message kind {other}"),
         }
@@ -361,6 +370,52 @@ async fn the_graphics_pipeline_carries_the_whole_session() {
         "only {uncompressed} frames through the pipeline"
     );
     assert_eq!(h264, 0, "no H.264 without OpenH264");
+}
+
+/// With UDP on both sides the server moves the graphics pipeline onto it
+/// (Soft-Sync), and the whole session — pictures, their acknowledgements,
+/// input on TCP, the resize — works across both transports.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_graphics_pipeline_moves_onto_udp() {
+    let server = server_with(DevServerOptions {
+        graphics: true,
+        udp: true,
+        ..DevServerOptions::default()
+    });
+    let mut page = open(&server).await;
+    page.until("the channels on UDP", |p| p.udp).await;
+    full_session(&server, page).await;
+    let (uncompressed, _) = server.graphics_frames();
+    assert!(
+        uncompressed >= 2,
+        "only {uncompressed} frames through the pipeline"
+    );
+}
+
+/// Without UDP on our side the same server keeps everything on TCP.
+#[tokio::test(flavor = "multi_thread")]
+async fn udp_off_stays_on_tcp() {
+    let server = server_with(DevServerOptions {
+        graphics: true,
+        udp: true,
+        ..DevServerOptions::default()
+    });
+    let mut page = open_with(
+        &server,
+        SessionSettings {
+            udp: false,
+            ..settings()
+        },
+    )
+    .await;
+    page.until("the pink desktop", |p| {
+        p.bitmaps > 1 && {
+            let [r, g, b, a] = p.pixel(5, 5);
+            a == 255 && r > 200 && g < 150 && b > 60
+        }
+    })
+    .await;
+    assert!(!page.udp);
 }
 
 /// IronRDP's server has no drive channel, so this only shows that asking for

@@ -19,6 +19,14 @@
 //! With the graphics pipeline the pixels come from [`gfx::Pipeline`]'s
 //! output instead of IronRDP's image; after every step the session takes the
 //! pipeline's changes (new size, dirty rectangles) into the same machinery.
+//!
+//! ## UDP
+//!
+//! With a UDP transport from the connection sequence (see `udp`), the
+//! server moves dynamic channels onto it with a Soft-Sync exchange on TCP.
+//! From then on their PDUs arrive on UDP and every answer to them goes back
+//! there; DVC messages we start ourselves (resize) are sent on whichever
+//! transport their channel uses.
 
 use crate::clipboard::{self, ClipboardHandle, Outgoing, WorkerMsg};
 use crate::connect::{Established, Stream};
@@ -32,9 +40,13 @@ use ironrdp_cliprdr::CliprdrClient;
 use ironrdp_connector::connection_activation::ConnectionActivationState;
 use ironrdp_core::WriteBuf;
 use ironrdp_displaycontrol::pdu::MonitorLayoutEntry;
+use ironrdp_dvc::pdu::SoftSyncTunnelType;
+use ironrdp_dvc::DvcMessageBatch;
 use ironrdp_graphics::image_processing::PixelFormat;
 use ironrdp_pdu::geometry::InclusiveRectangle;
+use ironrdp_pdu::rdp::multitransport::MultitransportResponsePdu;
 use ironrdp_pdu::rdp::server_error_info::{ErrorInfo, ProtocolIndependentCode};
+use ironrdp_rdpeudp_tokio::{UdpTransport, UdpTransportSender};
 use ironrdp_session::image::DecodedImage;
 use ironrdp_session::{ActiveStage, ActiveStageBuilder, ActiveStageOutput};
 use ironrdp_session::{GracefulDisconnectReason, SessionResult};
@@ -242,7 +254,12 @@ pub(crate) async fn run(parts: SessionParts, sink: &dyn FrameSink) {
 
 async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
     let SessionParts {
-        established: Established { result, framed },
+        established:
+            Established {
+                result,
+                framed,
+                udp: mut udp_transport,
+            },
         mut commands,
         clipboard,
         graphics,
@@ -263,6 +280,17 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
     }
     .build();
 
+    // The Initiate Multitransport Response went out during the connection
+    // sequence; from here the server may move channels onto UDP.
+    let udp_sender = udp_transport.as_ref().map(UdpTransport::sender);
+    if udp_transport.is_some() {
+        if let Err(e) = active_stage.enable_reliable_udp_dvc_tunnel() {
+            warn!(error = %e.report(), "UDP could not be offered to the channels");
+            udp_transport = None;
+        }
+    }
+
+    let mut udp_reported = false;
     let mut screen = Screen::new(size.width, size.height);
     let mut input = InputState::new(size.width, size.height);
     out.send(&frame::desktop_size(size.width, size.height));
@@ -302,6 +330,32 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                     } else {
                         Ending::new(CloseReason::Error, format!("The connection was lost: {e}"))
                     };
+                }
+            },
+            data = recv_udp(&mut udp_transport), if udp_transport.is_some() => match data {
+                Some(data) => match active_stage.process_dvc_tunnel(
+                    &mut screen.image,
+                    SoftSyncTunnelType::RELIABLE_UDP,
+                    &data,
+                ) {
+                    Ok((batch, outputs)) => {
+                        if let Err(message) = send_on_udp(udp_sender.as_ref(), batch).await {
+                            return Ending::new(CloseReason::Error, message);
+                        }
+                        Ok(outputs)
+                    }
+                    Err(e) => Err(e),
+                },
+                None => {
+                    udp_transport = None;
+                    if active_stage.reliable_udp_dvc_tunnel_in_use() {
+                        // The channels live on UDP now; there is no way
+                        // back to TCP for them.
+                        return Ending::new(CloseReason::Error, "The UDP connection was lost.");
+                    }
+                    debug!("UDP closed before any channel moved onto it");
+                    let _ = active_stage.disable_reliable_udp_dvc_tunnel();
+                    Ok(Vec::new())
                 }
             },
             command = commands.recv(), if commands_open => match command {
@@ -364,7 +418,15 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
             }
             () = sleep_until(resize_at), if pending_resize.is_some() => {
                 match pending_resize.take() {
-                    Some((w, h, scale)) => Ok(resize(&mut active_stage, &screen, w, h, scale)),
+                    Some((w, h, scale)) => match resize(&mut active_stage, &screen, w, h, scale) {
+                        Routed::Tcp(outputs) => Ok(outputs),
+                        Routed::Udp(batch) => {
+                            if let Err(message) = send_on_udp(udp_sender.as_ref(), batch).await {
+                                return Ending::new(CloseReason::Error, message);
+                            }
+                            Ok(Vec::new())
+                        }
+                    },
                     None => Ok(Vec::new()),
                 }
             }
@@ -486,8 +548,25 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                         }
                     }
                 }
-                ActiveStageOutput::MultitransportRequest(_) => {
-                    debug!("ignoring a multitransport (UDP) request");
+                ActiveStageOutput::MultitransportRequest(request) => {
+                    // UDP is only set up during the connection sequence;
+                    // a later request is declined so the server stops
+                    // waiting for it (MS-RDPBCGR 3.2.5.15.1).
+                    debug!(protocol = ?request.requested_protocol, "declining a late multitransport request");
+                    let response = MultitransportResponsePdu::abort(request.request_id);
+                    match active_stage.encode_multitransport_response(&response) {
+                        Ok(frame) => {
+                            if let Err(e) = writer.write_all(&frame).await {
+                                return Ending::new(
+                                    CloseReason::Error,
+                                    format!("The connection was lost: {e}"),
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e.report(), "multitransport response could not be encoded")
+                        }
+                    }
                 }
                 ActiveStageOutput::AutoDetect(request) => {
                     trace!(?request, "auto-detect");
@@ -497,6 +576,13 @@ async fn drive(parts: SessionParts, out: &Output<'_>) -> Ending {
                 // single-desktop client without auto-reconnect acts on.
                 _ => trace!("ignoring a session output"),
             }
+        }
+
+        // Soft-Sync moved channels onto UDP: tell the page, once.
+        if !udp_reported && active_stage.reliable_udp_dvc_tunnel_in_use() {
+            udp_reported = true;
+            info!("dynamic channels run over UDP");
+            out.send(&frame::transport(true));
         }
 
         if let Some(graphics) = &graphics {
@@ -562,31 +648,82 @@ fn close_request(
     active_stage.graceful_shutdown()
 }
 
+/// Waits for the next message on the UDP transport; never resolves without
+/// one (the `select!` arm is disabled then anyway).
+async fn recv_udp(udp: &mut Option<UdpTransport>) -> Option<Vec<u8>> {
+    match udp {
+        Some(transport) => transport.recv().await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Sends a batch of DVC messages on the UDP tunnel, unframed as RDPEMT
+/// carries them.
+async fn send_on_udp(
+    sender: Option<&UdpTransportSender>,
+    batch: DvcMessageBatch,
+) -> Result<(), String> {
+    let messages = batch.into_messages();
+    if messages.is_empty() {
+        return Ok(());
+    }
+    let Some(sender) = sender else {
+        return Err("A channel on UDP has no UDP connection.".into());
+    };
+    for message in messages {
+        let bytes = message
+            .encode_unframed_pdu()
+            .map_err(|e| format!("A UDP message could not be encoded: {e}"))?;
+        sender
+            .send(bytes)
+            .await
+            .map_err(|e| format!("The UDP connection was lost: {e}"))?;
+    }
+    Ok(())
+}
+
+/// A DVC message the session starts itself, on its channel's transport.
+enum Routed {
+    Tcp(Vec<ActiveStageOutput>),
+    Udp(DvcMessageBatch),
+}
+
 fn resize(
     active_stage: &mut ActiveStage,
     screen: &Screen,
     width: u32,
     height: u32,
     scale_factor: u32,
-) -> Vec<ActiveStageOutput> {
+) -> Routed {
     if u32::from(screen.image.width()) == width && u32::from(screen.image.height()) == height {
         trace!("resize to the current size, skipped");
-        return Vec::new();
+        return Routed::Tcp(Vec::new());
     }
     let scale = (100..=500).contains(&scale_factor).then_some(scale_factor);
-    match active_stage.encode_resize(width, height, scale, None) {
-        Some(Ok(frame)) => {
-            debug!(width, height, ?scale, "requested a resize");
-            vec![ActiveStageOutput::ResponseFrame(frame)]
-        }
+    let batch = match active_stage.prepare_resize(width, height, scale, None) {
+        Some(Ok(batch)) => batch,
         Some(Err(e)) => {
             warn!(error = %e.report(), "resize could not be encoded");
-            Vec::new()
+            return Routed::Tcp(Vec::new());
         }
         // The server does not offer DisplayControl: the page scales instead.
         None => {
             debug!("the server does not support dynamic resize");
-            Vec::new()
+            return Routed::Tcp(Vec::new());
+        }
+    };
+    debug!(width, height, ?scale, "requested a resize");
+    if active_stage
+        .dvc_tunnel_for_channel(batch.channel_id())
+        .is_some()
+    {
+        return Routed::Udp(batch);
+    }
+    match active_stage.encode_dvc_messages(batch.into_messages()) {
+        Ok(frame) => Routed::Tcp(vec![ActiveStageOutput::ResponseFrame(frame)]),
+        Err(e) => {
+            warn!(error = %e.report(), "resize could not be encoded");
+            Routed::Tcp(Vec::new())
         }
     }
 }

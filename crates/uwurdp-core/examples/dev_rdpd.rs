@@ -30,6 +30,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let server = dev_server::start(dev_server::DevServerOptions {
         addr,
         graphics: std::env::var("UWURDP_DEV_RDPD_GFX").map_or(true, |v| v != "0"),
+        // UWURDP_DEV_RDPD_UDP=1: offer UDP on the same port as TCP.
+        udp: std::env::var("UWURDP_DEV_RDPD_UDP").is_ok_and(|v| v != "0"),
         ..Default::default()
     })?;
 

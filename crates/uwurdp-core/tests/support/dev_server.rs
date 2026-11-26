@@ -59,6 +59,9 @@ pub struct DevServerOptions {
     pub height: u16,
     /// Serve the graphics pipeline to clients that open it.
     pub graphics: bool,
+    /// Offer UDP (multitransport) on the same port as TCP; the server moves
+    /// the graphics pipeline onto it.
+    pub udp: bool,
 }
 
 impl Default for DevServerOptions {
@@ -68,6 +71,7 @@ impl Default for DevServerOptions {
             width: 1024,
             height: 768,
             graphics: false,
+            udp: false,
         }
     }
 }
@@ -555,7 +559,18 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 /// Starts the server on its own thread (ironrdp-server's connection loop is
 /// not `Send`, so it gets a current-thread runtime of its own) and returns
 /// once it listens.
-pub fn start(options: DevServerOptions) -> Result<DevServer, BoxError> {
+pub fn start(mut options: DevServerOptions) -> Result<DevServer, BoxError> {
+    // UDP must listen on the TCP port, which therefore has to be known
+    // before the server starts: borrow a free one from the system.
+    let udp_addr = if options.udp {
+        if options.addr.port() == 0 {
+            options.addr = std::net::TcpListener::bind(options.addr)?.local_addr()?;
+        }
+        Some(options.addr)
+    } else {
+        None
+    };
+
     let certified =
         rcgen::generate_simple_self_signed(vec!["localhost".to_owned(), "uwurdp-dev".to_owned()])?;
     let cert_der = certified.cert.der().to_vec();
@@ -607,7 +622,7 @@ pub fn start(options: DevServerOptions) -> Result<DevServer, BoxError> {
             // Built here: RdpServer is not Send.
             let gfx_factory: Option<Box<dyn GfxServerFactory>> =
                 graphics.then(|| Box::new(GfxFactory(thread_shared.clone())) as _);
-            let mut server = RdpServer::builder()
+            let mut builder = RdpServer::builder()
                 .with_addr(options.addr)
                 .with_hybrid(acceptor, public_key)
                 .with_input_handler(Input(thread_shared.clone()))
@@ -616,8 +631,11 @@ pub fn start(options: DevServerOptions) -> Result<DevServer, BoxError> {
                 .with_honor_client_desktop_size(Some(DesktopSize {
                     width: 8192,
                     height: 8192,
-                }))
-                .build();
+                }));
+            if let Some(udp_addr) = udp_addr {
+                builder = builder.with_udp_transport(udp_addr);
+            }
+            let mut server = builder.build();
             server.set_credentials(Some(Credentials {
                 username: USERNAME.to_owned(),
                 password: PASSWORD.to_owned(),

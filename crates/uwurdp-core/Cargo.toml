@@ -54,9 +54,19 @@ cpal = { version = "0.17", optional = true }
 # hashes), no OpenH264 sources.
 openh264 = { version = "0.9", default-features = false, features = ["libloading"], optional = true }
 
+# UDP for the session (MS-RDPBCGR multitransport): reliable RDP-UDP2 + TLS +
+# RDPEMT, set up when the server asks for it on a direct connection.
+ironrdp-rdpeudp = "0.1"
+ironrdp-rdpeudp-tokio = { version = "0.2", features = ["rustls-ring"] }
+# Only for its certificate policy type, which the UDP transport takes.
+ironrdp-tls = { version = "0.3", default-features = false }
+
 # `ring` instead of rustls' default `aws-lc-rs`: aws-lc needs CMake and NASM to
 # build on Windows, ring needs nothing beyond the C compiler.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+# The RD Gateway's certificate is checked against the system's trusted roots
+# (the gateway is a web server with a real certificate, unlike RDP hosts).
+rustls-native-certs = "0.8"
 x509-cert = { version = "0.2", default-features = false, features = ["std"] }
 
 # `image-data` for pictures both ways; file lists need nothing extra.
